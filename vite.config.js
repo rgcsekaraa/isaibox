@@ -8,7 +8,7 @@ export default defineConfig({
     proxy: {
       "/api": "http://127.0.0.1:8000"
     },
-    allowedHosts: ["3579-115-186-228-99.ngrok-free.app"]
+    allowedHosts: ["8153-115-186-228-99.ngrok-free.app"]
   },
   build: {
     target: "esnext"
