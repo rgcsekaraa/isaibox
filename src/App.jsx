@@ -325,6 +325,11 @@ function App() {
   const [radioSaveName, setRadioSaveName] = createSignal("");
   const [searchTab, setSearchTab] = createSignal("songs");
   const [globalPlaylistDetail, setGlobalPlaylistDetail] = createSignal(null);
+  const [playlistDetailCache, setPlaylistDetailCache] = createSignal(new Map());
+  const [playlistDetailLoading, setPlaylistDetailLoading] = createSignal(false);
+  const [playlistDetailError, setPlaylistDetailError] = createSignal("");
+  const [playlistSearchQuery, setPlaylistSearchQuery] = createSignal("");
+  const [radioSearchQuery, setRadioSearchQuery] = createSignal("");
   const [googleReady, setGoogleReady] = createSignal(false);
   const [googleInitialized, setGoogleInitialized] = createSignal(false);
   const [preferencesReady, setPreferencesReady] = createSignal(false);
@@ -356,6 +361,7 @@ function App() {
   let themeMediaQuery;
   let syncSystemTheme;
   let crossfadeToken = 0;
+  let playlistDetailRequestToken = 0;
   let activeDeckIndex = 0;
   let fadingAudio = null;
   const prefetchedIds = new Set();
@@ -394,7 +400,7 @@ function App() {
   const prefetchSongIds = (ids) => {
     const filteredIds = [...new Set(ids.filter(Boolean))]
       .filter((id) => !prefetchedIds.has(id))
-      .slice(0, 4);
+      .slice(0, 8);
     if (!filteredIds.length) {
       return;
     }
@@ -426,6 +432,42 @@ function App() {
   const recentSongs = createMemo(() => recentIds().map((id) => songIndex().get(id)).filter(Boolean));
   const favoriteSongs = createMemo(() => favoriteIds().map((id) => songIndex().get(id)).filter(Boolean));
   const theme = createMemo(() => (themePreference() === "system" ? systemTheme() : themePreference()));
+  const normalizedPlaylistSearch = createMemo(() => playlistSearchQuery().trim().toLowerCase());
+  const normalizedRadioSearch = createMemo(() => radioSearchQuery().trim().toLowerCase());
+  const filteredUserPlaylists = createMemo(() => {
+    const needle = normalizedPlaylistSearch();
+    if (!needle) {
+      return playlists();
+    }
+    return playlists().filter((playlist) => (playlist.name || "").toLowerCase().includes(needle));
+  });
+  const filteredGlobalPlaylists = createMemo(() => {
+    const needle = normalizedPlaylistSearch();
+    if (!needle) {
+      return globalPlaylists();
+    }
+    return globalPlaylists().filter((playlist) =>
+      [playlist.name, playlist.source].some((value) => (value || "").toLowerCase().includes(needle))
+    );
+  });
+  const filteredRadioStations = createMemo(() => {
+    const needle = normalizedRadioSearch();
+    if (!needle) {
+      return radioStations();
+    }
+    return radioStations().filter((station) =>
+      [station.name, station.blurb, station.yearStart, station.yearEnd]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(needle))
+    );
+  });
+  const visiblePlaylistDetail = createMemo(() => {
+    if (query().trim() || movieFilter() || artistFilter()) {
+      return null;
+    }
+    return globalPlaylistDetail();
+  });
+  const showPlaylistDetail = createMemo(() => Boolean(visiblePlaylistDetail()));
   const currentRadioStation = createMemo(() => radioStations().find((station) => station.id === selectedRadioStationId()) || null);
   const radioPlaybackLocked = createMemo(() => mainTab() === "radio");
   const activeSongList = createMemo(() => {
@@ -441,15 +483,31 @@ function App() {
     if (mainTab() === "admin") {
       return [];
     }
+    if (mainTab() === "library" && showPlaylistDetail()) {
+      return globalPlaylistDetail()?.tracks || [];
+    }
     return visibleResults();
   });
   const selectedSong = createMemo(() => {
     const visible = activeSongList();
-    return visible.find((song) => song.id === selectedId()) || songs().find((song) => song.id === selectedId()) || null;
+    return (
+      visible.find((song) => song.id === selectedId()) ||
+      (globalPlaylistDetail()?.tracks || []).find((song) => song.id === selectedId()) ||
+      songs().find((song) => song.id === selectedId()) ||
+      null
+    );
   });
   const currentSong = createMemo(() => {
-    const list = songs();
-    return list.find((song) => song.id === currentTrackId()) || null;
+    const currentId = currentTrackId();
+    if (!currentId) {
+      return null;
+    }
+    return (
+      activeSongList().find((song) => song.id === currentId) ||
+      (globalPlaylistDetail()?.tracks || []).find((song) => song.id === currentId) ||
+      songs().find((song) => song.id === currentId) ||
+      null
+    );
   });
   const selectedIndex = createMemo(() => activeSongList().findIndex((song) => song.id === selectedId()));
   const favoriteIdSet = createMemo(() => new Set(favoriteIds()));
@@ -458,6 +516,20 @@ function App() {
     ...playlists().map((playlist) => ({ ...playlist, section: "Yours" })),
     ...globalPlaylists().map((playlist) => ({ ...playlist, section: "Global" })),
   ]);
+  const playlistSummaryById = createMemo(() => {
+    const map = new Map();
+    for (const playlist of playlists()) {
+      if (playlist?.id) {
+        map.set(playlist.id, playlist);
+      }
+    }
+    for (const playlist of globalPlaylists()) {
+      if (playlist?.id) {
+        map.set(playlist.id, playlist);
+      }
+    }
+    return map;
+  });
   const focusSearch = () => {
     setMainBrowseTab("library");
     setSearchTab("songs");
@@ -500,7 +572,8 @@ function App() {
       ...(payload || {}),
     };
     const nextThemePreference = ["system", "light", "dark"].includes(next.themePreference) ? next.themePreference : defaults.themePreference;
-    const nextMainTab = ["library", "recents", "favorites", "radio", "admin"].includes(next.mainTab) ? next.mainTab : defaults.mainTab;
+    const requestedMainTab = ["library", "recents", "favorites", "radio", "admin"].includes(next.mainTab) ? next.mainTab : defaults.mainTab;
+    const nextMainTab = requestedMainTab === "radio" ? defaults.mainTab : requestedMainTab;
     const nextRepeatMode = ["off", "one", "album", "random"].includes(next.repeatMode) ? next.repeatMode : defaults.repeatMode;
     const nextRecentSongIds = Array.isArray(next.recentSongIds) ? next.recentSongIds.filter((id) => typeof id === "string" && id).slice(0, 80) : [];
     const nextPlayerVolume = Number.isFinite(Number(next.playerVolume)) ? clampUnit(Number(next.playerVolume)) : defaults.playerVolume;
@@ -547,6 +620,63 @@ function App() {
     setThemePreference(theme() === "dark" ? "light" : "dark");
   };
 
+  const resolveRadioStationPlayback = (station) => {
+    const songIds = station?.songIds || [];
+    const trackCount = songIds.length;
+    if (!trackCount) {
+      return {
+        queue: [],
+        currentIndex: 0,
+        currentSongId: "",
+        currentOffsetSeconds: 0,
+        sharedSongSeconds: Number(station?.sharedSongSeconds || 0),
+      };
+    }
+
+    const baseIndex = Math.min(trackCount - 1, Math.max(0, Number(station?.currentIndex || 0)));
+    const sharedSongSeconds = Math.max(1, Number(station?.sharedSongSeconds || 0) || 0);
+    const slotStartedAtMs = Date.parse(station?.slotStartedAt || "");
+    if (!Number.isFinite(slotStartedAtMs) || sharedSongSeconds <= 0) {
+      return {
+        queue: songIds,
+        currentIndex: baseIndex,
+        currentSongId: songIds[baseIndex] || "",
+        currentOffsetSeconds: Math.max(0, Number(station?.currentOffsetSeconds || 0)),
+        sharedSongSeconds,
+      };
+    }
+
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - slotStartedAtMs) / 1000));
+    const slotAdvance = Math.floor(elapsedSeconds / sharedSongSeconds);
+    const currentIndex = (baseIndex + slotAdvance) % trackCount;
+    const currentOffsetSeconds = elapsedSeconds % sharedSongSeconds;
+
+    return {
+      queue: songIds,
+      currentIndex,
+      currentSongId: songIds[currentIndex] || "",
+      currentOffsetSeconds,
+      sharedSongSeconds,
+    };
+  };
+
+  const advanceRadioStationLocally = (stationId) => {
+    setRadioStations((current) => current.map((station) => {
+      if (station.id !== stationId || !station.songIds?.length) {
+        return station;
+      }
+      const playback = resolveRadioStationPlayback(station);
+      const nextIndex = (playback.currentIndex + 1) % station.songIds.length;
+      return {
+        ...station,
+        currentIndex: nextIndex,
+        currentSongId: station.songIds[nextIndex] || "",
+        currentOffsetSeconds: 0,
+        slotStartedAt: new Date().toISOString(),
+      };
+    }));
+  };
+
   const applyRadioStation = (stationId, autoplay = false) => {
     const station = radioStations().find((item) => item.id === stationId) || radioStations()[0];
     if (!station) {
@@ -554,8 +684,9 @@ function App() {
       setRadioMessage("No radio stations available");
       return;
     }
-    const queue = (station.songIds || []).map((id) => songIndex().get(id)).filter(Boolean);
-    const currentIndex = Math.min(queue.length - 1, Math.max(0, Number(station.currentIndex || 0)));
+    const playback = resolveRadioStationPlayback(station);
+    const queue = (playback.queue || []).map((id) => songIndex().get(id)).filter(Boolean);
+    const currentIndex = Math.min(queue.length - 1, Math.max(0, playback.currentIndex || 0));
     const currentSong = queue[currentIndex] || queue[0] || null;
     setSelectedRadioStationId(station.id);
     setRadioQueue(queue);
@@ -564,8 +695,8 @@ function App() {
       setSelectedId(currentSong.id);
       setPendingRadioOffset({
         songId: currentSong.id,
-        offsetSeconds: Number(station.currentOffsetSeconds || 0),
-        slotSeconds: Number(station.sharedSongSeconds || 0),
+        offsetSeconds: Number(playback.currentOffsetSeconds || 0),
+        slotSeconds: Number(playback.sharedSongSeconds || 0),
       });
       if (autoplay) {
         loadSong(currentSong, true);
@@ -592,7 +723,7 @@ function App() {
         : stations[0]?.id || "";
       setSelectedRadioStationId(nextStationId);
       setRadioMessage(payload.source === "gemini" ? "" : "Using local fallback station sorter");
-      if (mainTab() === "radio" || !radioQueue().length || autoplayAfterLoad) {
+      if (mainTab() === "radio" || autoplayAfterLoad) {
         applyRadioStation(nextStationId, mainTab() === "radio" || autoplayAfterLoad);
       }
     } catch (fetchError) {
@@ -627,7 +758,7 @@ function App() {
   };
 
   const rememberRecentSong = (songId) => {
-    if (!songId) {
+    if (!songId || mainTab() === "radio") {
       return;
     }
     setRecentIds((current) => [songId, ...current.filter((id) => id !== songId)].slice(0, 80));
@@ -807,6 +938,9 @@ function App() {
         }
         setFavoriteIds([]);
         setPlaylists([]);
+        setPlaylistDetailCache(new Map());
+        setPlaylistDetailLoading(false);
+        setPlaylistDetailError("");
         setSelectedPlaylistTarget("");
         setAdminUsers([]);
         setAirflowStatus(null);
@@ -862,11 +996,34 @@ function App() {
         const playlistsPayload = await playlistsResponse.json();
         setPlaylists(playlistsPayload.playlists || []);
         setGlobalPlaylists(playlistsPayload.globalPlaylists || []);
+        setPlaylistDetailCache((current) => {
+          const next = new Map(current);
+          const visibleIds = new Set([
+            ...(playlistsPayload.playlists || []).map((playlist) => playlist.id).filter(Boolean),
+            ...(playlistsPayload.globalPlaylists || []).map((playlist) => playlist.id).filter(Boolean),
+          ]);
+          Array.from(next.keys()).forEach((id) => {
+            if (!visibleIds.has(id)) {
+              next.delete(id);
+            }
+          });
+          return next;
+        });
         if (!selectedPlaylistTarget() && playlistsPayload.playlists?.[0]?.id) {
           setSelectedPlaylistTarget(playlistsPayload.playlists[0].id);
         }
         if (!selectedGlobalPlaylistTarget() && playlistsPayload.globalPlaylists?.[0]?.id) {
           setSelectedGlobalPlaylistTarget(playlistsPayload.globalPlaylists[0].id);
+        }
+        if (globalPlaylistDetail()) {
+          const detailId = globalPlaylistDetail()?.id;
+          const detailStillVisible = [...(playlistsPayload.playlists || []), ...(playlistsPayload.globalPlaylists || [])]
+            .some((playlist) => playlist.id === detailId);
+          if (!detailStillVisible) {
+            setGlobalPlaylistDetail(null);
+            setPlaylistDetailError("");
+            setPlaylistDetailLoading(false);
+          }
         }
         if (!globalPlaylistDetail() && playlistsPayload.globalPlaylists?.[0]?.id) {
           setGlobalPlaylistNameEdit(playlistsPayload.globalPlaylists[0].name || "");
@@ -874,6 +1031,9 @@ function App() {
       } else {
         setPlaylists([]);
         setGlobalPlaylists([]);
+        setPlaylistDetailCache(new Map());
+        setPlaylistDetailLoading(false);
+        setPlaylistDetailError("");
         setSelectedPlaylistTarget("");
         setSelectedGlobalPlaylistTarget("");
       }
@@ -882,6 +1042,9 @@ function App() {
       setFavoriteIds([]);
       setPlaylists([]);
       setGlobalPlaylists([]);
+      setPlaylistDetailCache(new Map());
+      setPlaylistDetailLoading(false);
+      setPlaylistDetailError("");
       setSelectedPlaylistTarget("");
       setSelectedGlobalPlaylistTarget("");
       setAdminUsers([]);
@@ -1107,6 +1270,42 @@ function App() {
     }
   };
 
+  const debugSpotifySession = async () => {
+    const auth = spotifyAuth();
+    if (!auth?.accessToken) {
+      setAccountMessage("Spotify debug: no access token in browser session");
+      return;
+    }
+    const expiresInSeconds = Math.max(0, Math.floor((auth.expiresAt - Date.now()) / 1000));
+    let accessToken = "";
+    try {
+      accessToken = await ensureSpotifyAccessToken();
+    } catch (error) {
+      setAccountMessage(`Spotify debug: token refresh failed (${error?.message || "unknown error"})`);
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/spotify/playlists", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        setAccountMessage(
+          `Spotify debug: token ok, playlist API failed (${payload.message || "unknown error"}) | expires in ${expiresInSeconds}s | scopes: ${auth.scope || "none"}`
+        );
+        return;
+      }
+      setAccountMessage(
+        `Spotify debug: token ok, loaded ${payload.playlists?.length || 0} playlists | expires in ${expiresInSeconds}s | scopes: ${auth.scope || "none"}`
+      );
+    } catch (error) {
+      setAccountMessage(`Spotify debug: request failed (${error?.message || "unknown error"})`);
+    }
+  };
+
   const importSpotifyLikedSongs = async () => {
     if (!user()) {
       return;
@@ -1286,11 +1485,20 @@ function App() {
     if (!user() || !spotifyImportUrl().trim()) {
       return;
     }
+    if (!spotifyConnected()) {
+      setAccountMessage("Connect Spotify first to import playlist links");
+      return;
+    }
     setAccountMessage("Importing Spotify playlist...");
+    const accessToken = await ensureSpotifyAccessToken().catch(() => "");
+    if (!accessToken) {
+      setAccountMessage("Spotify session unavailable. Reconnect Spotify and try again");
+      return;
+    }
     const response = await fetch("/api/playlists/import/spotify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: spotifyImportUrl().trim() }),
+      body: JSON.stringify({ url: spotifyImportUrl().trim(), accessToken }),
     });
     const payload = await response.json();
     if (!response.ok) {
@@ -1320,15 +1528,94 @@ function App() {
   };
 
   const openGlobalPlaylist = async (playlistId) => {
-    const response = await fetch(`/api/playlists/${playlistId}`);
-    const payload = await response.json();
-    if (!response.ok) {
-      setAccountMessage(payload.message || "Unable to load global playlist");
+    if (!playlistId) {
       return;
     }
-    setGlobalPlaylistDetail(payload.playlist);
-    setGlobalPlaylistNameEdit(payload.playlist?.name || "");
-    setSelectedGlobalPlaylistTarget(payload.playlist?.id || "");
+    const requestToken = ++playlistDetailRequestToken;
+    setQuery("");
+    setMovieFilter("");
+    setArtistFilter("");
+    setSearchTab("songs");
+    setSelectedGlobalPlaylistTarget(playlistId);
+    setPlaylistDetailError("");
+
+    const playlistSummary = playlistSummaryById().get(playlistId);
+    const cachedPlaylist = playlistDetailCache().get(playlistId);
+    const cacheLooksFresh = Boolean(cachedPlaylist) && (
+      !playlistSummary ||
+      (
+        (cachedPlaylist.updatedAt || "") === (playlistSummary.updatedAt || "") &&
+        (cachedPlaylist.tracks || []).length === Number(playlistSummary.trackCount || 0)
+      )
+    );
+    if (cacheLooksFresh) {
+      setGlobalPlaylistDetail(cachedPlaylist);
+      setGlobalPlaylistNameEdit(cachedPlaylist.name || "");
+      setPlaylistDetailLoading(false);
+      prefetchSongIds((cachedPlaylist.tracks || []).slice(0, 8).map((track) => track.id));
+      return;
+    }
+
+    if (cachedPlaylist) {
+      setGlobalPlaylistDetail(cachedPlaylist);
+      setGlobalPlaylistNameEdit(cachedPlaylist.name || "");
+    }
+
+    setPlaylistDetailLoading(true);
+    try {
+      const response = await fetch(`/api/playlists/${playlistId}`);
+      const payload = await response.json().catch(() => ({}));
+      if (requestToken !== playlistDetailRequestToken) {
+        return;
+      }
+      if (!response.ok) {
+        setGlobalPlaylistDetail(null);
+        setPlaylistDetailError(payload.message || "Unable to load playlist");
+        setAccountMessage(payload.message || "Unable to load playlist");
+        return;
+      }
+      const nextPlaylist = payload.playlist && typeof payload.playlist === "object"
+        ? {
+            ...payload.playlist,
+            tracks: Array.isArray(payload.playlist.tracks) ? payload.playlist.tracks : [],
+          }
+        : null;
+      if (!nextPlaylist) {
+        setGlobalPlaylistDetail(null);
+        setPlaylistDetailError("Playlist payload was invalid");
+        return;
+      }
+      setPlaylistDetailCache((current) => {
+        const next = new Map(current);
+        next.set(nextPlaylist.id, nextPlaylist);
+        return next;
+      });
+      setGlobalPlaylistDetail(nextPlaylist);
+      setGlobalPlaylistNameEdit(nextPlaylist.name || "");
+      setSelectedGlobalPlaylistTarget(nextPlaylist.id || playlistId);
+      prefetchSongIds((nextPlaylist.tracks || []).slice(0, 8).map((track) => track.id));
+    } catch (error) {
+      if (requestToken !== playlistDetailRequestToken) {
+        return;
+      }
+      setGlobalPlaylistDetail(null);
+      setPlaylistDetailError(error?.message || "Unable to load playlist");
+      setAccountMessage(error?.message || "Unable to load playlist");
+    } finally {
+      if (requestToken === playlistDetailRequestToken) {
+        setPlaylistDetailLoading(false);
+      }
+    }
+  };
+
+  const closeGlobalPlaylist = () => {
+    setGlobalPlaylistDetail(null);
+    setPlaylistDetailError("");
+    setPlaylistDetailLoading(false);
+    setQuery("");
+    setMovieFilter("");
+    setArtistFilter("");
+    setSearchTab("songs");
   };
 
   const removeSongFromGlobalPlaylist = async (playlistId, songId) => {
@@ -1514,6 +1801,9 @@ function App() {
     }
 
     if (autoplay) {
+      if (activeAudio.readyState < 2) {
+        activeAudio.load();
+      }
       void activeAudio.play().catch(() => {});
     } else if (!isSameSong && activeAudio.preload !== "auto") {
       activeAudio.preload = "auto";
@@ -1548,6 +1838,10 @@ function App() {
 
     const current = list.findIndex((song) => song.id === baseId);
     const from = current >= 0 ? current : 0;
+    if (repeatMode() === "album") {
+      const nextIndex = (from + offset + list.length) % list.length;
+      return list[nextIndex] || null;
+    }
     const next = Math.min(list.length - 1, Math.max(0, from + offset));
     return list[next];
   };
@@ -1590,12 +1884,26 @@ function App() {
       return;
     }
 
+    if (mainTab() === "radio" && !currentRadioStation()) {
+      startRadio();
+      return;
+    }
+
     if (!currentSong() && activeSongList()[0]) {
-      loadSong(selectedSong() || activeSongList()[0], true);
+      loadSong(mainTab() === "radio" ? activeSongList()[0] : (selectedSong() || activeSongList()[0]), true);
       return;
     }
 
     if (activeAudio.paused) {
+      if (!activeAudio.src) {
+        const fallbackSong = mainTab() === "radio"
+          ? currentSong() || activeSongList()[0]
+          : selectedSong() || currentSong() || activeSongList()[0];
+        if (fallbackSong) {
+          loadSong(fallbackSong, true);
+          return;
+        }
+      }
       void activeAudio.play().catch(() => {});
     } else {
       stopCrossfade();
@@ -1845,7 +2153,7 @@ function App() {
 
       await completeSpotifyAuthFromUrl();
       await refreshAccountState();
-      await fetchRadioStations();
+      void fetchRadioStations().catch(() => {});
       if (user()?.is_admin) {
         await refreshAdminState();
       }
@@ -1981,20 +2289,13 @@ function App() {
     if (!row) {
       return;
     }
-    const rowTop = row.offsetTop;
-    const rowBottom = rowTop + row.offsetHeight;
-    const viewportTop = listRef.scrollTop;
-    const viewportBottom = viewportTop + listRef.clientHeight;
-    const topPadding = 8;
-    const bottomPadding = 8;
+    const listRect = listRef.getBoundingClientRect();
+    const rowRect = row.getBoundingClientRect();
+    const topPadding = 12;
+    const bottomPadding = 12;
 
-    if (rowTop < viewportTop + topPadding) {
-      animateListScroll(Math.max(0, rowTop - topPadding));
-      return;
-    }
-
-    if (rowBottom > viewportBottom - bottomPadding) {
-      animateListScroll(rowBottom - listRef.clientHeight + bottomPadding);
+    if (rowRect.top < listRect.top + topPadding || rowRect.bottom > listRect.bottom - bottomPadding) {
+      row.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
   });
 
@@ -2021,12 +2322,13 @@ function App() {
       if (!station || !station.songIds?.length) {
         return;
       }
-      const sharedSongId = station.currentSongId || station.songIds[Math.max(0, Number(station.currentIndex || 0))] || "";
+      const playback = resolveRadioStationPlayback(station);
+      const sharedSongId = playback.currentSongId || "";
       if (!sharedSongId || currentTrackId() === sharedSongId) {
         return;
       }
       applyRadioStation(station.id, true);
-    }, 15000);
+    }, 5000);
   });
 
   onCleanup(() => {
@@ -2131,58 +2433,61 @@ function App() {
       </header>
 
       <section class="border-b border-[var(--line)] px-6 py-3">
-        <div class="flex flex-wrap items-center gap-5 font-mono text-[10px] uppercase tracking-[0.22em]">
-          <button type="button" onClick={() => setMainBrowseTab("library")} class={`px-1 py-1 ${mainTab() === "library" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
-            Library
-          </button>
-          <button type="button" onClick={() => setMainBrowseTab("recents")} class={`px-1 py-1 ${mainTab() === "recents" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
-            Recents {recentSongs().length ? `(${recentSongs().length})` : ""}
-          </button>
-          <Show when={user()}>
-            <button type="button" onClick={() => setMainBrowseTab("favorites")} class={`px-1 py-1 ${mainTab() === "favorites" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
-              Favorites {favoriteSongs().length ? `(${favoriteSongs().length})` : ""}
+        <div class="flex flex-wrap items-center justify-between gap-4">
+          <div class="flex flex-wrap items-center gap-5 font-mono text-[10px] uppercase tracking-[0.22em]">
+            <button type="button" onClick={() => setMainBrowseTab("library")} class={`px-1 py-1 ${mainTab() === "library" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
+              Library
             </button>
-          </Show>
-          <button type="button" onClick={() => setMainBrowseTab("radio")} class={`px-1 py-1 ${mainTab() === "radio" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
-            Radio
-          </button>
-          <Show when={user()?.is_admin}>
-            <button type="button" onClick={() => setMainBrowseTab("admin")} class={`px-1 py-1 ${mainTab() === "admin" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
-              Admin
+            <button type="button" onClick={() => setMainBrowseTab("recents")} class={`px-1 py-1 ${mainTab() === "recents" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
+              Recents
             </button>
+            <Show when={user()}>
+              <button type="button" onClick={() => setMainBrowseTab("favorites")} class={`px-1 py-1 ${mainTab() === "favorites" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
+                Favorites {favoriteSongs().length ? `(${favoriteSongs().length})` : ""}
+              </button>
+            </Show>
+            <button type="button" onClick={() => setMainBrowseTab("radio")} class={`px-1 py-1 ${mainTab() === "radio" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
+              Radio
+            </button>
+            <Show when={user()?.is_admin}>
+              <button type="button" onClick={() => setMainBrowseTab("admin")} class={`px-1 py-1 ${mainTab() === "admin" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
+                Admin
+              </button>
+            </Show>
+          </div>
+          <Show when={mainTab() === "library"}>
+            <div class="flex min-w-[280px] flex-1 items-center justify-end gap-3">
+              <div class="flex w-full max-w-[560px] items-center gap-3 border border-[var(--line)] px-3 py-2">
+                <span class="font-mono text-sm text-[var(--soft)]">/</span>
+                <input
+                  ref={(el) => {
+                    searchInputRef = el;
+                  }}
+                  value={query()}
+                  onInput={(event) => {
+                    setMovieFilter("");
+                    setArtistFilter("");
+                    setQuery(event.currentTarget.value);
+                  }}
+                  placeholder="Search tracks, singers, albums..."
+                  class="w-full bg-transparent font-mono text-sm tracking-wide text-[var(--fg)] outline-none placeholder:text-[var(--muted)]"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMovieFilter("");
+                    setArtistFilter("");
+                    setQuery("");
+                  }}
+                  class="shrink-0 font-mono text-xs uppercase tracking-[0.2em] text-[var(--muted)] transition hover:text-[var(--fg)]"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
           </Show>
         </div>
       </section>
-
-      <Show when={mainTab() === "library"}>
-        <section class="flex items-center gap-3 border-b border-[var(--line)] px-6 py-4">
-          <span class="font-mono text-sm text-[var(--soft)]">/</span>
-          <input
-            ref={(el) => {
-              searchInputRef = el;
-            }}
-            value={query()}
-            onInput={(event) => {
-              setMovieFilter("");
-              setArtistFilter("");
-              setQuery(event.currentTarget.value);
-            }}
-            placeholder="Search tracks, singers, albums..."
-            class="w-full bg-transparent font-mono text-sm tracking-wide text-[var(--fg)] outline-none placeholder:text-[var(--muted)]"
-          />
-          <button
-            type="button"
-            onClick={() => {
-              setMovieFilter("");
-              setArtistFilter("");
-              setQuery("");
-            }}
-            class="font-mono text-xs uppercase tracking-[0.2em] text-[var(--muted)] transition hover:text-[var(--fg)]"
-          >
-            Clear
-          </button>
-        </section>
-      </Show>
 
       <Show when={user()}>
         <section class="border-b border-[var(--line-soft)] px-6 py-3">
@@ -2248,6 +2553,13 @@ function App() {
                 <SpotifyIcon />
               </button>
               <Show when={spotifyConnected()}>
+                <button
+                  type="button"
+                  onClick={() => void debugSpotifySession()}
+                  class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)] transition hover:text-[var(--fg)]"
+                >
+                  Debug Spotify
+                </button>
                 <button
                   type="button"
                   onClick={() => void importSpotifyLikedSongs().catch((error) => setAccountMessage(error?.message || "Spotify liked songs import failed"))}
@@ -2656,105 +2968,6 @@ function App() {
         </section>
       </Show>
 
-      <Show when={mainTab() === "library"}>
-        <section class="border-b border-[var(--line-soft)] px-6 py-2">
-          <div class="flex items-center gap-4 font-mono text-[10px] uppercase tracking-[0.22em]">
-            <button type="button" onClick={() => setSearchTab("songs")} class={searchTab() === "songs" ? "text-[var(--fg)]" : "text-[var(--soft)]"}>Songs</button>
-            <button type="button" onClick={() => setSearchTab("albums")} class={searchTab() === "albums" ? "text-[var(--fg)]" : "text-[var(--soft)]"}>Albums</button>
-            <button type="button" onClick={() => setSearchTab("artists")} class={searchTab() === "artists" ? "text-[var(--fg)]" : "text-[var(--soft)]"}>Artists</button>
-          </div>
-        </section>
-      </Show>
-
-      <Show when={mainTab() === "library" && (query().trim() || movieFilter() || artistFilter())}>
-        <section class="border-b border-[var(--line-soft)] px-6 py-4">
-          <div class="flex items-center justify-between gap-4">
-            <div class="min-w-0">
-              <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">
-                {movieFilter() ? "Filtered by album" : artistFilter() ? "Filtered by artist" : "Search filters"}
-              </div>
-              <Show when={movieFilter()}>
-                <div class="mt-1 truncate text-sm text-[var(--fg)]">{movieFilter()}</div>
-              </Show>
-              <Show when={!movieFilter() && artistFilter()}>
-                <div class="mt-1 truncate text-sm text-[var(--fg)]">{artistFilter()}</div>
-              </Show>
-              <Show when={!movieFilter() && query().trim()}>
-                <div class="mt-1 text-xs text-[var(--soft)]">Songs, albums, and artists are separate views over the same results.</div>
-              </Show>
-            </div>
-            <Show when={movieFilter() || artistFilter()}>
-              <button
-                type="button"
-                onClick={() => {
-                  setMovieFilter("");
-                  setArtistFilter("");
-                  setSearchTab("songs");
-                }}
-                class="shrink-0 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--soft)] transition hover:text-[var(--fg)]"
-              >
-                Clear filter
-              </button>
-            </Show>
-          </div>
-
-          <Show when={!movieFilter() && !artistFilter() && searchTab() === "albums" && visibleAlbums().length > 0}>
-            <div class="mt-3 flex flex-wrap gap-2">
-              <For each={visibleAlbums()}>
-                {(album) => (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMovieFilter(album.album);
-                      setSearchTab("songs");
-                    }}
-                    class="border border-[var(--line)] px-3 py-2 text-left text-[var(--fg)] transition hover:border-[var(--fg)]"
-                    title={`${album.count} songs`}
-                  >
-                    <div class="text-sm">{album.album}</div>
-                    <div class="font-mono text-[10px] text-[var(--soft)]">
-                      {album.musicDirector || "-"} · {album.year || "-"} · {album.count}
-                    </div>
-                  </button>
-                )}
-              </For>
-            </div>
-          </Show>
-
-          <Show when={!movieFilter() && !artistFilter() && searchTab() === "artists" && visibleArtists().length > 0}>
-            <div class="mt-3 flex flex-wrap gap-2">
-              <For each={visibleArtists()}>
-                {(artist) => (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setArtistFilter(artist.artist);
-                      setSearchTab("songs");
-                    }}
-                    class="border border-[var(--line)] px-3 py-2 text-left text-[var(--fg)] transition hover:border-[var(--fg)]"
-                    title={`${artist.count} songs`}
-                  >
-                    <div class="text-sm">{artist.artist}</div>
-                    <div class="font-mono text-[10px] text-[var(--soft)]">{artist.count} songs</div>
-                  </button>
-                )}
-              </For>
-            </div>
-          </Show>
-
-          <div class="mt-3 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">
-            <span>{searchTab()}</span>
-            <span>
-              {searchTab() === "songs"
-                ? visibleResults().length.toLocaleString()
-                : searchTab() === "albums"
-                  ? visibleAlbums().length.toLocaleString()
-                  : visibleArtists().length.toLocaleString()} shown
-            </span>
-          </div>
-        </section>
-      </Show>
-
       <section class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <Show when={showShortcutHelp()}>
           <div class="absolute inset-0 z-40 bg-black/30">
@@ -2844,7 +3057,7 @@ function App() {
           <section class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
             <div class="mx-auto flex w-full max-w-6xl flex-col gap-5 pb-8">
               <div class="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)]">
-                <span>{radioLoading() ? "Building stations..." : `${radioStations().length} stations`}</span>
+                <span>{radioLoading() ? "Building stations..." : `${filteredRadioStations().length} of ${radioStations().length} stations`}</span>
                 <Show when={currentRadioStation()}>
                   <span>{currentRadioStation().yearStart} - {currentRadioStation().yearEnd}</span>
                 </Show>
@@ -2899,8 +3112,17 @@ function App() {
                 </div>
               </Show>
 
+              <div class="border border-[var(--line)] bg-[var(--panel)] p-3">
+                <input
+                  value={radioSearchQuery()}
+                  onInput={(event) => setRadioSearchQuery(event.currentTarget.value)}
+                  placeholder="Search stations"
+                  class="w-full bg-transparent px-1 py-2 font-mono text-xs text-[var(--fg)] outline-none placeholder:text-[var(--muted)]"
+                />
+              </div>
+
               <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                <For each={radioStations()}>
+                <For each={filteredRadioStations()}>
                   {(station) => (
                     <button
                       type="button"
@@ -2921,6 +3143,11 @@ function App() {
                   )}
                 </For>
               </div>
+              <Show when={!radioLoading() && filteredRadioStations().length === 0}>
+                <div class="border border-[var(--line)] bg-[var(--panel)] p-5 text-sm text-[var(--soft)]">
+                  No radio stations match that search.
+                </div>
+              </Show>
             </div>
           </section>
         </Show>
@@ -2929,17 +3156,16 @@ function App() {
             <div class="grid h-full min-h-0 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
               <aside class="min-h-0 overflow-y-auto border border-[var(--line)] bg-[var(--panel)] p-4">
                 <div class="flex items-center justify-between gap-3">
-                  <div>
-                    <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Playlists</div>
-                    <div class="mt-1 text-sm text-[var(--soft)]">Global picks for everyone, plus yours when signed in.</div>
-                  </div>
+                  <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Playlists</div>
                   <Show when={!user()}>
                     <button
                       type="button"
                       onClick={() => setShowAuthPrompt(true)}
-                      class="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--soft)] transition hover:text-[var(--fg)]"
+                      aria-label="Create playlist"
+                      title="Create playlist"
+                      class="flex h-7 w-7 items-center justify-center border border-[var(--line)] bg-[var(--hover)] font-mono text-base leading-none text-[var(--fg)] transition hover:border-[var(--fg)]"
                     >
-                      Join
+                      +
                     </button>
                   </Show>
                 </div>
@@ -2962,32 +3188,27 @@ function App() {
                   </div>
                 </Show>
 
-                <Show when={!user()}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAccountMessage("Create an account to make playlists");
-                      setShowAuthPrompt(true);
-                    }}
-                    class="mt-4 w-full border border-dashed border-[var(--line)] px-3 py-4 text-left transition hover:border-[var(--fg)]"
-                  >
-                    <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Your playlists</div>
-                    <div class="mt-2 text-sm text-[var(--soft)]">Create an account to make playlists and save songs.</div>
-                  </button>
-                </Show>
-
                 <div class="mt-5 space-y-5">
-                  <Show when={playlists().length > 0}>
+                  <div>
+                    <input
+                      value={playlistSearchQuery()}
+                      onInput={(event) => setPlaylistSearchQuery(event.currentTarget.value)}
+                      placeholder="Search playlists"
+                      class="w-full border border-[var(--line)] bg-transparent px-3 py-2 font-mono text-xs text-[var(--fg)] outline-none placeholder:text-[var(--muted)]"
+                    />
+                  </div>
+
+                  <Show when={filteredUserPlaylists().length > 0}>
                     <div>
                       <div class="mb-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Yours</div>
                       <div class="grid grid-cols-2 gap-2">
-                        <For each={playlists()}>
+                        <For each={filteredUserPlaylists()}>
                           {(playlist) => (
                             <button
                               type="button"
                               onClick={() => void openGlobalPlaylist(playlist.id)}
                               class={`border p-3 text-left transition ${
-                                globalPlaylistDetail()?.id === playlist.id
+                                selectedGlobalPlaylistTarget() === playlist.id
                                   ? "border-[var(--fg)] bg-[var(--hover)]"
                                   : "border-[var(--line)] hover:border-[var(--fg)]"
                               }`}
@@ -3001,17 +3222,17 @@ function App() {
                     </div>
                   </Show>
 
-                  <Show when={globalPlaylists().length > 0}>
+                  <Show when={filteredGlobalPlaylists().length > 0}>
                     <div>
                       <div class="mb-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Global</div>
                       <div class="grid grid-cols-2 gap-2">
-                        <For each={globalPlaylists()}>
+                        <For each={filteredGlobalPlaylists()}>
                           {(playlist) => (
                             <button
                               type="button"
                               onClick={() => void openGlobalPlaylist(playlist.id)}
                               class={`border p-3 text-left transition ${
-                                globalPlaylistDetail()?.id === playlist.id
+                                selectedGlobalPlaylistTarget() === playlist.id
                                   ? "border-[var(--fg)] bg-[var(--hover)]"
                                   : "border-[var(--line)] hover:border-[var(--fg)]"
                               }`}
@@ -3024,33 +3245,105 @@ function App() {
                       </div>
                     </div>
                   </Show>
-                </div>
 
-                <Show when={globalPlaylistDetail()}>
-                  {(playlist) => (
-                    <div class="mt-5 border border-[var(--line-soft)] p-3">
-                      <div class="text-sm">{playlist().name}</div>
-                      <div class="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--soft)]">{playlist().source || "manual"}</div>
-                      <div class="mt-4 space-y-2">
-                        <For each={playlist().tracks || []}>
-                          {(track, index) => (
-                            <button
-                              type="button"
-                              onClick={() => loadSong(track, true)}
-                              class="flex w-full items-center gap-3 border-b border-[var(--line-soft)] pb-2 text-left text-sm last:border-b-0 last:pb-0"
-                            >
-                              <span class="font-mono text-[10px] text-[var(--soft)]">{String(index() + 1).padStart(2, "0")}</span>
-                              <span class="min-w-0 truncate">{track.track}</span>
-                            </button>
-                          )}
-                        </For>
-                      </div>
+                  <Show when={normalizedPlaylistSearch() && filteredUserPlaylists().length === 0 && filteredGlobalPlaylists().length === 0}>
+                    <div class="border border-[var(--line)] px-3 py-4 text-sm text-[var(--soft)]">
+                      No playlists match that search.
                     </div>
-                  )}
-                </Show>
+                  </Show>
+                </div>
               </aside>
 
               <div class="flex min-h-0 flex-col overflow-hidden border border-[var(--line)] bg-[var(--panel)]">
+                <Show when={playlistDetailLoading() && !showPlaylistDetail()}>
+                  <div class="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
+                    <div>
+                      <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Playlist</div>
+                      <div class="mt-3 text-sm text-[var(--soft)]">Loading{loadingDots()}</div>
+                    </div>
+                  </div>
+                </Show>
+                <Show when={!playlistDetailLoading() && playlistDetailError() && !showPlaylistDetail()}>
+                  <div class="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
+                    <div>
+                      <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Playlist</div>
+                      <div class="mt-3 text-sm text-[var(--soft)]">{playlistDetailError()}</div>
+                    </div>
+                  </div>
+                </Show>
+                <Show when={visiblePlaylistDetail()}>
+                  {(playlist) => (
+                    <>
+                      <section class="border-b border-[var(--line-soft)] px-4 py-4">
+                        <div class="flex items-center justify-between gap-4">
+                          <div class="min-w-0">
+                            <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Playlist</div>
+                            <div class="mt-2 text-lg font-semibold">{playlist().name}</div>
+                            <div class="mt-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--soft)]">
+                              {playlist().source || "manual"} · {(playlist().tracks || []).length} tracks
+                            </div>
+                          </div>
+                          <div class="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={closeGlobalPlaylist}
+                              class="shrink-0 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)] transition hover:text-[var(--fg)]"
+                            >
+                              All songs
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setGlobalPlaylistDetail(null)}
+                              class="shrink-0 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)] transition hover:text-[var(--fg)]"
+                            >
+                              Close
+                            </button>
+                          </div>
+                        </div>
+                      </section>
+                      <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-4 py-2">
+                        <span class="w-8 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">#</span>
+                        <span class="min-w-0 flex-[1.2] font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Song</span>
+                        <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] md:block">Singers</span>
+                        <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] lg:block">Movie</span>
+                        <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] xl:block">Music Director</span>
+                        <span class="w-20 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Year</span>
+                      </div>
+                      <Show
+                        when={(playlist().tracks || []).length > 0}
+                        fallback={
+                          <div class="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
+                            <div class="text-sm text-[var(--soft)]">No songs in this playlist yet.</div>
+                          </div>
+                        }
+                      >
+                        <ul class="min-h-0 flex-1 overflow-y-auto">
+                          <For each={playlist().tracks || []}>
+                            {(track, index) => (
+                              <li>
+                                <button
+                                  type="button"
+                                  onClick={() => loadSong(track, true)}
+                                  class="flex w-full items-center gap-4 border-b px-4 py-3 text-left transition hover:bg-[var(--hover)]"
+                                >
+                                  <span class="w-8 text-right font-mono text-xs text-[var(--soft)]">
+                                    {currentTrackId() === track.id && isPlaying() && streamStarted() ? <PlayingBars /> : String(index() + 1).padStart(2, "0")}
+                                  </span>
+                                  <span class="min-w-0 flex-[1.2] truncate text-sm">{track.track}</span>
+                                  <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] md:block">{track.singers || "-"}</span>
+                                  <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] lg:block">{track.movie || "-"}</span>
+                                  <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] xl:block">{track.musicDirector || "-"}</span>
+                                  <span class="w-20 font-mono text-[11px] text-[var(--soft)]">{track.year || "-"}</span>
+                                </button>
+                              </li>
+                            )}
+                          </For>
+                        </ul>
+                      </Show>
+                    </>
+                  )}
+                </Show>
+                <Show when={!playlistDetailLoading() && (!showPlaylistDetail() || query().trim() || movieFilter() || artistFilter()) && !playlistDetailError()}>
                 <section class="border-b border-[var(--line-soft)] px-4 py-3">
                   <div class="flex items-center gap-4 font-mono text-[10px] uppercase tracking-[0.22em]">
                     <button type="button" onClick={() => setSearchTab("songs")} class={searchTab() === "songs" ? "text-[var(--fg)]" : "text-[var(--soft)]"}>Songs</button>
@@ -3222,6 +3515,7 @@ function App() {
                       </For>
                     </div>
                   </div>
+                </Show>
                 </Show>
               </div>
             </div>
@@ -3445,6 +3739,10 @@ function App() {
             <audio
               ref={(el) => {
                 audioRefs[deckIndex] = el;
+                if (el) {
+                  el.playbackRate = playbackSpeed();
+                  el.defaultPlaybackRate = playbackSpeed();
+                }
               }}
               preload="auto"
               onPlay={(event) => {

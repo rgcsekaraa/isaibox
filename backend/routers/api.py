@@ -401,7 +401,7 @@ def get_playlist(playlist_id: str):
     user = get_session_user()
     with get_read_conn() as conn:
         playlist = conn.execute(
-            "SELECT playlist_id, name, is_global, source, source_url, user_id FROM playlists WHERE playlist_id = ?",
+            "SELECT playlist_id, name, is_global, source, source_url, user_id, updated_at FROM playlists WHERE playlist_id = ?",
             [playlist_id],
         ).fetchone()
     if not playlist:
@@ -420,6 +420,7 @@ def get_playlist(playlist_id: str):
                 "isGlobal": bool(playlist[2]),
                 "source": playlist[3] or "manual",
                 "sourceUrl": playlist[4] or "",
+                "updatedAt": playlist[6].isoformat() if playlist[6] else "",
                 "tracks": playlist_tracks(playlist_id),
             },
         }
@@ -466,12 +467,29 @@ def add_song_to_playlist(playlist_id: str):
     if not song_id:
         return json_response({"ok": False, "message": "songId is required"}), 400
     with db.get_conn() as conn:
+        song = conn.execute(
+            """
+            SELECT song_id
+            FROM songs
+            WHERE song_id = ? AND url_320kbps IS NOT NULL AND url_320kbps != ''
+            LIMIT 1
+            """,
+            [song_id],
+        ).fetchone()
+        if not song:
+            return json_response({"ok": False, "message": "Song not found"}), 404
         playlist = conn.execute(
             "SELECT playlist_id, is_global, user_id FROM playlists WHERE playlist_id = ?",
             [playlist_id],
         ).fetchone()
         if not playlist or (playlist[1] and not user["is_admin"]) or (not playlist[1] and playlist[2] != user["user_id"]):
             return json_response({"ok": False, "message": "Playlist not found"}), 404
+        existing = conn.execute(
+            "SELECT 1 FROM playlist_songs WHERE playlist_id = ? AND song_id = ? LIMIT 1",
+            [playlist_id, song_id],
+        ).fetchone()
+        if existing:
+            return json_response({"ok": True, "alreadyExists": True})
         next_position = conn.execute(
             "SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_songs WHERE playlist_id = ?",
             [playlist_id],
@@ -537,10 +555,11 @@ def import_spotify_playlist():
         return error_response
     payload = request.get_json(silent=True) or {}
     playlist_url = (payload.get("url") or "").strip()
+    access_token = (payload.get("accessToken") or "").strip()
     if not playlist_url:
         return json_response({"ok": False, "message": "Spotify playlist URL is required"}), 400
     try:
-        playlist_name, tracks = resolve_spotify_playlist_tracks(playlist_url)
+        playlist_name, tracks = resolve_spotify_playlist_tracks(playlist_url, access_token=access_token)
     except Exception as exc:
         app.logger.warning("Spotify import failed", exc_info=True)
         return json_response({"ok": False, "message": str(exc) or "Spotify import failed"}), 400

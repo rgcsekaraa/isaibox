@@ -206,6 +206,7 @@ SPOTIFY_SCOPES = "user-library-read playlist-read-private"
 _GEMINI_KEYS_RAW = os.environ.get("GEMINI_API_KEYS", "") or os.environ.get("GEMINI_API_KEY", "")
 GEMINI_API_KEYS = [key.strip() for key in re.split(r"[\n,]+", _GEMINI_KEYS_RAW) if key.strip()]
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_TIMEOUT_SECONDS = max(2, int(os.environ.get("GEMINI_TIMEOUT_SECONDS", "8")))
 SESSION_SECRET = os.environ.get("ISAIBOX_SESSION_SECRET", "isaibox-dev-session-secret")
 ADMIN_EMAILS = {
     email.strip().lower()
@@ -225,7 +226,7 @@ RADIO_STATION_COUNT = 25
 RADIO_STATION_SONG_COUNT = 100
 RADIO_STATION_CACHE_TTL = timedelta(hours=12)
 RADIO_SHARED_SONG_SECONDS = 240
-AI_PLAYLIST_COUNT = 8
+AI_PLAYLIST_COUNT = 50
 AI_PLAYLIST_SONG_COUNT = 50
 SPOTIFY_PUBLIC_HEADERS = {
     "User-Agent": (
@@ -428,7 +429,7 @@ def generate_gemini_json(system_instruction: str, user_prompt: str, task_name: s
                     "responseMimeType": "application/json",
                 },
             },
-            timeout=90,
+            timeout=(3, GEMINI_TIMEOUT_SECONDS),
         )
         response.raise_for_status()
         payload = response.json()
@@ -506,48 +507,124 @@ def fallback_radio_blueprints(snapshot: dict) -> list[dict]:
 def fallback_ai_playlist_blueprints(snapshot: dict) -> list[dict]:
     top_artists = [item["name"] for item in snapshot.get("topArtists", [])[:10]]
     top_directors = [item["name"] for item in snapshot.get("topDirectors", [])[:8]]
-    templates = [
-        ("Late Bus", "Warm melody picks for the ride back home.", 1997, 2026, ["night", "melody", "city"], top_artists[:3], top_directors[:2]),
-        ("Rain Shelf", "Soft rain-window songs with gentle replay energy.", 1997, 2026, ["rain", "soft", "ache"], top_artists[2:5], top_directors[1:3]),
-        ("Sunday Tea", "Easy familiar songs for a slow, bright afternoon.", 1999, 2026, ["easy", "warm", "weekend"], top_artists[4:7], top_directors[2:4]),
-        ("Signal Cut", "Popular rhythm-led tracks with clean momentum.", 2004, 2026, ["popular", "rhythm", "move"], top_artists[:4], top_directors[3:5]),
-        ("Old Letter", "Nostalgic melody-first picks from the deeper catalog.", 1997, 2012, ["nostalgia", "melody", "classic"], top_artists[3:6], top_directors[:3]),
-        ("Blue Bench", "Low-key romance songs that stay light and memorable.", 2000, 2026, ["romance", "light", "calm"], top_artists[1:4], top_directors[2:5]),
-        ("City Soft", "Modern polished soundtrack songs with smooth pacing.", 2011, 2026, ["modern", "smooth", "urban"], top_artists[5:8], top_directors[4:6]),
-        ("FM Loop", "Replay-friendly staples that feel like a good radio hour.", 1997, 2026, ["fm", "familiar", "replay"], top_artists[:5], top_directors[:4]),
+    lead_director = top_directors[0] if top_directors else "Top Director"
+    second_director = top_directors[1] if len(top_directors) > 1 else lead_director
+    lead_artist = top_artists[0] if top_artists else "Top Artist"
+    second_artist = top_artists[1] if len(top_artists) > 1 else lead_artist
+    templates: list[tuple[str, str, int, int, list[str], list[str], list[str]]] = [
+        (f"{lead_director} Hits", "Big soundtrack favorites from one core composer lane.", 1997, 2026, ["hits", "popular", "composer"], top_artists[:4], [lead_director]),
+        (f"{second_director} Essentials", "Widely loved songs from another major composer shelf.", 1997, 2026, ["essentials", "familiar", "composer"], top_artists[1:5], [second_director]),
+        (f"{lead_artist} Favorites", "Replayable vocal-led songs from a familiar star voice.", 1997, 2026, ["favorites", "popular", "voice"], [lead_artist], top_directors[:3]),
+        (f"{second_artist} Spotlight", "Known crowd picks centered around one singer lane.", 1997, 2026, ["spotlight", "hits", "crowd"], [second_artist], top_directors[1:4]),
+        ("2026 Hits", "Current-year songs that feel like the common chart shelf.", 2026, 2026, ["2026", "latest", "hits"], top_artists[:5], top_directors[:4]),
+        ("2025 Hits", "Recent-year songs with broad repeat value.", 2025, 2025, ["2025", "recent", "hits"], top_artists[:5], top_directors[:4]),
+        ("Latest Chart Busters", "Recent crowd-friendly songs with broad appeal.", 2023, 2026, ["latest", "chart", "busters"], top_artists[:6], top_directors[:4]),
+        ("Fresh Tamil Hits", "Current-wave popular songs from the latest years.", 2022, 2026, ["fresh", "popular", "current"], top_artists[:6], top_directors[:4]),
+        ("90s and 2000s Gold", "Familiar older favorites from the melody-heavy years.", 1997, 2009, ["gold", "classic", "nostalgia"], top_artists[:5], top_directors[:4]),
+        ("2010s Melody", "Strong melody-led songs from the 2010s run.", 2010, 2019, ["2010s", "melody", "favorites"], top_artists[:5], top_directors[:4]),
+        ("Love Melody Picks", "Shared romantic melody staples people keep coming back to.", 1999, 2026, ["love", "melody", "romance"], top_artists[1:6], top_directors[:4]),
+        ("Dance Floor Tamil", "Fast, crowd-moving songs with easy energy.", 2000, 2026, ["dance", "beat", "energy"], top_artists[:6], top_directors[:4]),
+        ("Rain + Gaana Combo", "Unexpected rainy melodies mixed with street-energy hooks.", 1997, 2026, ["rain", "gaana", "contrast"], top_artists[:6], top_directors[:4]),
+        ("Night Bus Mass", "Late-night atmosphere with sudden crowd-pleasing turns.", 1997, 2026, ["night", "mass", "moody"], top_artists[:6], top_directors[:4]),
+        ("Soft Start Loud Finish", "Gentle openers with rising-energy second halves.", 1999, 2026, ["soft", "loud", "build"], top_artists[:6], top_directors[:4]),
+        ("Village Beats City Lights", "Rural-flavored hooks meeting glossy urban songs.", 1999, 2026, ["village", "city", "contrast"], top_artists[:6], top_directors[:4]),
+        ("Monsoon Dance Floor", "Rain-window melody crosswired with dance energy.", 2000, 2026, ["monsoon", "dance", "blend"], top_artists[:6], top_directors[:4]),
+        ("Broken Love Bangers", "Heartbreak songs that still hit with crowd energy.", 2000, 2026, ["heartbreak", "banger", "melody"], top_artists[:6], top_directors[:4]),
+        ("Tea Shop to Club", "Everyday local warmth sliding into late-night momentum.", 1999, 2026, ["tea", "club", "journey"], top_artists[:6], top_directors[:4]),
+        ("Temple Street Synths", "Folk-rooted feeling with modern electronic polish.", 2005, 2026, ["folk", "synth", "hybrid"], top_artists[:6], top_directors[:4]),
+        ("Slow Burn Hooks", "Songs that start restrained and stay stuck in the head.", 1999, 2026, ["slow", "hook", "grower"], top_artists[:6], top_directors[:4]),
+        ("Midnight Melody Fight", "Soft romantic songs interrupted by sharper rhythm picks.", 1999, 2026, ["midnight", "melody", "rhythm"], top_artists[:6], top_directors[:4]),
+        ("Bus Stand Romance", "Public-space melancholy and familiar love-song pull.", 1999, 2026, ["bus", "romance", "everyday"], top_artists[:6], top_directors[:4]),
+        ("Hero Intro + Heartbreak", "Big-entry swagger mixed with emotional comedown songs.", 2000, 2026, ["hero", "heartbreak", "contrast"], top_artists[:6], top_directors[:4]),
     ]
-    return [
-        {
-            "name": name,
-            "blurb": blurb,
-            "yearStart": year_start,
-            "yearEnd": year_end,
-            "includeArtists": artists,
-            "includeDirectors": directors,
-            "includeMovies": [],
-            "keywords": keywords,
-        }
-        for name, blurb, year_start, year_end, keywords, artists, directors in templates[:AI_PLAYLIST_COUNT]
+
+    for index, director in enumerate(top_directors[:10]):
+        templates.append((
+            f"{director} Spotlight",
+            "A focused shelf built around one major composer run.",
+            1997,
+            2026,
+            ["spotlight", "composer", "popular"],
+            top_artists[index:index + 4] or top_artists[:4],
+            [director],
+        ))
+    for index, artist in enumerate(top_artists[:10]):
+        templates.append((
+            f"{artist} Collection",
+            "A familiar shelf centered around one major singer lane.",
+            1997,
+            2026,
+            ["collection", "favorites", "voice"],
+            [artist],
+            top_directors[index:index + 3] or top_directors[:3],
+        ))
+    year_shelves = [
+        ("1997-2001 Deep Cut", 1997, 2001),
+        ("2002-2006 Repeat Shelf", 2002, 2006),
+        ("2007-2011 Peak Replay", 2007, 2011),
+        ("2012-2016 Urban Melody", 2012, 2016),
+        ("2017-2021 New Wave", 2017, 2021),
+        ("2022-2026 Fast Movers", 2022, 2026),
     ]
+    for name, start, end in year_shelves:
+        templates.append((
+            name,
+            "A period shelf built around one tight era slice.",
+            start,
+            end,
+            ["era", "replay", "catalog"],
+            top_artists[:6],
+            top_directors[:4],
+        ))
+
+    seen_names: set[str] = set()
+    playlists: list[dict] = []
+    for name, blurb, year_start, year_end, keywords, artists, directors in templates:
+        key = normalize_text(name)
+        if key in seen_names:
+            continue
+        seen_names.add(key)
+        playlists.append(
+            {
+                "name": name,
+                "blurb": blurb,
+                "yearStart": year_start,
+                "yearEnd": year_end,
+                "includeArtists": artists,
+                "includeDirectors": directors,
+                "includeMovies": [],
+                "keywords": keywords,
+            }
+        )
+        if len(playlists) >= AI_PLAYLIST_COUNT:
+            break
+    return playlists[:AI_PLAYLIST_COUNT]
 
 
 def generate_ai_playlist_blueprints_with_gemini(snapshot: dict) -> list[dict]:
     system_instruction = (
         "You create Tamil music playlist blueprints from library metadata. "
-        "Return valid JSON only. Create exactly 8 distinct playlists. "
-        "Use simple, local-sounding names. Keep blurbs short. "
-        "Choose year spans and artist/director anchors broad enough to fill 50 songs each."
+        "Return valid JSON only. Create exactly 50 distinct playlists. "
+        "These playlists are global shelves shown to every user, so prefer common, public-facing playlist ideas. "
+        "Keep blurbs short. Choose year spans and artist/director anchors broad enough to fill 50 songs each."
     )
     user_prompt = (
         "Using the catalog snapshot below, return JSON in this shape:\n"
-        '{ "playlists": [ { "name": "Late Bus", "blurb": "Warm melody picks", "yearStart": 1997, "yearEnd": 2026, '
+        '{ "playlists": [ { "name": "A.R. Rahman Hits", "blurb": "Big soundtrack favorites", "yearStart": 1997, "yearEnd": 2026, '
         '"includeArtists": ["Artist"], "includeDirectors": ["Director"], "includeMovies": ["Movie"], "keywords": ["night", "melody"] } ] }\n'
         "Rules:\n"
-        "- Exactly 8 playlists.\n"
-        "- Names should be simple and memorable.\n"
+        "- Exactly 50 playlists.\n"
+        "- Names should feel common and widely understandable, like public app shelves.\n"
+        "- Favor broad shared concepts such as composer hits, singer favorites, latest hits, chart busters, nostalgia, love songs, and decade/year shelves.\n"
+        "- At least 20 playlists should be artist/director-led shelves such as 'A.R. Rahman Hits' or 'Yuvan Essentials' if the catalog supports them.\n"
+        "- At least 10 playlists should be recency/common shelves such as '2026 Hits' or 'Latest Chart Busters' if the catalog supports them.\n"
+        "- Include decade or era shelves as well, such as 90s, 2000s, 2010s, or recent years.\n"
+        "- Include at least 12 peculiar but still useful combo playlists that blend contrasting ideas, like rain plus gaana, heartbreak plus energy, village plus synths, or hero-intro plus romance.\n"
         "- Use 2 to 6 includeArtists, 1 to 4 includeDirectors, 0 to 4 includeMovies, and 2 to 6 keywords.\n"
         "- Keep yearStart/yearEnd between 1997 and 2026.\n"
-        "- Focus on melody, replayability, rain, nostalgia, soft romance, urban polish, and easy favorites.\n\n"
+        "- Avoid overly private or quirky mood names like diary-style playlist titles.\n"
+        "- Focus on replayability, popularity, nostalgia, melody, romance, and recognizable public categories.\n"
+        "- Make the total set feel broad, distinct, and low-overlap.\n\n"
         f"Catalog snapshot:\n{json.dumps(snapshot, ensure_ascii=True)}"
     )
     data = generate_gemini_json(system_instruction, user_prompt, "ai-playlists")
@@ -664,8 +741,16 @@ def build_station_song_ids(station: dict, songs: list[dict]) -> list[str]:
     return selected[:RADIO_STATION_SONG_COUNT]
 
 
-def build_playlist_song_ids(blueprint: dict, songs: list[dict]) -> list[str]:
-    ranked = sorted(songs, key=lambda song: score_song_for_station(song, blueprint), reverse=True)
+def build_playlist_song_ids(blueprint: dict, songs: list[dict], usage_counts: dict[str, int] | None = None) -> list[str]:
+    usage_counts = usage_counts or {}
+    scored_songs = [(score_song_for_station(song, blueprint), song) for song in songs]
+    ranked = [
+        song
+        for _, song in sorted(
+            scored_songs,
+            key=lambda item: (usage_counts.get(item[1]["id"], 0), -item[0]),
+        )
+    ]
     selected: list[str] = []
     movie_counts: dict[str, int] = {}
     director_counts: dict[str, int] = {}
@@ -685,6 +770,13 @@ def build_playlist_song_ids(blueprint: dict, songs: list[dict]) -> list[str]:
             movie_counts[movie_key] = movie_counts.get(movie_key, 0) + 1
         if director_key:
             director_counts[director_key] = director_counts.get(director_key, 0) + 1
+    if len(selected) < AI_PLAYLIST_SONG_COUNT:
+        for score, song in sorted(scored_songs, key=lambda item: -item[0]):
+            if len(selected) >= AI_PLAYLIST_SONG_COUNT:
+                break
+            if song["id"] in selected:
+                continue
+            selected.append(song["id"])
     return selected[:AI_PLAYLIST_SONG_COUNT]
 
 
@@ -804,6 +896,8 @@ def create_ai_playlists_for_user(user_id: str) -> dict:
         blueprint_rows = fallback_ai_playlist_blueprints(snapshot)
 
     created = []
+    song_usage_counts: dict[str, int] = {}
+    seen_ids: set[str] = set()
     with db.get_conn() as conn:
         for index, row in enumerate(blueprint_rows[:AI_PLAYLIST_COUNT]):
             normalized = normalize_station_payload(
@@ -813,7 +907,10 @@ def create_ai_playlists_for_user(user_id: str) -> dict:
                 },
                 index,
             )
-            song_ids = build_playlist_song_ids(normalized, songs)
+            if normalized["id"] in seen_ids:
+                normalized["id"] = f"{normalized['id']}-{index + 1}"
+            seen_ids.add(normalized["id"])
+            song_ids = build_playlist_song_ids(normalized, songs, usage_counts=song_usage_counts)
             if not song_ids:
                 continue
             playlist_name = normalized["name"]
@@ -851,6 +948,8 @@ def create_ai_playlists_for_user(user_id: str) -> dict:
                 "INSERT INTO playlist_songs (playlist_id, song_id, position, added_at) VALUES (?, ?, ?, ?)",
                 [[playlist_id, song_id, position + 1, now_utc()] for position, song_id in enumerate(song_ids)],
             )
+            for song_id in song_ids:
+                song_usage_counts[song_id] = song_usage_counts.get(song_id, 0) + 1
             created.append(
                 {
                     "id": playlist_id,
@@ -1394,7 +1493,7 @@ def playlists_for_user(user_id: str) -> list[dict]:
             "source": row[3] or "manual",
             "sourceUrl": row[4] or "",
             "updatedAt": row[5].isoformat() if row[5] else "",
-            "trackCount": row[6] or 0,
+            "trackCount": row[7] or 0,
         }
         for row in rows
     ]
@@ -1420,7 +1519,7 @@ def global_playlists() -> list[dict]:
             "source": row[2] or "manual",
             "sourceUrl": row[3] or "",
             "updatedAt": row[4].isoformat() if row[4] else "",
-            "trackCount": row[5] or 0,
+            "trackCount": row[6] or 0,
         }
         for row in rows
     ]
@@ -1428,28 +1527,69 @@ def global_playlists() -> list[dict]:
 
 def playlist_tracks(playlist_id: str) -> list[dict]:
     with get_read_conn() as conn:
-        rows = conn.execute(
+        playlist_rows = conn.execute(
             """
-            SELECT s.song_id, s.track_name, s.singers, s.movie_name, s.music_director, s.year
+            SELECT
+                ps.position,
+                ps.added_at,
+                ps.song_id
             FROM playlist_songs ps
-            JOIN songs s ON s.song_id = ps.song_id
             WHERE ps.playlist_id = ?
-            ORDER BY ps.position
+            ORDER BY ps.position, ps.added_at
             """,
             [playlist_id],
         ).fetchall()
-    return [
-        {
+        song_ids = [row[2] for row in playlist_rows if row[2]]
+        if not song_ids:
+            return []
+        song_rows = conn.execute(
+            """
+            SELECT
+                song_id,
+                movie_name,
+                track_name,
+                singers,
+                music_director,
+                year,
+                track_number,
+                url_320kbps,
+                updated_at
+            FROM songs
+            WHERE song_id IN ({placeholders})
+              AND url_320kbps IS NOT NULL
+              AND url_320kbps != ''
+            """.format(placeholders=", ".join(["?"] * len(song_ids))),
+            song_ids,
+        ).fetchall()
+
+    song_map = {
+        row[0]: {
             "id": row[0],
-            "track": row[1] or "",
-            "singers": row[2] or "",
-            "movie": row[3] or "",
+            "movie": row[1] or "",
+            "track": row[2] or "",
+            "singers": row[3] or "",
             "musicDirector": row[4] or "",
             "year": row[5] or "",
+            "trackNumber": row[6] or 0,
             "audioUrl": f"/api/stream/{row[0]}",
+            "updatedAt": row[8].isoformat() if row[8] else "",
         }
-        for row in rows
-    ]
+        for row in song_rows
+    }
+
+    tracks: list[dict] = []
+    for position, added_at, song_id in playlist_rows:
+        song = song_map.get(song_id)
+        if not song:
+            continue
+        tracks.append(
+            {
+                **song,
+                "playlistPosition": position or 0,
+                "playlistAddedAt": added_at.isoformat() if added_at else "",
+            }
+        )
+    return tracks
 
 
 def simplify_track_name(value: str) -> str:
@@ -1789,7 +1929,7 @@ def resolve_spotify_playlist_tracks_html(playlist_id: str) -> tuple[str, list[di
     return playlist_name or "Spotify Playlist", best_tracks
 
 
-def resolve_spotify_playlist_tracks(playlist_url: str) -> tuple[str, list[dict]]:
+def resolve_spotify_playlist_tracks(playlist_url: str, access_token: str = "") -> tuple[str, list[dict]]:
     playlist_id = extract_spotify_playlist_id(playlist_url)
     errors: list[str] = []
     client_token = ""
@@ -1801,6 +1941,8 @@ def resolve_spotify_playlist_tracks(playlist_url: str) -> tuple[str, list[dict]]
           errors.append(str(exc))
 
     resolver_attempts = []
+    if access_token:
+        resolver_attempts.append(("resolve_spotify_playlist_tracks_public_api_user_token", lambda pid: resolve_spotify_playlist_tracks_api(access_token, pid)))
     if client_token:
         resolver_attempts.append(("resolve_spotify_playlist_tracks_public_api_client_credentials", lambda pid: resolve_spotify_playlist_tracks_public_api(pid, client_token)))
     resolver_attempts.append(("resolve_spotify_playlist_tracks_public_api_web", lambda pid: resolve_spotify_playlist_tracks_public_api(pid, get_spotify_web_access_token())))
