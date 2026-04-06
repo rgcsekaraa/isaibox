@@ -1,7 +1,7 @@
 """
 dags/masstamilan_dag.py
 ═══════════════════════════════════════════════════════════════════════════════
-MassTamilan Daily Scraper DAG
+isaibox daily scraper DAG
 ─────────────────────────────
 Schedule : daily at 06:00 IST (00:30 UTC)
 
@@ -70,7 +70,7 @@ START_PAGE   = 2           # listing always starts at page 2
 # ── DAG defaults ─────────────────────────────────────────────────────────────
 
 DEFAULT_ARGS = {
-    "owner":            "masstamilan",
+    "owner":            "isaibox",
     "retries":          2,
     "retry_delay":      timedelta(minutes=5),
     "retry_exponential_backoff": True,
@@ -256,12 +256,12 @@ def task_summary(**ctx) -> None:
 
 with DAG(
     dag_id="masstamilan_daily_scraper",
-    description="Scrape MassTamilan.dev daily — new albums only (incremental)",
+    description="Scrape source catalog daily — new albums only (incremental)",
     schedule_interval="30 0 * * *",     # 06:00 IST = 00:30 UTC
     start_date=days_ago(1),
     catchup=False,
     default_args=DEFAULT_ARGS,
-    tags=["masstamilan", "scraper", "music"],
+    tags=["isaibox", "scraper", "music"],
     doc_md=__doc__,
 ) as dag:
 

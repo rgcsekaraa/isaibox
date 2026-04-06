@@ -8,7 +8,7 @@ DUCKDB_PATH="$PROJECT_DIR/data/masstamilan.duckdb"
 VENV="$PROJECT_DIR/venv"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  MassTamilan Scraper — Progress Check"
+echo "  isaibox — Progress Check"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 if [ ! -f "$DUCKDB_PATH" ]; then

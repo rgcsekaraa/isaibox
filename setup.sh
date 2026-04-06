@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-#  setup.sh — One-time setup for MassTamilan Airflow + DuckDB scraper
+#  setup.sh — One-time setup for isaibox Airflow + DuckDB scraper
 #  Run once: bash setup.sh
 #  Then run: bash start.sh
 # =============================================================================
@@ -13,7 +13,7 @@ PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.v
 AIRFLOW_VERSION="2.9.3"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  MassTamilan Scraper — Setup"
+echo "  isaibox — Setup"
 echo "  Python : $PYTHON_VERSION"
 echo "  Airflow: $AIRFLOW_VERSION"
 echo "  Dir    : $PROJECT_DIR"
@@ -95,7 +95,7 @@ AIRFLOW_HOME="$AIRFLOW_HOME" "$VENV/bin/airflow" users create \
   --firstname Admin \
   --lastname User \
   --role Admin \
-  --email admin@masstamilan.local 2>&1 | tail -2
+  --email admin@isaibox.local 2>&1 | tail -2
 
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

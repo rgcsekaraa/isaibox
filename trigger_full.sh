@@ -20,7 +20,7 @@ echo "[1/2] Setting MASSTAMILAN_FULL_SCRAPE to true..."
 "$VENV/bin/airflow" variables set MASSTAMILAN_FULL_SCRAPE true
 
 # Trigger DAG
-echo "[2/2] Triggering masstamilan_daily_scraper..."
+echo "[2/2] Triggering scraper DAG..."
 "$VENV/bin/airflow" dags trigger masstamilan_daily_scraper
 
 echo ""

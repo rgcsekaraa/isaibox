@@ -1,6 +1,6 @@
-# MassTamilan Scraper — Airflow + DuckDB
+# isaibox — Airflow + DuckDB
 
-Daily incremental scraper for masstamilan.dev.  
+Daily incremental scraper and streaming app backend.  
 Stores everything in a single **DuckDB** file. Scheduled via **Apache Airflow**.
 
 ---
@@ -8,7 +8,7 @@ Stores everything in a single **DuckDB** file. Scheduled via **Apache Airflow**.
 ## Project structure
 
 ```
-masstamilan/
+isaibox/
 ├── setup.sh              ← run once to install everything
 ├── start.sh              ← start Airflow (webserver + scheduler)
 ├── stop.sh               ← stop Airflow
@@ -20,10 +20,10 @@ masstamilan/
 ├── query.py              ← CLI query tool
 │
 ├── dags/
-│   └── masstamilan_dag.py  ← Airflow DAG
+│   └── <scraper_dag>.py  ← Airflow DAG
 │
 ├── data/
-│   └── masstamilan.duckdb  ← single DuckDB file (created on first run)
+│   └── <library>.duckdb  ← single DuckDB file (created on first run)
 │
 ├── exports/
 │   ├── songs_YYYYMMDD.parquet   ← daily Parquet snapshot
@@ -63,6 +63,16 @@ ISAIBOX_ADMIN_EMAILS=admin@example.com
 `.env` is already created locally with a generated session secret, but you still need to fill in a real `GOOGLE_CLIENT_ID` for Gmail login to work.
 
 `ISAIBOX_ADMIN_EMAILS` is a comma-separated allowlist for admin users.
+
+Optional Spotify integration:
+
+```bash
+SPOTIFY_CLIENT_ID=your-spotify-client-id
+SPOTIFY_CLIENT_SECRET=your-spotify-client-secret
+SPOTIFY_REDIRECT_URI=http://127.0.0.1:8000
+```
+
+`SPOTIFY_REDIRECT_URI` must match a redirect URI registered in your Spotify app settings.
 
 ## isaibox backend
 
@@ -133,7 +143,7 @@ bash start.sh
 
 Open **http://localhost:8080** → login `admin` / `admin`
 
-The DAG `masstamilan_daily_scraper` runs automatically at **06:00 IST every day**.
+The scraper DAG runs automatically at **06:00 IST every day**.
 
 ---
 
@@ -200,7 +210,7 @@ python3 query.py --year 2025 --export-csv 2025.csv
 python3 query.py --export-parquet all_songs.parquet
 
 # Or query DuckDB directly (lightning fast)
-duckdb data/masstamilan.duckdb
+duckdb data/<library>.duckdb
   > SELECT music_director, COUNT(*) FROM songs GROUP BY 1 ORDER BY 2 DESC;
   > COPY songs TO 'songs.parquet';
 ```
@@ -212,7 +222,7 @@ source venv/bin/activate
 
 python3 smoke_scraper.py
 python3 smoke_scraper.py --page 2
-python3 smoke_scraper.py --album-url "https://www.masstamilan.dev/example-songs"
+python3 smoke_scraper.py --album-url "https://source-site.example/example-songs"
 python3 smoke_scraper.py --json
 ```
 

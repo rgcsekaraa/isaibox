@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-query.py — Query masstamilan DuckDB from the command line
+query.py — Query the isaibox DuckDB from the command line
 ─────────────────────────────────────────────────────────
 Examples:
   python3 query.py --stats
@@ -64,7 +64,7 @@ def print_rows(rows, fields=None):
 
 
 def main():
-    p = argparse.ArgumentParser(description="Query MassTamilan DuckDB")
+    p = argparse.ArgumentParser(description="Query the isaibox DuckDB")
     p.add_argument("--stats",           action="store_true", help="Show database stats")
     p.add_argument("--search",          metavar="KEYWORD",   help="Search movie/track/singer")
     p.add_argument("--year",            metavar="YEAR",      help="Filter by year")

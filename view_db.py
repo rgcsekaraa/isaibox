@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-view_db.py — Comprehensive DuckDB viewer for MassTamilan data.
+view_db.py — Comprehensive DuckDB viewer for isaibox data.
 Allows searching by album, year, or director, and exporting to CSV.
 """
 
@@ -95,7 +95,7 @@ def search_db(conn, term):
 
 def export_csv(conn):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    outfile = _HERE / f"masstamilan_songs_{timestamp}.csv"
+    outfile = _HERE / f"isaibox_songs_{timestamp}.csv"
     print(f"\n🚀 Exporting all songs to {outfile.name}...")
     
     # DuckDB's native COPY command is extremely fast

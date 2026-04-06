@@ -9,7 +9,7 @@ import scraper_core
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Smoke test the Masstamilan scraper.")
+    parser = argparse.ArgumentParser(description="Smoke test the isaibox scraper.")
     parser.add_argument("--page", type=int, default=1, help="Listing page to fetch first")
     parser.add_argument("--album-url", help="Optional explicit album URL to test")
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON summary")

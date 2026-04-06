@@ -20,12 +20,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def main():
-    parser = argparse.ArgumentParser(description="MassTamilan Standalone Scraper")
+    parser = argparse.ArgumentParser(description="isaibox standalone scraper")
     parser.add_argument("--full", action="store_true", help="Scrape entire site (all pages)")
     args = parser.parse_args()
 
     logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    logger.info(f"  MassTamilan Standalone Scraper — {'FULL SCAN' if args.full else 'INCREMENTAL'}")
+    logger.info(f"  isaibox standalone scraper — {'FULL SCAN' if args.full else 'INCREMENTAL'}")
     logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     conn = None

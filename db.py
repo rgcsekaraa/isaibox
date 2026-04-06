@@ -1,7 +1,7 @@
 """
-db.py — DuckDB storage layer for MassTamilan scraper
------------------------------------------------------
-Single DuckDB file at data/masstamilan.duckdb
+db.py — DuckDB storage layer for the isaibox scraper
+----------------------------------------------------
+Single DuckDB file under data/
 
 Tables
   albums  — one row per album page (dedup by url)

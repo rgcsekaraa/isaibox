@@ -2,7 +2,7 @@
 """
 refresh_links.py — Update expiring download URLs for existing albums.
 ----------------------------------------------------------------------
-MassTamilan download links rotate/expire periodically. This script
+Source download links rotate/expire periodically. This script
 re-scrapes the album pages to refresh the signed tokens in DuckDB.
 """
 

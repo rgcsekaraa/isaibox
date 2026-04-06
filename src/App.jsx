@@ -20,6 +20,9 @@ const TooltipBubble = (props) => (
   </span>
 );
 
+const PLAYBACK_SPEEDS = [1, 1.25, 1.5, 2];
+const formatPlaybackSpeed = (value) => `${Number(value).toFixed(value % 1 === 0 ? 0 : 2).replace(/\.?0+$/, "")}x`;
+
 const IconButton = (props) => (
   <span class="group relative inline-flex">
     <button
@@ -128,6 +131,12 @@ const VolumeIcon = (props) => (
   </svg>
 );
 
+const SpeedIcon = (props) => (
+  <span class="inline-flex h-5 min-w-7 items-center justify-center rounded-full border border-current px-1 font-mono text-[9px] uppercase leading-none">
+    {formatPlaybackSpeed(props.speed)}
+  </span>
+);
+
 const HeartIcon = (props) => (
   <svg viewBox="0 0 24 24" class={`h-[14px] w-[14px] ${props.filled ? "fill-current stroke-current" : "fill-none stroke-current"} stroke-2`}>
     <path d="M12 21s-6.7-4.35-9.2-8.13C.56 9.57 2.07 5 6.16 5c2.18 0 3.52 1.2 4.18 2.32C11 6.2 12.34 5 14.52 5c4.1 0 5.61 4.57 3.36 7.87C18.7 14.5 12 21 12 21z" />
@@ -232,6 +241,7 @@ const defaultUserPreferences = () => ({
   recentSongIds: [],
   playerVolume: 0.9,
   playerMuted: false,
+  playbackSpeed: 1,
   repeatMode: "off",
   autoplayNext: true,
 });
@@ -274,6 +284,7 @@ function App() {
   const [duration, setDuration] = createSignal(0);
   const [volume, setVolume] = createSignal(0.9);
   const [muted, setMuted] = createSignal(false);
+  const [playbackSpeed, setPlaybackSpeed] = createSignal(1);
   const [repeatMode, setRepeatMode] = createSignal("off");
   const [movieFilter, setMovieFilter] = createSignal("");
   const [artistFilter, setArtistFilter] = createSignal("");
@@ -493,12 +504,15 @@ function App() {
     const nextRepeatMode = ["off", "one", "album", "random"].includes(next.repeatMode) ? next.repeatMode : defaults.repeatMode;
     const nextRecentSongIds = Array.isArray(next.recentSongIds) ? next.recentSongIds.filter((id) => typeof id === "string" && id).slice(0, 80) : [];
     const nextPlayerVolume = Number.isFinite(Number(next.playerVolume)) ? clampUnit(Number(next.playerVolume)) : defaults.playerVolume;
+    const requestedPlaybackSpeed = Number(next.playbackSpeed);
+    const nextPlaybackSpeed = PLAYBACK_SPEEDS.includes(requestedPlaybackSpeed) ? requestedPlaybackSpeed : defaults.playbackSpeed;
 
     setThemePreference(nextThemePreference);
     setMainTab(nextMainTab);
     setRecentIds(nextRecentSongIds);
     setVolume(nextPlayerVolume);
     setMuted(Boolean(next.playerMuted));
+    setPlaybackSpeed(nextPlaybackSpeed);
     setRepeatMode(nextRepeatMode);
     setAutoplayNext(Boolean(next.autoplayNext));
   };
@@ -514,6 +528,7 @@ function App() {
     recentSongIds: recentIds(),
     playerVolume: volume(),
     playerMuted: muted(),
+    playbackSpeed: playbackSpeed(),
     repeatMode: repeatMode(),
     autoplayNext: autoplayNext(),
   });
@@ -678,6 +693,16 @@ function App() {
       }
       audio.muted = muted();
       audio.volume = index === activeDeckIndex ? volume() : 0;
+    });
+  };
+
+  const syncDeckPlaybackSpeed = () => {
+    audioRefs.forEach((audio) => {
+      if (!audio) {
+        return;
+      }
+      audio.playbackRate = playbackSpeed();
+      audio.defaultPlaybackRate = playbackSpeed();
     });
   };
 
@@ -1403,12 +1428,20 @@ function App() {
     setRepeatMode("off");
   };
 
+  const cyclePlaybackSpeed = () => {
+    const currentIndex = PLAYBACK_SPEEDS.indexOf(playbackSpeed());
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % PLAYBACK_SPEEDS.length : 0;
+    setPlaybackSpeed(PLAYBACK_SPEEDS[nextIndex]);
+  };
+
   const playbackModeLabel = createMemo(() => {
     if (repeatMode() === "one") return "Single song loop";
     if (repeatMode() === "album") return "Album loop";
     if (repeatMode() === "random") return "Random";
     return "Normal";
   });
+
+  const playbackSpeedLabel = createMemo(() => `Playback speed: ${formatPlaybackSpeed(playbackSpeed())}`);
 
   const playbackModeIcon = createMemo(() => {
     if (repeatMode() === "one") {
@@ -1831,6 +1864,11 @@ function App() {
 
   createEffect(() => {
     syncDeckVolumes();
+  });
+
+  createEffect(() => {
+    playbackSpeed();
+    syncDeckPlaybackSpeed();
   });
 
   createEffect(() => {
@@ -3383,6 +3421,9 @@ function App() {
             </IconButton>
           </div>
           <div class="flex items-center justify-end gap-2.5">
+            <IconButton onClick={cyclePlaybackSpeed} label={playbackSpeedLabel()}>
+              <SpeedIcon speed={playbackSpeed()} />
+            </IconButton>
             <IconButton onClick={() => setMuted((value) => !value)} label={muted() ? "Unmute" : "Mute"}>
               <VolumeIcon muted={muted() || volume() === 0} />
             </IconButton>
