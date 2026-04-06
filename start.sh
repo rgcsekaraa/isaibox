@@ -13,10 +13,8 @@ echo "  Starting Airflow Services"
 echo "  Home: $AIRFLOW_HOME"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Force cleanup of any lingering PIDs or processes
-pkill -9 -f "airflow" || true
-pkill -9 -f "gunicorn" || true
-rm -f "$AIRFLOW_HOME"/*.pid
+# Ensure any old local Airflow processes are stopped first
+bash "$PROJECT_DIR/stop.sh" >/dev/null 2>&1 || true
 
 export AIRFLOW_HOME="$AIRFLOW_HOME"
 

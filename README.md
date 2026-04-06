@@ -47,6 +47,53 @@ This will:
 - Configure Airflow (no Docker needed, runs locally)
 - Create an admin user (admin / admin)
 
+## isaibox auth setup
+
+`isaibox` now reads local environment variables from `.env`.
+
+Required for Google login:
+
+```bash
+GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+ISAIBOX_SESSION_SECRET=any-long-random-secret
+ISAIBOX_ADMIN_EMAILS=admin@example.com
+```
+
+`.env.example` shows the expected keys.
+`.env` is already created locally with a generated session secret, but you still need to fill in a real `GOOGLE_CLIENT_ID` for Gmail login to work.
+
+`ISAIBOX_ADMIN_EMAILS` is a comma-separated allowlist for admin users.
+
+## Cache strategy
+
+`isaibox` now supports layered backend cache:
+
+1. local disk cache in `.cache/audio`
+2. optional shared R2 cache
+3. upstream source fallback
+
+R2 is optional. If configured, the app will:
+- serve local cache first
+- restore missing local files from R2
+- upload newly cached local audio back to R2 in the background
+
+R2 environment variables:
+
+```bash
+R2_ACCOUNT_ID=
+R2_BUCKET_NAME=
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+R2_ENDPOINT_URL=
+```
+
+`R2_ENDPOINT_URL` can be left empty if you want the app to derive it from `R2_ACCOUNT_ID`.
+
+Note:
+- local disk remains the fastest hot cache
+- R2 is the shared backing cache for production
+- if `boto3` is not installed, R2 is skipped and the app continues with local cache only
+
 ---
 
 ## Start Airflow
@@ -127,6 +174,17 @@ python3 query.py --export-parquet all_songs.parquet
 duckdb data/masstamilan.duckdb
   > SELECT music_director, COUNT(*) FROM songs GROUP BY 1 ORDER BY 2 DESC;
   > COPY songs TO 'songs.parquet';
+```
+
+## Scraper smoke test
+
+```bash
+source venv/bin/activate
+
+python3 smoke_scraper.py
+python3 smoke_scraper.py --page 2
+python3 smoke_scraper.py --album-url "https://www.masstamilan.dev/example-songs"
+python3 smoke_scraper.py --json
 ```
 
 ---

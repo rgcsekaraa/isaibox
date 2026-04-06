@@ -74,7 +74,71 @@ CREATE TABLE IF NOT EXISTS scrape_runs (
     songs_total     INTEGER DEFAULT 0,
     status          VARCHAR DEFAULT 'running'  -- running | success | failed
 );
+
+-- Indexes for faster JIT resolution
+CREATE INDEX IF NOT EXISTS idx_songs_album_track_name ON songs (album_url, track_name);
+CREATE INDEX IF NOT EXISTS idx_songs_album_track_num  ON songs (album_url, track_number);
+
+CREATE TABLE IF NOT EXISTS users (
+    user_id         VARCHAR PRIMARY KEY,
+    google_sub      VARCHAR UNIQUE,
+    email           VARCHAR,
+    name            VARCHAR,
+    picture         VARCHAR,
+    is_admin        BOOLEAN DEFAULT FALSE,
+    is_banned       BOOLEAN DEFAULT FALSE,
+    ban_reason      VARCHAR,
+    last_login_at   TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ,
+    updated_at      TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+    session_id      VARCHAR PRIMARY KEY,
+    user_id         VARCHAR NOT NULL,
+    expires_at      TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS favorite_songs (
+    user_id         VARCHAR NOT NULL,
+    song_id         VARCHAR NOT NULL,
+    created_at      TIMESTAMPTZ,
+    PRIMARY KEY (user_id, song_id)
+);
+
+CREATE TABLE IF NOT EXISTS playlists (
+    playlist_id     VARCHAR PRIMARY KEY,
+    user_id         VARCHAR NOT NULL,
+    name            VARCHAR,
+    is_global       BOOLEAN DEFAULT FALSE,
+    source          VARCHAR DEFAULT 'manual',
+    source_url      VARCHAR,
+    created_at      TIMESTAMPTZ,
+    updated_at      TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS playlist_songs (
+    playlist_id     VARCHAR NOT NULL,
+    song_id         VARCHAR NOT NULL,
+    position        INTEGER NOT NULL,
+    added_at        TIMESTAMPTZ,
+    PRIMARY KEY (playlist_id, position)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON user_sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorite_songs (user_id);
+CREATE INDEX IF NOT EXISTS idx_playlists_user_id ON playlists (user_id);
+CREATE INDEX IF NOT EXISTS idx_playlist_songs_playlist_id ON playlist_songs (playlist_id);
 """
+
+_MIGRATIONS = [
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned BOOLEAN DEFAULT FALSE",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS ban_reason VARCHAR",
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ",
+    "ALTER TABLE playlists ADD COLUMN IF NOT EXISTS is_global BOOLEAN DEFAULT FALSE",
+]
 
 # ── Connection factory ────────────────────────────────────────────────────────
 
@@ -84,6 +148,8 @@ def get_conn(path: str = DUCKDB_PATH, read_only: bool = False) -> duckdb.DuckDBP
     conn = duckdb.connect(path, read_only=read_only)
     if not read_only:
         conn.execute(_SCHEMA)
+        for migration in _MIGRATIONS:
+            conn.execute(migration)
     return conn
 
 
@@ -161,6 +227,10 @@ def upsert_songs(conn: duckdb.DuckDBPyConnection, songs: list[dict]) -> None:
              first_seen_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT (song_id) DO UPDATE SET
+            movie_name     = excluded.movie_name,
+            music_director = excluded.music_director,
+            director       = excluded.director,
+            year           = excluded.year,
             track_name     = excluded.track_name,
             singers        = excluded.singers,
             url_128kbps    = excluded.url_128kbps,
