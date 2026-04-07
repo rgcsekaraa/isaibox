@@ -1,19 +1,27 @@
 services:
-  isaibox:
+  backend:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: isaibox-local
+      dockerfile: Dockerfile.backend
+    container_name: isaibox-local-backend
     environment:
       ISAIBOX_LOCAL_MODE: "1"
       ISAIBOX_HOST: "0.0.0.0"
-      ISAIBOX_PORT: "8000"
+      ISAIBOX_PORT: "6060"
       ISAIBOX_LOG_LEVEL: "info"
       ISAIBOX_CACHE_LIMIT_GB: "${ISAIBOX_CACHE_LIMIT_GB:-20}"
-    ports:
-      - "${APP_PORT:-8000}:8000"
     volumes:
       - ./app/data:/app/data
       - ./app/exports:/app/exports
       - ./app/.cache:/app/.cache
+    restart: unless-stopped
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: isaibox-local-frontend
+    depends_on:
+      - backend
+    ports:
+      - "${APP_PORT:-6789}:5173"
     restart: unless-stopped

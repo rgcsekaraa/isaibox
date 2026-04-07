@@ -7,7 +7,7 @@ This folder is a packaged local-only copy of `isaibox`.
 - runs the app with the bundled DuckDB in `app/data/masstamilan.duckdb`
 - disables login, Google auth, Spotify import, and admin UI
 - uses a built-in local profile so favorites and playlists still work without sign-in
-- serves the frontend and backend together in one container
+- runs separate frontend and backend containers
 - restarts automatically if the container crashes
 - warms an initial set of songs after launch so first playback is faster
 - lets you choose the host port with `.env`
@@ -29,6 +29,12 @@ No Python, Node, DuckDB, or app dependencies need to be installed on the target 
 
 The app opens at `http://127.0.0.1:6789/` by default.
 The launcher waits for health, warms the cache, and then opens the browser.
+
+Internal port layout:
+
+- frontend container: `5173`
+- backend container: `6060`
+- host/browser access: `6789`
 
 ## Warm cache only
 

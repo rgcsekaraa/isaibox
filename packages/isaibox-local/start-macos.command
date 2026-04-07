@@ -18,17 +18,7 @@ if [ -f .env ]; then
   set +a
 fi
 
-docker compose up -d --build
-echo "Waiting for isaibox on http://127.0.0.1:${APP_PORT} ..."
-for _ in $(seq 1 60); do
-  if curl -fsS "http://127.0.0.1:${APP_PORT}/api/health" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 1
-done
-curl -fsS -X POST "http://127.0.0.1:${APP_PORT}/api/warmup" \
-  -H "Content-Type: application/json" \
-  -d '{"limit":24}' >/dev/null
+bash ./run-local.sh
 open "http://127.0.0.1:${APP_PORT}/"
 echo "isaibox local is running on http://127.0.0.1:${APP_PORT}/"
 echo "Cache limit: ${ISAIBOX_CACHE_LIMIT_GB} GB"

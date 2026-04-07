@@ -21,7 +21,7 @@ if exist .env (
 docker compose up -d --build
 echo Waiting for isaibox on http://127.0.0.1:%APP_PORT% ...
 set READY=0
-for /l %%I in (1,1,60) do (
+for /l %%I in (1,1,90) do (
   curl -fsS "http://127.0.0.1:%APP_PORT%/api/health" >nul 2>nul
   if not errorlevel 1 (
     set READY=1
@@ -40,5 +40,7 @@ if "%READY%"=="0" (
 curl -fsS -X POST "http://127.0.0.1:%APP_PORT%/api/warmup" -H "Content-Type: application/json" -d "{\"limit\":24}" >nul
 start "" "http://127.0.0.1:%APP_PORT%/"
 echo isaibox local is running on http://127.0.0.1:%APP_PORT%/
+echo Frontend container port: 5173
+echo Backend container port: 6060
 echo Cache limit: %ISAIBOX_CACHE_LIMIT_GB% GB
 pause
