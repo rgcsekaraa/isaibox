@@ -24,6 +24,8 @@ dist/
 .cache/
 .vite/
 vite.config.js.timestamp-*
+!dist/
+!dist/**
 
 # Deployment and Logs
 logs/

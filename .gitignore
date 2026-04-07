@@ -24,6 +24,8 @@ dist/
 .cache/
 .vite/
 vite.config.js.timestamp-*
+!packages/isaibox-local/app/dist/
+!packages/isaibox-local/app/dist/**
 
 # Deployment and Logs
 logs/
