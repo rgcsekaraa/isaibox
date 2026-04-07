@@ -75,10 +75,18 @@ def get_session() -> cloudscraper.CloudScraper:
 
 # ── Fetch with retry ──────────────────────────────────────────────────────────
 
+from tenacity import retry, stop_after_attempt, wait_exponential, before_sleep_log, retry_if_exception
+
+def _is_not_404(e):
+    if isinstance(e, requests.exceptions.HTTPError):
+        return e.response.status_code != 404
+    return True
+
 @retry(
     stop=stop_after_attempt(4),
     wait=wait_exponential(multiplier=2, min=2, max=30),
     before_sleep=before_sleep_log(log, logging.WARNING),
+    retry=retry_if_exception(_is_not_404),
     reraise=True,
 )
 def fetch(url: str) -> BeautifulSoup:
@@ -138,23 +146,23 @@ def parse_listing_page(soup: BeautifulSoup) -> list[str]:
     return urls
 
 
-def discover_new_album_urls(
-    start_page: int,
+def discover_urls_from_path(
+    path_pattern: str,
     known_urls: set[str],
     max_pages: int | None = None,
-    delay: float = 1.5,
+    delay: float = 1.3,
     full_scan: bool = False,
 ) -> tuple[list[str], int]:
     """
-    Walk listing pages starting from start_page.
-    Instead of relying on a fixed 'total' count, we crawl until:
+    Walk listing pages based on a path_pattern (e.g. '/tag/A?page={page}').
+    Stops when:
       a) We hit an empty page.
       b) We hit a page fully known (incremental mode).
       c) We hit max_pages limit.
     """
-    log.info(f"Starting discovery from page {start_page}...")
+    log.info(f"Starting discovery on pattern: {path_pattern}...")
     new_urls: list[str] = []
-    page_num = start_page
+    page_num = 1
     pages_processed = 0
 
     while True:
@@ -162,19 +170,21 @@ def discover_new_album_urls(
             log.info(f"Reached max_pages limit ({max_pages}).")
             break
 
-        log.info(f"  Fetching listing page {page_num}...")
+        current_url = urljoin(BASE_URL, path_pattern.format(page=page_num))
+        log.info(f"  Fetching listing page {page_num}: {current_url}")
+        
         try:
-            soup = fetch(LIST_URL.format(page=page_num))
+            soup = fetch(current_url)
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
-                log.info(f"  → Page {page_num} returned 404. Reached end of catalog.")
+                log.info(f"  → Page {page_num} returned 404. Reached end of category.")
                 break
             raise
             
         page_urls = parse_listing_page(soup)
 
         if not page_urls:
-            log.info(f"  → Page {page_num} is empty. Reached end of catalog.")
+            log.info(f"  → Page {page_num} is empty. Reached end of category.")
             break
 
         page_new = [u for u in page_urls if u not in known_urls]
@@ -194,6 +204,20 @@ def discover_new_album_urls(
 
     log.info(f"Discovery done: {len(new_urls)} total new album(s) discovered.")
     return new_urls, page_num - 1
+
+
+def discover_new_album_urls(
+    start_page: int,
+    known_urls: set[str],
+    max_pages: int | None = None,
+    delay: float = 1.5,
+    full_scan: bool = False,
+) -> tuple[list[str], int]:
+    """Maintain backward compatibility for the 'Latest Updates' discovery."""
+    pattern = f"/tamil-songs?page={{page}}"
+    # If start_page > 1, we manually adjust the loop inside or just use the pattern
+    # But current pattern starts at {page}.
+    return discover_urls_from_path(pattern, known_urls, max_pages, delay, full_scan)
 
 
 # ── Album detail page ─────────────────────────────────────────────────────────

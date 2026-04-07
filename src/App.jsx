@@ -68,6 +68,12 @@ const PauseIcon = () => (
   </svg>
 );
 
+const LoadingSpinnerIcon = () => (
+  <svg viewBox="0 0 24 24" class="h-4 w-4 animate-spin fill-none stroke-current stroke-2">
+    <path d="M12 3a9 9 0 1 0 9 9" stroke-linecap="round" />
+  </svg>
+);
+
 const PrevIcon = () => (
   <svg viewBox="0 0 24 24" class="h-[18px] w-[18px] fill-current">
     <path d="M6 6h2v12H6zM18 6v12l-8-6z" />
@@ -77,6 +83,12 @@ const PrevIcon = () => (
 const NextIcon = () => (
   <svg viewBox="0 0 24 24" class="h-[18px] w-[18px] fill-current">
     <path d="M16 6h2v12h-2zM6 6l8 6-8 6z" />
+  </svg>
+);
+
+const ChevronDownIcon = () => (
+  <svg viewBox="0 0 24 24" class="h-4 w-4 fill-none stroke-current stroke-2">
+    <path d="m6 9 6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
   </svg>
 );
 
@@ -340,17 +352,21 @@ function App() {
   const [showShortcutHelp, setShowShortcutHelp] = createSignal(false);
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] = createSignal(false);
   const [showAuthPrompt, setShowAuthPrompt] = createSignal(false);
+  const [showProfileMenu, setShowProfileMenu] = createSignal(false);
   const [loadingFrame, setLoadingFrame] = createSignal(0);
   const [pendingRadioOffset, setPendingRadioOffset] = createSignal(null);
 
   let worker;
   const audioRefs = [];
   let googleButtonRef;
+  let profileMenuRef;
+  let profileMenuButtonRef;
   let listRef;
   let searchInputRef;
   let createPlaylistInputRef;
   let searchTimeout;
   let removeKeydownListener = null;
+  let removePointerdownListener = null;
   let prefetchTimer;
   let keyboardNavTimer;
   let scrollAnimationFrame;
@@ -619,6 +635,14 @@ function App() {
 
   const toggleThemePreference = () => {
     setThemePreference(theme() === "dark" ? "light" : "dark");
+  };
+
+  const setThemePreferenceChoice = (nextTheme) => {
+    if (!["light", "system", "dark"].includes(nextTheme)) {
+      return;
+    }
+    setThemePreference(nextTheme);
+    setShowProfileMenu(false);
   };
 
   const resolveRadioStationPlayback = (station) => {
@@ -1752,7 +1776,8 @@ function App() {
     return <RepeatIcon />;
   });
 
-  const loadSong = (song, autoplay = false) => {
+  const loadSong = (song, autoplay = false, options = {}) => {
+    const { allowCrossfade = false } = options;
     const activeAudio = getActiveAudio();
     const inactiveAudio = getInactiveAudio();
     if (!song || !activeAudio || !inactiveAudio) {
@@ -1769,11 +1794,27 @@ function App() {
     const nextRelativeUrl = `${song.audioUrl}?v=${version}`;
     const nextUrl = new URL(nextRelativeUrl, window.location.origin).href;
     if (activeAudio.src !== nextUrl) {
+      const canCrossfade = Boolean(
+        allowCrossfade &&
+        autoplay &&
+        activeAudio.src &&
+        !activeAudio.paused &&
+        currentTrackId() &&
+        currentTrackId() !== song.id
+      );
       stopCrossfade();
       setCurrentTime(0);
       setDuration(0);
       setStreamStarted(false);
+      if (!canCrossfade) {
+        activeAudio.pause();
+        activeAudio.currentTime = 0;
+        activeAudio.removeAttribute("src");
+        activeAudio.dataset.songId = "";
+        activeAudio.load();
+      }
       inactiveAudio.pause();
+      inactiveAudio.dataset.songId = song.id;
       inactiveAudio.src = nextRelativeUrl;
       inactiveAudio.preload = "auto";
       inactiveAudio.currentTime = 0;
@@ -1784,28 +1825,31 @@ function App() {
         inactiveAudio.muted = muted();
         void inactiveAudio.play()
           .then(() => {
-            if (!activeAudio.src || activeAudio.paused) {
-              if (activeAudio.src && activeAudio !== inactiveAudio) {
-                activeAudio.pause();
-                activeAudio.currentTime = 0;
-                activeAudio.removeAttribute("src");
-                activeAudio.load();
-              }
-              promoteDeck(activeDeckIndex === 0 ? 1 : 0);
-              inactiveAudio.volume = muted() ? 0 : volume();
+            const nextDeckIndex = activeDeckIndex === 0 ? 1 : 0;
+            if (canCrossfade) {
+              beginCrossfade(activeAudio, inactiveAudio, nextDeckIndex);
               setIsPlaying(true);
               setStreamStarted(true);
               syncTimelineFromAudio(inactiveAudio, true);
               return;
             }
-            beginCrossfade(activeAudio, inactiveAudio, activeDeckIndex === 0 ? 1 : 0);
+            promoteDeck(nextDeckIndex);
+            inactiveAudio.volume = muted() ? 0 : volume();
             setIsPlaying(true);
             setStreamStarted(true);
+            syncTimelineFromAudio(inactiveAudio, true);
           })
           .catch(() => {
             inactiveAudio.pause();
+            if (canCrossfade) {
+              setIsPlaying(!activeAudio.paused);
+              setStreamStarted(!activeAudio.paused);
+              syncTimelineFromAudio(activeAudio);
+              return;
+            }
             activeAudio.pause();
             activeAudio.currentTime = 0;
+            activeAudio.dataset.songId = song.id;
             activeAudio.src = nextRelativeUrl;
             activeAudio.preload = "auto";
             activeAudio.load();
@@ -1875,13 +1919,13 @@ function App() {
     return list[next];
   };
 
-  const selectRelative = (offset, autoplay = false, baseId = selectedId()) => {
+  const selectRelative = (offset, autoplay = false, baseId = selectedId(), options = {}) => {
     const nextSong = pickRelativeSong(offset, baseId, { respectRandom: autoplay });
     if (!nextSong) {
       return;
     }
     if (autoplay) {
-      loadSong(nextSong, true);
+      loadSong(nextSong, true, options);
       return;
     }
     setSelectedId(nextSong.id);
@@ -1990,6 +2034,12 @@ function App() {
     const onKeyDown = (event) => {
       const commandKey = event.ctrlKey || event.metaKey;
       const editable = isEditableTarget(event.target);
+
+      if (event.key === "Escape" && showProfileMenu()) {
+        event.preventDefault();
+        setShowProfileMenu(false);
+        return;
+      }
 
       if (commandKey && event.key.toLowerCase() === "s") {
         event.preventDefault();
@@ -2104,7 +2154,7 @@ function App() {
       if (event.key === "[") {
         event.preventDefault();
         if (!radioPlaybackLocked()) {
-          selectRelative(-1, true, selectedId() || currentTrackId());
+          selectRelative(-1, true, selectedId() || currentTrackId(), { allowCrossfade: true });
         }
         return;
       }
@@ -2112,7 +2162,7 @@ function App() {
       if (event.key === "]") {
         event.preventDefault();
         if (!radioPlaybackLocked()) {
-          selectRelative(1, true, selectedId() || currentTrackId());
+          selectRelative(1, true, selectedId() || currentTrackId(), { allowCrossfade: true });
         }
         return;
       }
@@ -2143,8 +2193,21 @@ function App() {
       }
     };
 
+    const onPointerDown = (event) => {
+      if (!showProfileMenu()) {
+        return;
+      }
+      const target = event.target;
+      if (profileMenuRef?.contains(target) || profileMenuButtonRef?.contains(target)) {
+        return;
+      }
+      setShowProfileMenu(false);
+    };
+
     window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("pointerdown", onPointerDown);
     removeKeydownListener = () => window.removeEventListener("keydown", onKeyDown);
+    removePointerdownListener = () => window.removeEventListener("pointerdown", onPointerDown);
 
     try {
       const [configResponse, statsResponse, songsResponse] = await Promise.all([
@@ -2377,6 +2440,7 @@ function App() {
     stopCrossfade();
     cancelAnimationFrame(scrollAnimationFrame);
     removeKeydownListener?.();
+    removePointerdownListener?.();
     worker?.terminate();
     audioRefs.forEach((audio) => audio?.pause());
     if (themeMediaQuery && syncSystemTheme) {
@@ -2391,9 +2455,22 @@ function App() {
   return (
     <main class="flex h-dvh min-h-0 flex-col overflow-hidden bg-[var(--bg)] text-[var(--fg)]">
       <header class="flex items-center justify-between border-b border-[var(--line)] px-6 py-4">
-        <span class="flex items-center gap-3">
+        <span class="group relative inline-flex items-center gap-3">
           <BrandIcon />
           <span class="font-mono text-[11px] uppercase tracking-[0.32em] text-[var(--brand)]">isaibox</span>
+          <span class="pointer-events-none absolute left-0 top-full z-20 mt-3 min-w-[220px] border border-[var(--line)] bg-[var(--bg)] px-3 py-3 opacity-0 shadow-lg transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100">
+            <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Library status</div>
+            <div class="mt-2 text-sm text-[var(--fg)]">
+              <Show when={stats()} fallback={"Loading library..."}>
+                {(libraryStats) => (
+                  <div class="space-y-1">
+                    <div>{libraryStats().songs.toLocaleString()} tracks indexed</div>
+                    <div class="text-[var(--soft)]">Last update: {formatUpdatedAt(libraryStats().latestUpdatedAt)}</div>
+                  </div>
+                )}
+              </Show>
+            </div>
+          </span>
         </span>
         <div class="flex items-center gap-2 md:gap-3">
           <div
@@ -2406,18 +2483,57 @@ function App() {
           <Show
             when={user()}
             fallback={
-              <span class="group relative inline-flex">
+              <div
+                class="relative"
+                onMouseEnter={() => setShowProfileMenu(true)}
+                onMouseLeave={() => setShowProfileMenu(false)}
+              >
                 <button
                   type="button"
-                  onClick={beginGoogleLogin}
-                  aria-label="Sign in with Google"
-                  class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] transition hover:border-[var(--fg)] hover:text-[var(--fg)] disabled:cursor-not-allowed disabled:opacity-40"
-                  disabled={!googleReady()}
+                  ref={(el) => {
+                    profileMenuButtonRef = el;
+                  }}
+                  onClick={() => setShowProfileMenu((value) => !value)}
+                  aria-label="Open account menu"
+                  class={`flex h-9 items-center gap-2 rounded-full border px-2.5 text-[var(--soft)] transition ${
+                    showProfileMenu() ? "border-[var(--fg)] bg-[var(--hover)] text-[var(--fg)]" : "border-[var(--line)] hover:border-[var(--fg)] hover:text-[var(--fg)]"
+                  }`}
                 >
-                  <UserIcon />
+                  <span class="flex h-7 w-7 items-center justify-center rounded-full border border-current">
+                    <UserIcon />
+                  </span>
+                  <span class="hidden text-sm md:block">Account</span>
+                  <ChevronDownIcon />
                 </button>
-                <TooltipBubble text="Sign in with Google" />
-              </span>
+                <Show when={showProfileMenu()}>
+                  <div
+                    ref={(el) => {
+                      profileMenuRef = el;
+                    }}
+                    class="absolute right-0 top-full z-30 mt-3 w-[250px] border border-[var(--line)] bg-[var(--bg)] p-3 shadow-lg"
+                  >
+                    <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Login</div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowProfileMenu(false);
+                        beginGoogleLogin();
+                      }}
+                      class="mt-3 flex w-full items-center justify-between border border-[var(--line)] px-3 py-2 text-left transition hover:border-[var(--fg)] disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={!googleReady()}
+                    >
+                      <span class="text-sm text-[var(--fg)]">Sign in with Google</span>
+                      <UserIcon />
+                    </button>
+                    <div class="mt-4 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Theme</div>
+                    <div class="mt-2 grid grid-cols-3 gap-2">
+                      <button type="button" onClick={() => setThemePreferenceChoice("light")} class={`border px-2 py-2 font-mono text-[10px] uppercase tracking-[0.16em] transition ${themePreference() === "light" ? "border-[var(--fg)] bg-[var(--hover)] text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>Light</button>
+                      <button type="button" onClick={() => setThemePreferenceChoice("system")} class={`border px-2 py-2 font-mono text-[10px] uppercase tracking-[0.16em] transition ${themePreference() === "system" ? "border-[var(--fg)] bg-[var(--hover)] text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>System</button>
+                      <button type="button" onClick={() => setThemePreferenceChoice("dark")} class={`border px-2 py-2 font-mono text-[10px] uppercase tracking-[0.16em] transition ${themePreference() === "dark" ? "border-[var(--fg)] bg-[var(--hover)] text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>Dark</button>
+                    </div>
+                  </div>
+                </Show>
+              </div>
             }
           >
             {(account) => (
@@ -2427,44 +2543,67 @@ function App() {
                     Admin
                   </span>
                 </Show>
-                <span class="group relative inline-flex">
-                  <span
-                    class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] font-mono text-[11px] uppercase tracking-[0.16em] text-[var(--soft)]"
-                  >
-                    {getInitials(account().name, account().email)}
-                  </span>
-                  <TooltipBubble text={account().name || account().email || "Account"} />
-                </span>
-                <span class="group relative inline-flex">
+                <div
+                  class="relative"
+                  onMouseEnter={() => setShowProfileMenu(true)}
+                  onMouseLeave={() => setShowProfileMenu(false)}
+                >
                   <button
                     type="button"
-                    onClick={() => void logout()}
-                    aria-label="Logout"
-                    class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--muted)] transition hover:border-[var(--fg)] hover:text-[var(--fg)]"
+                    ref={(el) => {
+                      profileMenuButtonRef = el;
+                    }}
+                    onClick={() => setShowProfileMenu((value) => !value)}
+                    aria-label="Open profile menu"
+                    class={`flex h-9 items-center gap-2 rounded-full border px-2.5 text-[var(--soft)] transition ${
+                      showProfileMenu() ? "border-[var(--fg)] bg-[var(--hover)] text-[var(--fg)]" : "border-[var(--line)] hover:border-[var(--fg)] hover:text-[var(--fg)]"
+                    }`}
                   >
-                    <LogoutIcon />
+                    <span class="flex h-7 w-7 items-center justify-center rounded-full border border-current font-mono text-[11px] uppercase tracking-[0.16em]">
+                      {getInitials(account().name, account().email)}
+                    </span>
+                    <span class="hidden max-w-[160px] truncate text-sm md:block">{account().name || account().email}</span>
+                    <ChevronDownIcon />
                   </button>
-                  <TooltipBubble text="Logout" />
-                </span>
+                  <Show when={showProfileMenu()}>
+                    <div
+                      ref={(el) => {
+                        profileMenuRef = el;
+                      }}
+                      class="absolute right-0 top-full z-30 mt-3 w-[250px] border border-[var(--line)] bg-[var(--bg)] p-3 shadow-lg"
+                    >
+                      <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Profile settings</div>
+                      <div class="mt-3">
+                        <div class="truncate text-sm text-[var(--fg)]">{account().name || "Account"}</div>
+                        <div class="mt-1 truncate font-mono text-[10px] text-[var(--soft)]">{account().email}</div>
+                      </div>
+                      <div class="mt-4 space-y-2">
+                        <div>
+                          <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Theme</div>
+                          <div class="mt-2 grid grid-cols-3 gap-2">
+                            <button type="button" onClick={() => setThemePreferenceChoice("light")} class={`border px-2 py-2 font-mono text-[10px] uppercase tracking-[0.16em] transition ${themePreference() === "light" ? "border-[var(--fg)] bg-[var(--hover)] text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>Light</button>
+                            <button type="button" onClick={() => setThemePreferenceChoice("system")} class={`border px-2 py-2 font-mono text-[10px] uppercase tracking-[0.16em] transition ${themePreference() === "system" ? "border-[var(--fg)] bg-[var(--hover)] text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>System</button>
+                            <button type="button" onClick={() => setThemePreferenceChoice("dark")} class={`border px-2 py-2 font-mono text-[10px] uppercase tracking-[0.16em] transition ${themePreference() === "dark" ? "border-[var(--fg)] bg-[var(--hover)] text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>Dark</button>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowProfileMenu(false);
+                            void logout();
+                          }}
+                          class="flex w-full items-center justify-between border border-[var(--line)] px-3 py-2 text-left transition hover:border-[var(--fg)]"
+                        >
+                          <span class="text-sm text-[var(--fg)]">Logout</span>
+                          <LogoutIcon />
+                        </button>
+                      </div>
+                    </div>
+                  </Show>
+                </div>
               </div>
             )}
           </Show>
-          <span class="group relative inline-flex">
-            <button
-              type="button"
-              onClick={toggleThemePreference}
-              aria-label={theme() === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-              class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] transition hover:border-[var(--fg)] hover:text-[var(--fg)]"
-            >
-              <ThemeIcon theme={theme()} />
-            </button>
-            <TooltipBubble text={theme() === "dark" ? "Switch to light mode" : "Switch to dark mode"} />
-          </span>
-          <span class="hidden font-mono text-xs text-[var(--muted)] md:block">
-            <Show when={stats()} fallback={"..."}>
-              {stats().songs.toLocaleString()} tracks
-            </Show>
-          </span>
         </div>
       </header>
 
@@ -2624,9 +2763,9 @@ function App() {
               </Show>
             </Show>
           </div>
-          <Show when={accountMessage()}>
-            <div class="mt-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--soft)]">{accountMessage()}</div>
-          </Show>
+            <Show when={accountMessage()}>
+              <div class="mt-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--soft)]">{accountMessage()}</div>
+            </Show>
         </section>
       </Show>
 
@@ -3087,7 +3226,7 @@ function App() {
                 </Show>
               </div>
             </div>
-          </section>
+        </section>
         </Show>
         <Show when={mainTab() === "radio"}>
           <section class="min-h-0 flex-1 overflow-y-auto px-6 py-5">
@@ -3693,7 +3832,7 @@ function App() {
                 type="button"
                 onClick={() => setShowShortcutHelp(true)}
                 aria-label="Show keyboard shortcuts"
-                class="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] transition hover:border-[var(--fg)] hover:text-[var(--fg)]"
+                  class="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] transition hover:border-[var(--fg)] hover:text-[var(--fg)]"
               >
                 <HelpIcon />
               </button>
@@ -3730,18 +3869,18 @@ function App() {
             </Show>
           </div>
           <div class="flex items-center justify-center gap-5">
-            <IconButton disabled={radioPlaybackLocked()} onClick={() => selectRelative(-1, true, currentTrackId() || selectedId())} label="Previous">
+            <IconButton disabled={radioPlaybackLocked()} onClick={() => selectRelative(-1, true, currentTrackId() || selectedId(), { allowCrossfade: true })} label="Previous">
               <PrevIcon />
             </IconButton>
             <button
               type="button"
               onClick={togglePlayback}
-              aria-label={isPlaying() ? "Pause" : "Play"}
+              aria-label={isPlaying() ? (streamStarted() ? "Pause" : "Loading") : "Play"}
               class="flex h-9 w-9 items-center justify-center border border-[var(--fg)] text-[var(--fg)] transition hover:bg-[var(--fg)] hover:text-[var(--bg)]"
             >
-              {isPlaying() ? <PauseIcon /> : <PlayIcon />}
+              {isPlaying() ? (streamStarted() ? <PauseIcon /> : <LoadingSpinnerIcon />) : <PlayIcon />}
             </button>
-            <IconButton disabled={radioPlaybackLocked()} onClick={() => selectRelative(1, true, currentTrackId() || selectedId())} label="Next">
+            <IconButton disabled={radioPlaybackLocked()} onClick={() => selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true })} label="Next">
               <NextIcon />
             </IconButton>
             <IconButton
@@ -3780,31 +3919,32 @@ function App() {
               ref={(el) => {
                 audioRefs[deckIndex] = el;
                 if (el) {
+                  el.dataset.songId = "";
                   el.playbackRate = playbackSpeed();
                   el.defaultPlaybackRate = playbackSpeed();
                 }
               }}
               preload="auto"
               onPlay={(event) => {
-                if (event.currentTarget === getActiveAudio()) {
+                if (event.currentTarget === getActiveAudio() && event.currentTarget.dataset.songId === currentTrackId()) {
                   setIsPlaying(true);
                   syncTimelineFromAudio(event.currentTarget);
                 }
               }}
               onPlaying={(event) => {
-                if (event.currentTarget === getActiveAudio()) {
+                if (event.currentTarget === getActiveAudio() && event.currentTarget.dataset.songId === currentTrackId()) {
                   setIsPlaying(true);
                   setStreamStarted(true);
                   syncTimelineFromAudio(event.currentTarget);
                 }
               }}
               onWaiting={(event) => {
-                if (event.currentTarget === getActiveAudio()) {
+                if (event.currentTarget === getActiveAudio() && event.currentTarget.dataset.songId === currentTrackId()) {
                   setStreamStarted(false);
                 }
               }}
               onPause={(event) => {
-                if (event.currentTarget === getActiveAudio()) {
+                if (event.currentTarget === getActiveAudio() && event.currentTarget.dataset.songId === currentTrackId()) {
                   setIsPlaying(false);
                 }
               }}
@@ -3817,17 +3957,17 @@ function App() {
                   }
                   setPendingRadioOffset(null);
                 }
-                if (event.currentTarget === getActiveAudio()) {
+                if (event.currentTarget === getActiveAudio() && event.currentTarget.dataset.songId === currentTrackId()) {
                   syncTimelineFromAudio(event.currentTarget);
                 }
               }}
               onTimeUpdate={(event) => {
-                if (event.currentTarget === getActiveAudio()) {
+                if (event.currentTarget === getActiveAudio() && event.currentTarget.dataset.songId === currentTrackId()) {
                   syncTimelineFromAudio(event.currentTarget);
                 }
               }}
               onEnded={(event) => {
-                if (event.currentTarget !== getActiveAudio()) {
+                if (event.currentTarget !== getActiveAudio() || event.currentTarget.dataset.songId !== currentTrackId()) {
                   return;
                 }
                 if (repeatMode() === "one") {
@@ -3844,12 +3984,12 @@ function App() {
                   return;
                 }
                 if (repeatMode() === "album" || repeatMode() === "random") {
-                  selectRelative(1, true, currentTrackId() || selectedId());
+                  selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true });
                   return;
                 }
                 const current = activeSongList().findIndex((song) => song.id === (currentTrackId() || selectedId()));
                 if (current >= 0 && current < activeSongList().length - 1) {
-                  selectRelative(1, true, currentTrackId() || selectedId());
+                  selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true });
                 } else {
                   setIsPlaying(false);
                 }

@@ -13,11 +13,15 @@ def stats():
         latest_year = conn.execute(
             "SELECT MAX(TRY_CAST(year AS INTEGER)) FROM songs WHERE year IS NOT NULL AND year != ''"
         ).fetchone()[0]
+        latest_updated_at = conn.execute(
+            "SELECT MAX(updated_at) FROM songs WHERE updated_at IS NOT NULL"
+        ).fetchone()[0]
     return json_response(
         {
             "songs": songs,
             "albums": albums,
             "latestYear": latest_year,
+            "latestUpdatedAt": latest_updated_at.isoformat() if latest_updated_at else "",
         }
     )
 
