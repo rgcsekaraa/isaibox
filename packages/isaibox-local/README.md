@@ -1,11 +1,13 @@
 # isaibox local package
 
 This folder is a packaged local-only copy of `isaibox`.
+It is intentionally trimmed for local playback and packaged library updates, not scraping or Airflow operations.
 
 ## What it does
 
 - runs the app with the bundled DuckDB in `app/data/masstamilan.duckdb`
-- disables login, Google auth, Spotify import, and admin UI
+- keeps only the local playback app and packaged database flow
+- disables login, Google auth, Spotify import, radio, and admin UI
 - uses a built-in local profile so favorites and playlists still work without sign-in
 - runs separate frontend and backend containers
 - restarts automatically if the container crashes
@@ -79,6 +81,7 @@ docker compose down
 ## Notes
 
 - local mode hides account/login actions and only exposes the local library experience
+- the backend image only includes the runtime files needed for local playback, caching, and packaged DB sync
 - persistent data stays in `app/data`, `app/exports`, and `app/.cache`
 - cached audio is stored in `app/.cache/audio`
 - the app trims oldest cached songs automatically when the cache grows past `ISAIBOX_CACHE_LIMIT_GB`

@@ -16,7 +16,13 @@ RUN apt-get update \
 COPY requirements-local.txt ./
 RUN pip install --no-cache-dir -r requirements-local.txt
 
-COPY app/ ./
+COPY app/app.py ./app.py
+COPY app/db.py ./db.py
+COPY app/scraper_core.py ./scraper_core.py
+COPY app/storage_backends.py ./storage_backends.py
+COPY app/backend ./backend
+COPY app/dist ./dist
+COPY app/data ./data
 
 RUN mkdir -p .cache/audio exports data
 
