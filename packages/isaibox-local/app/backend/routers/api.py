@@ -21,15 +21,22 @@ def db_sync_check():
 
 @app.get("/api/stats")
 def stats():
-    with get_read_conn() as conn:
-        songs = conn.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
-        albums = conn.execute("SELECT COUNT(*) FROM albums").fetchone()[0]
-        latest_year = conn.execute(
-            "SELECT MAX(TRY_CAST(year AS INTEGER)) FROM songs WHERE year IS NOT NULL AND year != ''"
-        ).fetchone()[0]
-        latest_updated_at = conn.execute(
-            "SELECT MAX(updated_at) FROM songs WHERE updated_at IS NOT NULL"
-        ).fetchone()[0]
+    try:
+        with get_read_conn() as conn:
+            songs = conn.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
+            albums = conn.execute("SELECT COUNT(*) FROM albums").fetchone()[0]
+            latest_year = conn.execute(
+                "SELECT MAX(TRY_CAST(year AS INTEGER)) FROM songs WHERE year IS NOT NULL AND year != ''"
+            ).fetchone()[0]
+            latest_updated_at = conn.execute(
+                "SELECT MAX(updated_at) FROM songs WHERE updated_at IS NOT NULL"
+            ).fetchone()[0]
+    except duckdb.Error:
+        app.logger.warning("Local library DB not ready for /api/stats", exc_info=True)
+        songs = 0
+        albums = 0
+        latest_year = None
+        latest_updated_at = None
     return json_response(
         {
             "songs": songs,
@@ -42,24 +49,28 @@ def stats():
 
 @app.get("/api/library")
 def library():
-    with get_read_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT
-                song_id,
-                movie_name,
-                track_name,
-                singers,
-                music_director,
-                year,
-                track_number,
-                url_320kbps,
-                updated_at
-            FROM songs
-            WHERE url_320kbps IS NOT NULL AND url_320kbps != ''
-            ORDER BY TRY_CAST(year AS INTEGER) DESC NULLS LAST, movie_name, track_number
-            """
-        ).fetchall()
+    try:
+        with get_read_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT
+                    song_id,
+                    movie_name,
+                    track_name,
+                    singers,
+                    music_director,
+                    year,
+                    track_number,
+                    url_320kbps,
+                    updated_at
+                FROM songs
+                WHERE url_320kbps IS NOT NULL AND url_320kbps != ''
+                ORDER BY TRY_CAST(year AS INTEGER) DESC NULLS LAST, movie_name, track_number
+                """
+            ).fetchall()
+    except duckdb.Error:
+        app.logger.warning("Local library DB not ready for /api/library", exc_info=True)
+        rows = []
 
     songs = [
         {
@@ -88,17 +99,21 @@ def warmup():
     except (TypeError, ValueError):
         limit = 24
 
-    with get_read_conn() as conn:
-        rows = conn.execute(
-            """
-            SELECT song_id, url_320kbps
-            FROM songs
-            WHERE url_320kbps IS NOT NULL AND url_320kbps != ''
-            ORDER BY updated_at DESC NULLS LAST, movie_name, track_number
-            LIMIT ?
-            """,
-            [limit],
-        ).fetchall()
+    try:
+        with get_read_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT song_id, url_320kbps
+                FROM songs
+                WHERE url_320kbps IS NOT NULL AND url_320kbps != ''
+                ORDER BY updated_at DESC NULLS LAST, movie_name, track_number
+                LIMIT ?
+                """,
+                [limit],
+            ).fetchall()
+    except duckdb.Error:
+        app.logger.warning("Local library DB not ready for /api/warmup", exc_info=True)
+        rows = []
 
     queued = 0
     cached = 0

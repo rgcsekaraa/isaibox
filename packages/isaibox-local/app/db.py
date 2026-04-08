@@ -16,6 +16,7 @@ DuckDB advantages over SQLite here:
 
 import duckdb
 import os
+import shutil
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -25,6 +26,8 @@ DUCKDB_PATH = os.environ.get(
     "DUCKDB_PATH",
     str(_HERE / "data" / "masstamilan.duckdb"),
 )
+BUNDLED_DUCKDB_PATH = _HERE / "data" / "masstamilan.duckdb"
+REQUIRED_LIBRARY_TABLES = ("songs", "albums")
 
 # ── DDL ──────────────────────────────────────────────────────────────────────
 
@@ -178,11 +181,50 @@ def _ensure_migrations(conn: duckdb.DuckDBPyConnection) -> None:
                 continue
             conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
 
+
+def _has_required_library_tables(path: Path) -> bool:
+    if not path.exists() or path.stat().st_size <= 0:
+        return False
+    conn = duckdb.connect(str(path), read_only=False)
+    try:
+        existing = {
+            row[0]
+            for row in conn.execute("SHOW TABLES").fetchall()
+        }
+    finally:
+        conn.close()
+    return all(table_name in existing for table_name in REQUIRED_LIBRARY_TABLES)
+
+
+def ensure_local_library_db(path: str = DUCKDB_PATH) -> Path:
+    target_path = Path(path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if _has_required_library_tables(target_path):
+        return target_path
+
+    bundled_path = BUNDLED_DUCKDB_PATH
+    if bundled_path.resolve() != target_path.resolve() and _has_required_library_tables(bundled_path):
+        tmp_path = target_path.with_suffix(target_path.suffix + ".tmp")
+        if tmp_path.exists():
+            tmp_path.unlink()
+        shutil.copy2(bundled_path, tmp_path)
+        os.replace(tmp_path, target_path)
+        return target_path
+
+    conn = duckdb.connect(str(target_path), read_only=False)
+    try:
+        conn.execute(_SCHEMA)
+        _ensure_migrations(conn)
+    finally:
+        conn.close()
+    return target_path
+
 # ── Connection factory ────────────────────────────────────────────────────────
 
 def get_conn(path: str = DUCKDB_PATH, read_only: bool = False, initialize: bool = True) -> duckdb.DuckDBPyConnection:
     """Open DuckDB connection. Creates file + schema on first call."""
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    ensure_local_library_db(path)
     conn = duckdb.connect(path, read_only=read_only)
     if not read_only and initialize:
         conn.execute(_SCHEMA)

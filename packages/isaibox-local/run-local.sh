@@ -20,11 +20,6 @@ fi
 mkdir -p app/data app/exports app/.cache/audio
 mkdir -p ../../data
 
-if [ ! -f ../../data/masstamilan.duckdb ]; then
-  echo "Missing shared database: ../../data/masstamilan.duckdb"
-  exit 1
-fi
-
 if [ ! -f app/dist/index.html ]; then
   echo "Missing packaged frontend build: app/dist/index.html"
   exit 1

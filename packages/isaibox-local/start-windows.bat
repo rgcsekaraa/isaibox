@@ -23,12 +23,6 @@ if not exist app\exports mkdir app\exports
 if not exist app\.cache\audio mkdir app\.cache\audio
 if not exist ..\..\data mkdir ..\..\data
 
-if not exist ..\..\data\masstamilan.duckdb (
-  echo Missing shared database: ..\..\data\masstamilan.duckdb
-  pause
-  exit /b 1
-)
-
 if not exist app\dist\index.html (
   echo Missing packaged frontend build: app\dist\index.html
   pause

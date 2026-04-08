@@ -1582,6 +1582,7 @@ def ensure_db_sync_thread_started() -> None:
 @app.on_event("startup")
 async def startup_event() -> None:
     if LOCAL_MODE:
+        db.ensure_local_library_db()
         ensure_db_sync_thread_started()
 
 
