@@ -3734,10 +3734,9 @@ function App() {
                                   <span class="w-8 text-right font-mono text-xs text-[var(--soft)]">
                                     {currentTrackId() === track.id && isPlaying() && streamStarted() ? <PlayingBars /> : String(index() + 1).padStart(2, "0")}
                                   </span>
-                                  <span class="min-w-0 flex-[1.2] truncate text-sm">{track.track}</span>
-                                  <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] md:block">{track.singers || "-"}</span>
-                                  <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] lg:block">{track.movie || "-"}</span>
-                                  <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] xl:block">{track.musicDirector || "-"}</span>
+                                  <span class="min-w-0 flex-[1.4] truncate text-sm">{track.track}</span>
+                                  <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] md:block">{track.movie || "-"}</span>
+                                  <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] lg:block">{track.musicDirector || "-"}</span>
                                   <span class="w-20 font-mono text-[11px] text-[var(--soft)]">{track.year || "-"}</span>
                                 </button>
                               </li>
@@ -3807,10 +3806,9 @@ function App() {
                   <>
                     <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-4 py-2">
                       <span class="w-8 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">#</span>
-                      <span class="min-w-0 flex-[1.2] font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Song</span>
-                      <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] md:block">Singers</span>
-                      <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] lg:block">Movie</span>
-                      <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] xl:block">Music Director</span>
+                      <span class="min-w-0 flex-[1.4] font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Song Name</span>
+                      <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] md:block">Movie</span>
+                      <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] lg:block">Music Director</span>
                       <span class="w-20 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Year</span>
                       <Show when={user()}>
                         <span class="w-8 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Fav</span>
@@ -3849,10 +3847,9 @@ function App() {
                                       <span class="w-8 text-right font-mono text-xs text-[var(--soft)]">
                                         {currentTrackId() === song.id && isPlaying() && streamStarted() ? <PlayingBars /> : String(index() + 1).padStart(2, "0")}
                                       </span>
-                                      <span class="min-w-0 flex-[1.2] truncate text-sm">{song.track}</span>
-                                      <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] md:block">{song.singers || "-"}</span>
-                                      <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] lg:block">{song.movie || "-"}</span>
-                                      <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] xl:block">{song.musicDirector || "-"}</span>
+                                      <span class="min-w-0 flex-[1.4] truncate text-sm">{song.track}</span>
+                                      <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] md:block">{song.movie || "-"}</span>
+                                      <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] lg:block">{song.musicDirector || "-"}</span>
                                       <span class="w-20 font-mono text-[11px] text-[var(--soft)]">{song.year || "-"}</span>
                                       <Show when={user()}>
                                         <span class="flex w-8 justify-end">
