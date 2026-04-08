@@ -430,6 +430,23 @@ function App() {
   const libraryProfileEnabled = createMemo(() => configReady() && (localMode() || Boolean(user())));
   const radioEnabled = createMemo(() => configReady() && !localMode());
   const spotifyEnabled = createMemo(() => authEnabled() && Boolean(spotifyClientId()));
+  const visiblePlaylistDetail = createMemo(() => {
+    if (query().trim() || movieFilter() || artistFilter()) {
+      return null;
+    }
+    return globalPlaylistDetail();
+  });
+  const canManageVisiblePlaylist = createMemo(() => {
+    const playlist = visiblePlaylistDetail();
+    const account = user();
+    if (!playlist || !account) {
+      return false;
+    }
+    if (playlist.isGlobal) {
+      return Boolean(account.is_admin);
+    }
+    return true;
+  });
   const localDbSyncLabel = createMemo(() => {
     const sync = dbSyncState();
     if (!localMode() || !sync?.enabled) {
@@ -654,12 +671,6 @@ function App() {
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle))
     );
-  });
-  const visiblePlaylistDetail = createMemo(() => {
-    if (query().trim() || movieFilter() || artistFilter()) {
-      return null;
-    }
-    return globalPlaylistDetail();
   });
   const showPlaylistDetail = createMemo(() => Boolean(visiblePlaylistDetail()));
   const currentRadioStation = createMemo(() => radioStations().find((station) => station.id === selectedRadioStationId()) || null);
@@ -1877,17 +1888,50 @@ function App() {
     setSearchTab("songs");
   };
 
-  const removeSongFromGlobalPlaylist = async (playlistId, songId) => {
-    if (!user()?.is_admin) {
+  const removeSongFromPlaylist = async (playlistId, songId) => {
+    if (!canManageVisiblePlaylist()) {
       return;
     }
     const response = await fetch(`/api/playlists/${playlistId}/songs/${songId}`, { method: "DELETE" });
     if (!response.ok) {
-      setAccountMessage("Unable to remove song from global playlist");
+      setAccountMessage("Unable to remove song from playlist");
       return;
     }
     await refreshAccountState();
     await openGlobalPlaylist(playlistId);
+  };
+
+  const clearVisiblePlaylist = async () => {
+    const playlist = globalPlaylistDetail();
+    if (!playlist || !canManageVisiblePlaylist()) {
+      return;
+    }
+    const response = await fetch(`/api/playlists/${playlist.id}/songs`, { method: "DELETE" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setAccountMessage(payload.message || "Unable to clear playlist");
+      return;
+    }
+    await refreshAccountState();
+    await openGlobalPlaylist(playlist.id);
+    setAccountMessage("Playlist cleared");
+  };
+
+  const deleteVisiblePlaylist = async () => {
+    const playlist = globalPlaylistDetail();
+    if (!playlist || !canManageVisiblePlaylist()) {
+      return;
+    }
+    const response = await fetch(`/api/playlists/${playlist.id}`, { method: "DELETE" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setAccountMessage(payload.message || "Unable to delete playlist");
+      return;
+    }
+    await refreshAccountState();
+    closeGlobalPlaylist();
+    setSelectedGlobalPlaylistTarget("");
+    setAccountMessage("Playlist deleted");
   };
 
   const renameGlobalPlaylist = async () => {
@@ -3187,7 +3231,7 @@ function App() {
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => void removeSongFromGlobalPlaylist(playlist().id, track.id)}
+                                    onClick={() => void removeSongFromPlaylist(playlist().id, track.id)}
                                     class="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--soft)] transition hover:text-[var(--fg)]"
                                   >
                                     Remove
@@ -3689,15 +3733,35 @@ function App() {
                               {playlist().source || "manual"} · {(playlist().tracks || []).length} tracks
                             </div>
                           </div>
+                          <Show when={canManageVisiblePlaylist()}>
+                            <div class="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--soft)]">
+                              <button
+                                type="button"
+                                onClick={() => void clearVisiblePlaylist()}
+                                class="transition hover:text-[var(--fg)]"
+                              >
+                                Clear
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void deleteVisiblePlaylist()}
+                                class="transition hover:text-[var(--fg)]"
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </Show>
                         </div>
                       </section>
                       <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-4 py-2">
                         <span class="w-8 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">#</span>
-                        <span class="min-w-0 flex-[1.2] font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Song</span>
-                        <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] md:block">Singers</span>
-                        <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] lg:block">Movie</span>
-                        <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] xl:block">Music Director</span>
+                        <span class="min-w-0 flex-[1.4] font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Song Name</span>
+                        <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] md:block">Movie</span>
+                        <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] lg:block">Music Director</span>
                         <span class="w-20 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Year</span>
+                        <Show when={canManageVisiblePlaylist()}>
+                          <span class="w-16 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Remove</span>
+                        </Show>
                       </div>
                       <Show
                         when={(playlist().tracks || []).length > 0}
@@ -3738,6 +3802,21 @@ function App() {
                                   <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] md:block">{track.movie || "-"}</span>
                                   <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] lg:block">{track.musicDirector || "-"}</span>
                                   <span class="w-20 font-mono text-[11px] text-[var(--soft)]">{track.year || "-"}</span>
+                                  <Show when={canManageVisiblePlaylist()}>
+                                    <span class="flex w-16 justify-end">
+                                      <span
+                                        role="button"
+                                        tabindex="-1"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          void removeSongFromPlaylist(playlist().id, track.id);
+                                        }}
+                                        class="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--muted)] transition hover:text-[var(--fg)]"
+                                      >
+                                        Remove
+                                      </span>
+                                    </span>
+                                  </Show>
                                 </button>
                               </li>
                               );
