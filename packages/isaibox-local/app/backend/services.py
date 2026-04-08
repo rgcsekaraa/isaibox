@@ -1582,7 +1582,14 @@ def ensure_db_sync_thread_started() -> None:
 @app.on_event("startup")
 async def startup_event() -> None:
     if LOCAL_MODE:
-        db.ensure_local_library_db()
+        db_path = db.ensure_local_library_db()
+        app.logger.info(
+            "Local DB ready: live=%s bundled=%s exists=%s size=%s",
+            db_path,
+            db.BUNDLED_DUCKDB_PATH,
+            db_path.exists(),
+            db_path.stat().st_size if db_path.exists() else 0,
+        )
         ensure_db_sync_thread_started()
 
 

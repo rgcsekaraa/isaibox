@@ -17,7 +17,7 @@ services:
       ISAIBOX_DB_SYNC_MANIFEST_URL: "${ISAIBOX_DB_SYNC_MANIFEST_URL:-https://raw.githubusercontent.com/rgcsekaraa/isaibox/main/packages/isaibox-local/app/data/library-manifest.json}"
       ISAIBOX_DB_SYNC_INTERVAL_SECONDS: "${ISAIBOX_DB_SYNC_INTERVAL_SECONDS:-1800}"
     volumes:
-      - ../../data:/app/shared-data
+      - isaibox-local-library:/app/shared-data
       - ./app/data:/app/data
       - ./app/exports:/app/exports
       - isaibox-local-audio-cache:/app/.cache/audio
@@ -34,4 +34,5 @@ services:
     restart: unless-stopped
 
 volumes:
+  isaibox-local-library:
   isaibox-local-audio-cache:
