@@ -1998,7 +1998,7 @@ function App() {
     if (index < 0) {
       return [song.id];
     }
-    return list.slice(index, index + 4).map((item) => item.id);
+    return list.slice(index, index + 8).map((item) => item.id);
   };
 
   const cyclePlaybackMode = () => {
@@ -2150,6 +2150,33 @@ function App() {
     } else if (!isSameSong && activeAudio.preload !== "auto") {
       activeAudio.preload = "auto";
     }
+  };
+
+  const primeSongAudio = (song) => {
+    const activeAudio = getActiveAudio();
+    if (!song || !activeAudio || isPlaying()) {
+      return;
+    }
+
+    prefetchSongIds(getSongNeighborhoodIds(song));
+
+    const version = encodeURIComponent(song.updatedAt || song.id);
+    const nextRelativeUrl = `${song.audioUrl}?v=${version}`;
+    const nextUrl = new URL(nextRelativeUrl, window.location.origin).href;
+    if (activeAudio.src === nextUrl) {
+      if (activeAudio.preload !== "auto") {
+        activeAudio.preload = "auto";
+      }
+      return;
+    }
+
+    stopCrossfade();
+    activeAudio.pause();
+    activeAudio.dataset.songId = song.id;
+    activeAudio.src = nextRelativeUrl;
+    activeAudio.preload = "auto";
+    activeAudio.load();
+    syncTimelineFromAudio(activeAudio, true);
   };
 
   const moveSelection = (offset) => {
@@ -2528,7 +2555,7 @@ function App() {
       setSelectedId(initialSongs[0]?.id || "");
       setCurrentTrackId(initialSongs[0]?.id || "");
       worker.postMessage({ type: "index", payload: initialSongs });
-      prefetchSongIds(initialSongs.slice(0, 4).map((song) => song.id));
+      prefetchSongIds(initialSongs.slice(0, 12).map((song) => song.id));
 
       if (initialSongs[0] && getActiveAudio()) {
         const version = encodeURIComponent(initialSongs[0].updatedAt || initialSongs[0].id);
@@ -2707,6 +2734,17 @@ function App() {
     if (!list.some((song) => song.id === selectedId())) {
       setSelectedId(list[0].id);
     }
+  });
+
+  createEffect(() => {
+    if (loading() || appOffline()) {
+      return;
+    }
+    const song = selectedActiveSong() || selectedSong() || activeSongList()[0];
+    if (!song) {
+      return;
+    }
+    primeSongAudio(song);
   });
 
   createEffect(() => {
