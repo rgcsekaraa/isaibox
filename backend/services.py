@@ -305,7 +305,10 @@ def refresh_runtime_caches_for_db_change() -> None:
 
 def get_read_conn():
     refresh_runtime_caches_for_db_change()
-    return db.get_conn(read_only=True)
+    # DuckDB cannot safely mix read-only and read-write handles to the same
+    # live DB file in this process. Use the normal connection mode for reads so
+    # stream and playlist requests do not fail under load.
+    return db.get_conn()
 
 
 def now_utc() -> datetime:

@@ -56,6 +56,66 @@ const sanitizePlaylistName = (value) => String(value || "")
 
 const sanitizeSpotifyPlaylistUrl = (value) => String(value || "").replace(/\s+/g, "").trim();
 
+const SONG_SORT_COLUMNS = {
+  default: "#",
+  track: "Song Name",
+  movie: "Movie",
+  musicDirector: "Music Director",
+  singers: "Singer",
+  year: "Year",
+};
+
+const normalizeSongSortValue = (value) => String(value || "").trim().toLowerCase();
+
+const compareSongValues = (left, right) => {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  const leftLooksNumeric = Number.isFinite(leftNumber) && String(left).trim() !== "";
+  const rightLooksNumeric = Number.isFinite(rightNumber) && String(right).trim() !== "";
+  if (leftLooksNumeric || rightLooksNumeric) {
+    return leftNumber - rightNumber;
+  }
+  return normalizeSongSortValue(left).localeCompare(normalizeSongSortValue(right));
+};
+
+const sortSongs = (songs, sortConfig) => {
+  const list = Array.isArray(songs) ? songs : [];
+  const key = sortConfig?.key || "default";
+  const direction = sortConfig?.direction === "desc" ? -1 : 1;
+  return list
+    .map((song, index) => ({ song, index }))
+    .sort((left, right) => {
+      if (key === "default") {
+        return (left.index - right.index) * direction;
+      }
+      const compared = compareSongValues(left.song?.[key], right.song?.[key]);
+      if (compared !== 0) {
+        return compared * direction;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.song);
+};
+
+const SortableSongHeader = (props) => {
+  const isActive = () => props.sortKey === props.columnKey;
+  const arrow = () => (isActive() ? (props.sortDirection === "desc" ? "↓" : "↑") : "");
+  return (
+    <button
+      type="button"
+      onClick={() => props.onSort?.(props.columnKey)}
+      class={`min-w-0 text-left font-mono text-[10px] uppercase tracking-[0.25em] transition ${
+        isActive() ? "text-[var(--fg)]" : "text-[var(--faint)] hover:text-[var(--fg)]"
+      } ${props.class || ""}`}
+    >
+      <span>{props.label}</span>
+      <Show when={arrow()}>
+        <span class="ml-1 inline-block">{arrow()}</span>
+      </Show>
+    </button>
+  );
+};
+
 const TooltipBubble = (props) => (
   <span class={`pointer-events-none absolute ${props.position || "bottom-full left-1/2 mb-2 -translate-x-1/2"} z-20 whitespace-nowrap border border-[var(--line)] bg-[var(--bg)] px-2 py-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--fg)] opacity-0 shadow-lg transition-opacity duration-75 group-hover:opacity-100 group-focus-within:opacity-100`}>
     {props.text}
@@ -409,6 +469,7 @@ function App() {
   const [configReady, setConfigReady] = createSignal(false);
   const [playlistMutationBusy, setPlaylistMutationBusy] = createSignal("");
   const [playlistCreateBusy, setPlaylistCreateBusy] = createSignal(false);
+  const [songSort, setSongSort] = createSignal({ key: "default", direction: "asc" });
 
   let worker;
   const audioRefs = [];
@@ -767,8 +828,9 @@ function App() {
     }
     return visibleResults();
   });
+  const sortedActiveSongList = createMemo(() => sortSongs(activeSongList(), songSort()));
   const selectedSong = createMemo(() => {
-    const visible = activeSongList();
+    const visible = sortedActiveSongList();
     return (
       visible.find((song) => song.id === selectedId()) ||
       (globalPlaylistDetail()?.tracks || []).find((song) => song.id === selectedId()) ||
@@ -782,14 +844,14 @@ function App() {
       return null;
     }
     return (
-      activeSongList().find((song) => song.id === currentId) ||
+      sortedActiveSongList().find((song) => song.id === currentId) ||
       (globalPlaylistDetail()?.tracks || []).find((song) => song.id === currentId) ||
       songs().find((song) => song.id === currentId) ||
       null
     );
   });
-  const selectedActiveSong = createMemo(() => activeSongList().find((song) => song.id === selectedId()) || null);
-  const selectedIndex = createMemo(() => activeSongList().findIndex((song) => song.id === selectedId()));
+  const selectedActiveSong = createMemo(() => sortedActiveSongList().find((song) => song.id === selectedId()) || null);
+  const selectedIndex = createMemo(() => sortedActiveSongList().findIndex((song) => song.id === selectedId()));
   const favoriteIdSet = createMemo(() => new Set(favoriteIds()));
   const loadingDots = createMemo(() => ".".repeat((loadingFrame() % 3) + 1));
   const libraryPlaylistCards = createMemo(() => [
@@ -838,6 +900,14 @@ function App() {
       return;
     }
     setMainBrowseTab(tab);
+  };
+  const toggleSongSort = (columnKey) => {
+    setSongSort((current) => {
+      if (current.key === columnKey) {
+        return { key: columnKey, direction: current.direction === "asc" ? "desc" : "asc" };
+      }
+      return { key: columnKey, direction: columnKey === "default" ? "asc" : "asc" };
+    });
   };
   const formatUpdatedAt = (value) => {
     if (!value) return "Unknown";
@@ -1054,7 +1124,7 @@ function App() {
       tab === "recents" ? recentSongs()
       : tab === "favorites" ? favoriteSongs()
       : tab === "library" ? visibleResults()
-      : activeSongList();
+      : sortedActiveSongList();
     if (list[0]) {
       setSelectedId(list[0].id);
     }
@@ -2191,7 +2261,7 @@ function App() {
     if (!song) {
       return [];
     }
-    const list = activeSongList();
+    const list = sortedActiveSongList();
     const index = list.findIndex((item) => item.id === song.id);
     if (index < 0) {
       return [song.id];
@@ -2465,8 +2535,8 @@ function App() {
       return;
     }
 
-    if (!currentSong() && activeSongList()[0]) {
-      loadSong(mainTab() === "radio" ? activeSongList()[0] : (selectedActiveSong() || selectedSong() || activeSongList()[0]), true);
+    if (!currentSong() && sortedActiveSongList()[0]) {
+      loadSong(mainTab() === "radio" ? sortedActiveSongList()[0] : (selectedActiveSong() || selectedSong() || sortedActiveSongList()[0]), true);
       return;
     }
 
@@ -2477,8 +2547,8 @@ function App() {
       }
       if (!activeAudio.src) {
         const fallbackSong = mainTab() === "radio"
-          ? currentSong() || activeSongList()[0]
-          : selectedActiveSong() || selectedSong() || currentSong() || activeSongList()[0];
+          ? currentSong() || sortedActiveSongList()[0]
+          : selectedActiveSong() || selectedSong() || currentSong() || sortedActiveSongList()[0];
         if (fallbackSong) {
           loadSong(fallbackSong, true);
           return;
@@ -2644,14 +2714,14 @@ function App() {
 
       if (event.key === "Enter") {
         event.preventDefault();
-        loadSong(selectedActiveSong() || selectedSong() || activeSongList()[0], true);
+        loadSong(selectedActiveSong() || selectedSong() || sortedActiveSongList()[0], true);
         return;
       }
 
       if (event.key === " ") {
         event.preventDefault();
         if (!isPlaying()) {
-          loadSong(selectedActiveSong() || selectedSong() || activeSongList()[0], true);
+          loadSong(selectedActiveSong() || selectedSong() || sortedActiveSongList()[0], true);
         } else {
           togglePlayback();
         }
@@ -2942,7 +3012,7 @@ function App() {
   });
 
   createEffect(() => {
-    const list = activeSongList();
+    const list = sortedActiveSongList();
     if (!list.length) {
       if (selectedId()) {
         setSelectedId("");
@@ -2958,7 +3028,7 @@ function App() {
     if (loading() || appOffline()) {
       return;
     }
-    const song = selectedActiveSong() || selectedSong() || activeSongList()[0];
+    const song = selectedActiveSong() || selectedSong() || sortedActiveSongList()[0];
     if (!song) {
       return;
     }
@@ -3355,7 +3425,7 @@ function App() {
               Library
             </button>
             <button type="button" onClick={() => setMainBrowseTab("recents")} class={`px-1 py-1 ${mainTab() === "recents" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
-              Recents
+              Recents {recentSongs().length ? `(${recentSongs().length})` : ""}
             </button>
             <Show when={libraryProfileEnabled()}>
               <button type="button" onClick={() => setMainBrowseTab("favorites")} class={`px-1 py-1 ${mainTab() === "favorites" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
@@ -3369,7 +3439,7 @@ function App() {
             </Show>
             <Show when={localMode()}>
               <button type="button" onClick={() => setMainBrowseTab("playlists")} class={`px-1 py-1 ${mainTab() === "playlists" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
-                Playlists
+                Playlists {playlists().length ? `(${playlists().length})` : ""}
               </button>
             </Show>
             <Show when={authEnabled() && user()?.is_admin}>
@@ -3378,8 +3448,28 @@ function App() {
               </button>
             </Show>
           </div>
-          <Show when={mainTab() === "library"}>
-            <div class="flex min-w-[280px] flex-1 items-center justify-end gap-3">
+          <div class="flex min-w-[280px] flex-1 items-center justify-end gap-3">
+            <Show
+              when={mainTab() === "library"}
+              fallback={
+                <div class="flex min-h-[42px] w-full max-w-[560px] flex-wrap items-center justify-end gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)]">
+                  <Show when={mainTab() === "recents"}>
+                    <>
+                      <span>{recentSongs().length} tracks</span>
+                      <Show when={recentSongs().length > 0}>
+                        <button type="button" onClick={clearRecents} class="transition hover:text-[var(--fg)]">Clear recents</button>
+                      </Show>
+                    </>
+                  </Show>
+                  <Show when={mainTab() === "favorites" && libraryProfileEnabled()}>
+                    <span>{favoriteSongs().length} tracks</span>
+                  </Show>
+                  <Show when={mainTab() === "playlists" && localMode()}>
+                    <span>{playlists().length} playlists</span>
+                  </Show>
+                </div>
+              }
+            >
               <div class="flex w-full max-w-[560px] items-center gap-3 border border-[var(--line)] px-3 py-2">
                 <span class="font-mono text-sm text-[var(--soft)]">/</span>
                 <input
@@ -3407,8 +3497,8 @@ function App() {
                   Clear
                 </button>
               </div>
-            </div>
-          </Show>
+            </Show>
+          </div>
         </div>
       </section>
 
@@ -3856,30 +3946,21 @@ function App() {
             </div>
           </div>
         </Show>
-        <Show when={mainTab() !== "library" && mainTab() !== "admin" && mainTab() !== "playlists"}>
+        <Show when={mainTab() === "radio"}>
           <section class="border-b border-[var(--line-soft)] px-6 py-4">
             <div class="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">
-                  {mainTab() === "recents" ? "Recent plays" : mainTab() === "favorites" ? "Favorites" : "Radio station"}
+                <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Radio station</div>
+                <div class="mt-1 text-sm text-[var(--soft)]">
+                  {currentRadioStation()?.blurb || "Gemini-sorted stations with looping 100-song queues."}
                 </div>
-                <Show when={mainTab() === "radio"}>
-                  <div class="mt-1 text-sm text-[var(--soft)]">
-                    {currentRadioStation()?.blurb || "Gemini-sorted stations with looping 100-song queues."}
-                  </div>
-                </Show>
               </div>
               <div class="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)]">
                 <span>{activeSongList().length} tracks</span>
-                <Show when={mainTab() === "recents" && recentSongs().length > 0}>
-                  <button type="button" onClick={clearRecents} class="transition hover:text-[var(--fg)]">Clear recents</button>
-                </Show>
-                <Show when={mainTab() === "radio"}>
-                  <button type="button" onClick={startRadio} class="transition hover:text-[var(--fg)]">Start radio</button>
-                  <button type="button" onClick={() => void fetchRadioStations(true)} class="transition hover:text-[var(--fg)]">
-                    Refresh stations
-                  </button>
-                </Show>
+                <button type="button" onClick={startRadio} class="transition hover:text-[var(--fg)]">Start radio</button>
+                <button type="button" onClick={() => void fetchRadioStations(true)} class="transition hover:text-[var(--fg)]">
+                  Refresh stations
+                </button>
               </div>
             </div>
         </section>
@@ -3992,17 +4073,6 @@ function App() {
             });
             return (
               <>
-              <section class="border-b border-[var(--line-soft)] px-6 py-4">
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">My playlists</div>
-                    <div class="mt-1 text-sm text-[var(--soft)]">Create and manage your playlists.</div>
-                  </div>
-                  <div class="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)]">
-                    <span>{playlists().length} playlists</span>
-                  </div>
-                </div>
-              </section>
               <section class="min-h-0 flex-1 overflow-hidden px-6 py-4">
                 <div class="grid h-full min-h-0 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
                   <aside class="min-h-0 overflow-y-auto border border-[var(--line)] bg-[var(--panel)] p-4">
@@ -4128,73 +4198,26 @@ function App() {
                               </div>
                             </div>
                           </section>
-                          <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-4 py-2">
-                            <span class="w-8 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">#</span>
-                            <span class="min-w-0 flex-[1.4] font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Track</span>
-                            <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] md:block">Movie</span>
-                            <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] lg:block">Music Director</span>
-                            <span class="w-20 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Year</span>
-                            <span class="w-16 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]"></span>
-                          </div>
-                          <Show
-                            when={(playlist().tracks || []).length > 0}
-                            fallback={
-                              <div class="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
-                                <div class="text-sm text-[var(--soft)]">Empty playlist. Play a song from Library and add it here.</div>
+                          <div class="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
+                            <div class="max-w-md">
+                              <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Playlist Ready</div>
+                              <div class="mt-3 text-sm text-[var(--soft)]">
+                                Songs stay hidden in this tab. Add tracks from Library search or from another playlist, then come back here to manage the playlist.
                               </div>
-                            }
-                          >
-                            <ul ref={listRef} class="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-                              <For each={playlist().tracks || []}>
-                                {(track, index) => {
-                                  const active = () => selectedSong()?.id === track.id;
-                                  return (
-                                  <li>
-                                    <button
-                                      ref={(el) => { if (el) { rowRefs.set(track.id, el); } else { rowRefs.delete(track.id); } }}
-                                      type="button"
-                                      onClick={() => loadSong(track, true)}
-                                      class={`flex w-full items-center gap-4 px-4 py-3 text-left transition ${
-                                        active()
-                                          ? currentTrackId() === track.id
-                                            ? "song-row-active text-[var(--fg)]"
-                                            : "bg-[var(--hover)] text-[var(--fg)]"
-                                          : "bg-transparent text-[var(--fg)] hover:bg-[var(--hover)]"
-                                      }`}
-                                    >
-                                      <span class="w-8 text-right font-mono text-xs text-[var(--soft)]">
-                                        {currentTrackId() === track.id && isPlaying() && streamStarted() ? <PlayingBars /> : String(index() + 1).padStart(2, "0")}
-                                      </span>
-                                      <span class="min-w-0 flex-[1.4] truncate text-sm">{track.track}</span>
-                                      <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] md:block">{track.movie || "-"}</span>
-                                      <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] lg:block">{track.musicDirector || "-"}</span>
-                                      <span class="w-20 font-mono text-[11px] text-[var(--soft)]">{track.year || "-"}</span>
-                                      <span class="flex w-16 justify-end">
-                                        <span
-                                          role="button"
-                                          tabindex="-1"
-                                          onClick={(event) => { event.stopPropagation(); void removeSongFromPlaylist(playlist().id, track.id); }}
-                                          class={`font-mono text-[10px] uppercase tracking-[0.18em] transition ${
-                                            playlistMutationBusy() === `remove:${playlist().id}:${track.id}` ? "cursor-not-allowed text-[var(--line)]" : "text-[var(--muted)] hover:text-[var(--fg)]"
-                                          }`}
-                                        >
-                                          Remove
-                                        </span>
-                                      </span>
-                                    </button>
-                                  </li>
-                                  );
-                                }}
-                              </For>
-                            </ul>
-                          </Show>
+                              <div class="mt-4 font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">
+                                {(playlist().tracks || []).length > 0
+                                  ? `${(playlist().tracks || []).length} tracks in this playlist`
+                                  : "Empty playlist"}
+                              </div>
+                            </div>
+                          </div>
                         </>
                       )}
                     </Show>
                     <Show when={!playlistDetailLoading() && !myPlaylistDetail()}>
                       <div class="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
                         <div class="text-sm text-[var(--soft)]">
-                          {playlists().length > 0 ? "Select a playlist to view its songs." : "Create a playlist to get started."}
+                          {playlists().length > 0 ? "Select a playlist to manage it. Add songs from Library search or from another playlist." : "Create a playlist to get started."}
                         </div>
                       </div>
                     </Show>
@@ -4368,11 +4391,12 @@ function App() {
                         </div>
                       </section>
                       <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-4 py-2">
-                        <span class="w-8 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">#</span>
-                        <span class="min-w-0 flex-[1.4] font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Song Name</span>
-                        <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] md:block">Movie</span>
-                        <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] lg:block">Music Director</span>
-                        <span class="w-20 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Year</span>
+                        <SortableSongHeader columnKey="default" label="#" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="w-8 text-right" />
+                        <SortableSongHeader columnKey="track" label="Song Name" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="min-w-0 flex-[1.4]" />
+                        <SortableSongHeader columnKey="movie" label="Movie" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 md:block" />
+                        <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 lg:block" />
+                        <SortableSongHeader columnKey="singers" label="Singer" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
+                        <SortableSongHeader columnKey="year" label="Year" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="w-20" />
                         <Show when={canManageVisiblePlaylist()}>
                           <span class="w-16 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Remove</span>
                         </Show>
@@ -4386,7 +4410,7 @@ function App() {
                         }
                       >
                         <ul ref={listRef} class="min-h-0 flex-1 overflow-y-auto px-2 py-2">
-                          <For each={playlist().tracks || []}>
+                          <For each={sortedActiveSongList()}>
                             {(track, index) => {
                               const active = () => selectedSong()?.id === track.id;
                               return (
@@ -4415,6 +4439,7 @@ function App() {
                                   <span class="min-w-0 flex-[1.4] truncate text-sm">{track.track}</span>
                                   <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] md:block">{track.movie || "-"}</span>
                                   <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] lg:block">{track.musicDirector || "-"}</span>
+                                  <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] xl:block">{track.singers || "-"}</span>
                                   <span class="w-20 font-mono text-[11px] text-[var(--soft)]">{track.year || "-"}</span>
                                   <Show when={canManageVisiblePlaylist()}>
                                     <span class="flex w-16 justify-end">
@@ -4498,11 +4523,12 @@ function App() {
                 <Show when={searchTab() === "songs" || movieFilter() || artistFilter()}>
                   <>
                     <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-4 py-2">
-                      <span class="w-8 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">#</span>
-                      <span class="min-w-0 flex-[1.4] font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Song Name</span>
-                      <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] md:block">Movie</span>
-                      <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] lg:block">Music Director</span>
-                      <span class="w-20 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Year</span>
+                      <SortableSongHeader columnKey="default" label="#" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="w-8 text-right" />
+                      <SortableSongHeader columnKey="track" label="Song Name" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="min-w-0 flex-[1.4]" />
+                      <SortableSongHeader columnKey="movie" label="Movie" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 md:block" />
+                      <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 lg:block" />
+                      <SortableSongHeader columnKey="singers" label="Singer" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
+                      <SortableSongHeader columnKey="year" label="Year" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="w-20" />
                       <Show when={user()}>
                         <span class="w-8 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Fav</span>
                       </Show>
@@ -4510,11 +4536,11 @@ function App() {
                     <Show when={!loading()} fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">Loading{loadingDots()}</div>}>
                       <Show when={!error()} fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--soft)]">{error()}</div>}>
                         <Show
-                          when={activeSongList().length > 0}
+                          when={sortedActiveSongList().length > 0}
                           fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">No results</div>}
                         >
                           <ul ref={listRef} class="min-h-0 flex-1 overflow-y-auto">
-                            <For each={activeSongList()}>
+                            <For each={sortedActiveSongList()}>
                               {(song, index) => {
                                 const active = () => selectedSong()?.id === song.id;
                                 return (
@@ -4543,6 +4569,7 @@ function App() {
                                       <span class="min-w-0 flex-[1.4] truncate text-sm">{song.track}</span>
                                       <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] md:block">{song.movie || "-"}</span>
                                       <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] lg:block">{song.musicDirector || "-"}</span>
+                                      <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] xl:block">{song.singers || "-"}</span>
                                       <span class="w-20 font-mono text-[11px] text-[var(--soft)]">{song.year || "-"}</span>
                                       <Show when={user()}>
                                         <span class="flex w-8 justify-end">
@@ -4620,15 +4647,16 @@ function App() {
           </section>
         </Show>
 
-        <Show when={mainTab() !== "library" && (mainTab() !== "radio" && mainTab() !== "admin")}>
-          <>
+        <Show when={mainTab() !== "library" && (mainTab() !== "radio" && mainTab() !== "admin" && mainTab() !== "playlists")}>
+          <section class="min-h-0 flex-1 overflow-hidden px-6 py-4">
+            <div class="flex h-full min-h-0 flex-col overflow-hidden border border-[var(--line)] bg-[var(--panel)]">
             <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-6 py-2">
-              <span class="w-8 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">#</span>
-              <span class="min-w-0 flex-[1.2] font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Song</span>
-              <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] md:block">Singers</span>
-              <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] lg:block">Movie</span>
-              <span class="hidden min-w-0 flex-1 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)] xl:block">Music Director</span>
-              <span class="w-20 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Year</span>
+              <SortableSongHeader columnKey="default" label="#" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="w-8 text-right" />
+              <SortableSongHeader columnKey="track" label="Song Name" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="min-w-0 flex-[1.2]" />
+              <SortableSongHeader columnKey="movie" label="Movie" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 md:block" />
+              <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 lg:block" />
+              <SortableSongHeader columnKey="singers" label="Singer" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
+              <SortableSongHeader columnKey="year" label="Year" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="w-20" />
               <Show when={user()}>
                 <span class="w-8 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Fav</span>
               </Show>
@@ -4637,11 +4665,11 @@ function App() {
             <Show when={!loading()} fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">Loading{loadingDots()}</div>}>
               <Show when={!error()} fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--soft)]">{error()}</div>}>
                 <Show
-                  when={activeSongList().length > 0}
+                  when={sortedActiveSongList().length > 0}
                   fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">No results</div>}
                 >
                   <ul ref={listRef} class="min-h-0 flex-1 overflow-y-auto">
-                    <For each={activeSongList()}>
+                    <For each={sortedActiveSongList()}>
                       {(song, index) => {
                         const active = () => selectedSong()?.id === song.id;
                         return (
@@ -4670,13 +4698,13 @@ function App() {
                               </span>
                               <span class="min-w-0 flex-[1.2] truncate text-sm">{song.track}</span>
                               <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] md:block">
-                                {song.singers || "-"}
-                              </span>
-                              <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] lg:block">
                                 {song.movie || "-"}
                               </span>
-                              <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] xl:block">
+                              <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] lg:block">
                                 {song.musicDirector || "-"}
+                              </span>
+                              <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] xl:block">
+                                {song.singers || "-"}
                               </span>
                               <span class="w-20 font-mono text-[11px] text-[var(--soft)]">
                                 {song.year || "-"}
@@ -4705,7 +4733,8 @@ function App() {
                 </Show>
               </Show>
             </Show>
-          </>
+            </div>
+          </section>
         </Show>
       </section>
 
@@ -4908,8 +4937,8 @@ function App() {
                   selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true });
                   return;
                 }
-                const current = activeSongList().findIndex((song) => song.id === (currentTrackId() || selectedId()));
-                if (current >= 0 && current < activeSongList().length - 1) {
+                const current = sortedActiveSongList().findIndex((song) => song.id === (currentTrackId() || selectedId()));
+                if (current >= 0 && current < sortedActiveSongList().length - 1) {
                   selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true });
                 } else {
                   setIsPlaying(false);
