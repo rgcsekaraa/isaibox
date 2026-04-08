@@ -3681,7 +3681,7 @@ function App() {
                 <div class="mt-1 text-sm text-[var(--soft)]">Create and manage your playlists.</div>
               </div>
               <div class="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)]">
-                <span>{[...playlists(), ...globalPlaylists()].length} playlists</span>
+                <span>{playlists().length} playlists</span>
               </div>
             </div>
           </section>
@@ -3717,56 +3717,35 @@ function App() {
                   </div>
 
                   <Show when={filteredUserPlaylists().length > 0}>
-                    <div>
-                      <div class="mb-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Yours</div>
-                      <div class="grid grid-cols-2 gap-2">
-                        <For each={filteredUserPlaylists()}>
-                          {(playlist) => (
-                            <button
-                              type="button"
-                              onClick={() => void openGlobalPlaylist(playlist.id)}
-                              class={`border p-3 text-left transition ${
-                                selectedGlobalPlaylistTarget() === playlist.id
-                                  ? "border-[var(--fg)] bg-[var(--hover)]"
-                                  : "border-[var(--line)] hover:border-[var(--fg)]"
-                              }`}
-                            >
-                              <div class="line-clamp-2 text-sm">{playlist.name}</div>
-                              <div class="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">{playlist.trackCount} tracks</div>
-                            </button>
-                          )}
-                        </For>
-                      </div>
+                    <div class="grid grid-cols-2 gap-2">
+                      <For each={filteredUserPlaylists()}>
+                        {(playlist) => (
+                          <button
+                            type="button"
+                            onClick={() => void openGlobalPlaylist(playlist.id)}
+                            class={`border p-3 text-left transition ${
+                              selectedGlobalPlaylistTarget() === playlist.id
+                                ? "border-[var(--fg)] bg-[var(--hover)]"
+                                : "border-[var(--line)] hover:border-[var(--fg)]"
+                            }`}
+                          >
+                            <div class="line-clamp-2 text-sm">{playlist.name}</div>
+                            <div class="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">{playlist.trackCount} tracks</div>
+                          </button>
+                        )}
+                      </For>
                     </div>
                   </Show>
 
-                  <Show when={filteredGlobalPlaylists().length > 0}>
-                    <div>
-                      <div class="mb-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Global</div>
-                      <div class="grid grid-cols-2 gap-2">
-                        <For each={filteredGlobalPlaylists()}>
-                          {(playlist) => (
-                            <button
-                              type="button"
-                              onClick={() => void openGlobalPlaylist(playlist.id)}
-                              class={`border p-3 text-left transition ${
-                                selectedGlobalPlaylistTarget() === playlist.id
-                                  ? "border-[var(--fg)] bg-[var(--hover)]"
-                                  : "border-[var(--line)] hover:border-[var(--fg)]"
-                              }`}
-                            >
-                              <div class="line-clamp-2 text-sm">{playlist.name}</div>
-                              <div class="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">{playlist.trackCount} tracks</div>
-                            </button>
-                          )}
-                        </For>
-                      </div>
-                    </div>
-                  </Show>
-
-                  <Show when={normalizedPlaylistSearch() && filteredUserPlaylists().length === 0 && filteredGlobalPlaylists().length === 0}>
+                  <Show when={normalizedPlaylistSearch() && filteredUserPlaylists().length === 0}>
                     <div class="border border-[var(--line)] px-3 py-4 text-sm text-[var(--soft)]">
                       No playlists match that search.
+                    </div>
+                  </Show>
+
+                  <Show when={!normalizedPlaylistSearch() && playlists().length === 0}>
+                    <div class="border border-[var(--line)] px-3 py-4 text-sm text-[var(--soft)]">
+                      No playlists yet. Create one above.
                     </div>
                   </Show>
                 </div>
