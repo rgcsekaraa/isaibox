@@ -392,6 +392,7 @@ function App() {
   const [appOffline, setAppOffline] = createSignal(false);
   const [offlineMessage, setOfflineMessage] = createSignal("");
   const [dbSyncState, setDbSyncState] = createSignal(null);
+  const [configReady, setConfigReady] = createSignal(false);
 
   let worker;
   const audioRefs = [];
@@ -425,9 +426,9 @@ function App() {
   const rowRefs = new Map();
 
   const easeOutQuint = (value) => 1 - (1 - value) ** 5;
-  const authEnabled = createMemo(() => !localMode());
-  const libraryProfileEnabled = createMemo(() => localMode() || Boolean(user()));
-  const radioEnabled = createMemo(() => !localMode());
+  const authEnabled = createMemo(() => configReady() && !localMode());
+  const libraryProfileEnabled = createMemo(() => configReady() && (localMode() || Boolean(user())));
+  const radioEnabled = createMemo(() => configReady() && !localMode());
   const spotifyEnabled = createMemo(() => authEnabled() && Boolean(spotifyClientId()));
   const localDbSyncLabel = createMemo(() => {
     const sync = dbSyncState();
@@ -447,7 +448,7 @@ function App() {
     if (sync.status === "error") {
       return "Library sync error";
     }
-    return "Library synced";
+    return "";
   });
   const localDbSyncTone = createMemo(() => {
     const status = dbSyncState()?.status;
@@ -1140,21 +1141,28 @@ function App() {
       if (!sessionUser) {
         if (playlistsResponse.ok) {
           const playlistsPayload = await playlistsResponse.json();
-          setGlobalPlaylists(playlistsPayload.globalPlaylists || []);
+          const nextPlaylists = playlistsPayload.playlists || [];
+          const nextGlobalPlaylists = playlistsPayload.globalPlaylists || [];
+          setPlaylists(nextPlaylists);
+          setGlobalPlaylists(nextGlobalPlaylists);
           if (globalPlaylistDetail()) {
-            const currentGlobal = (playlistsPayload.globalPlaylists || []).find((playlist) => playlist.id === globalPlaylistDetail()?.id);
+            const currentGlobal = [...nextPlaylists, ...nextGlobalPlaylists].find((playlist) => playlist.id === globalPlaylistDetail()?.id);
             if (!currentGlobal) {
               setGlobalPlaylistDetail(null);
             }
           }
-          if (playlistsPayload.globalPlaylists?.[0]?.id) {
-            const defaultGlobalId = globalPlaylistDetail()?.id || selectedGlobalPlaylistTarget() || playlistsPayload.globalPlaylists[0].id;
-            setSelectedGlobalPlaylistTarget(defaultGlobalId);
+          if (!selectedPlaylistTarget() && nextPlaylists[0]?.id) {
+            setSelectedPlaylistTarget(nextPlaylists[0].id);
+          }
+          const defaultPlaylistId = globalPlaylistDetail()?.id || selectedGlobalPlaylistTarget() || nextPlaylists[0]?.id || nextGlobalPlaylists[0]?.id || "";
+          if (defaultPlaylistId) {
+            setSelectedGlobalPlaylistTarget(defaultPlaylistId);
             if (!globalPlaylistDetail()) {
-              void openGlobalPlaylist(defaultGlobalId);
+              void openGlobalPlaylist(defaultPlaylistId);
             }
           }
         } else {
+          setPlaylists([]);
           setGlobalPlaylists([]);
         }
         setFavoriteIds([]);
@@ -1215,13 +1223,15 @@ function App() {
 
       if (playlistsResponse.ok) {
         const playlistsPayload = await playlistsResponse.json();
-        setPlaylists(playlistsPayload.playlists || []);
-        setGlobalPlaylists(playlistsPayload.globalPlaylists || []);
+        const nextPlaylists = playlistsPayload.playlists || [];
+        const nextGlobalPlaylists = playlistsPayload.globalPlaylists || [];
+        setPlaylists(nextPlaylists);
+        setGlobalPlaylists(nextGlobalPlaylists);
         setPlaylistDetailCache((current) => {
           const next = new Map(current);
           const visibleIds = new Set([
-            ...(playlistsPayload.playlists || []).map((playlist) => playlist.id).filter(Boolean),
-            ...(playlistsPayload.globalPlaylists || []).map((playlist) => playlist.id).filter(Boolean),
+            ...nextPlaylists.map((playlist) => playlist.id).filter(Boolean),
+            ...nextGlobalPlaylists.map((playlist) => playlist.id).filter(Boolean),
           ]);
           Array.from(next.keys()).forEach((id) => {
             if (!visibleIds.has(id)) {
@@ -1230,19 +1240,13 @@ function App() {
           });
           return next;
         });
-        if (!selectedPlaylistTarget() && playlistsPayload.playlists?.[0]?.id) {
-          setSelectedPlaylistTarget(playlistsPayload.playlists[0].id);
+        if (!selectedPlaylistTarget() && nextPlaylists[0]?.id) {
+          setSelectedPlaylistTarget(nextPlaylists[0].id);
         }
-        if (playlistsPayload.globalPlaylists?.[0]?.id) {
-          const defaultGlobalId = globalPlaylistDetail()?.id || selectedGlobalPlaylistTarget() || playlistsPayload.globalPlaylists[0].id;
-          setSelectedGlobalPlaylistTarget(defaultGlobalId);
-          if (!globalPlaylistDetail()) {
-            void openGlobalPlaylist(defaultGlobalId);
-          }
-        }
+        const defaultPlaylistId = globalPlaylistDetail()?.id || selectedGlobalPlaylistTarget() || nextPlaylists[0]?.id || nextGlobalPlaylists[0]?.id || "";
         if (globalPlaylistDetail()) {
           const detailId = globalPlaylistDetail()?.id;
-          const detailStillVisible = [...(playlistsPayload.playlists || []), ...(playlistsPayload.globalPlaylists || [])]
+          const detailStillVisible = [...nextPlaylists, ...nextGlobalPlaylists]
             .some((playlist) => playlist.id === detailId);
           if (!detailStillVisible) {
             setGlobalPlaylistDetail(null);
@@ -1250,8 +1254,17 @@ function App() {
             setPlaylistDetailLoading(false);
           }
         }
-        if (!globalPlaylistDetail() && playlistsPayload.globalPlaylists?.[0]?.id) {
-          setGlobalPlaylistNameEdit(playlistsPayload.globalPlaylists[0].name || "");
+        if (defaultPlaylistId) {
+          setSelectedGlobalPlaylistTarget(defaultPlaylistId);
+          if (!globalPlaylistDetail()) {
+            void openGlobalPlaylist(defaultPlaylistId);
+          }
+        }
+        if (!globalPlaylistDetail()) {
+          const defaultPlaylistSummary = [...nextPlaylists, ...nextGlobalPlaylists].find((playlist) => playlist.id === defaultPlaylistId);
+          if (defaultPlaylistSummary) {
+            setGlobalPlaylistNameEdit(defaultPlaylistSummary.name || "");
+          }
         }
       } else {
         setPlaylists([]);
@@ -2464,6 +2477,7 @@ function App() {
       setSpotifyClientId(configPayload.spotifyClientId || "");
       setSpotifyRedirectUri(configPayload.spotifyRedirectUri || "");
       setSpotifyScopes(configPayload.spotifyScopes || "");
+      setConfigReady(true);
       setStats(statsPayload);
       setSongs(initialSongs);
       setResults({ songs: initialSongs.slice(0, 200), albums: [], artists: [] });
@@ -3424,13 +3438,11 @@ function App() {
                 <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">
                   {mainTab() === "recents" ? "Recent plays" : mainTab() === "favorites" ? "Favorites" : "Radio station"}
                 </div>
-                <div class="mt-1 text-sm text-[var(--soft)]">
-                  {mainTab() === "recents"
-                    ? "Recently played tracks, kept like a rolling playlist."
-                    : mainTab() === "favorites"
-                      ? "Your liked tracks as a playable list."
-                      : currentRadioStation()?.blurb || "Gemini-sorted stations with looping 100-song queues."}
-                </div>
+                <Show when={mainTab() === "radio"}>
+                  <div class="mt-1 text-sm text-[var(--soft)]">
+                    {currentRadioStation()?.blurb || "Gemini-sorted stations with looping 100-song queues."}
+                  </div>
+                </Show>
               </div>
               <div class="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)]">
                 <span>{activeSongList().length} tracks</span>

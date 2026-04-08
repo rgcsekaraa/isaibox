@@ -436,7 +436,7 @@ def playlists():
         {
             "ok": True,
             "playlists": playlists_for_user(user["user_id"]),
-            "globalPlaylists": [] if LOCAL_MODE else global_playlists(),
+            "globalPlaylists": global_playlists(),
         }
     )
 
@@ -632,4 +632,3 @@ def delete_playlist(playlist_id: str):
         conn.execute("DELETE FROM playlist_songs WHERE playlist_id = ?", [playlist_id])
         conn.execute("DELETE FROM playlists WHERE playlist_id = ?", [playlist_id])
     return json_response({"ok": True})
-

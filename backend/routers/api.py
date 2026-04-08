@@ -448,7 +448,7 @@ def playlists():
         {
             "ok": True,
             "playlists": playlists_for_user(user["user_id"]),
-            "globalPlaylists": [] if LOCAL_MODE else global_playlists(),
+            "globalPlaylists": global_playlists(),
         }
     )
 
