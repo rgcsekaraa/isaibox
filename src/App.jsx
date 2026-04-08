@@ -65,14 +65,26 @@ const SONG_SORT_COLUMNS = {
   year: "Year",
 };
 
+const DEFAULT_SONG_SORT = { key: "default", direction: "asc" };
+
 const normalizeSongSortValue = (value) => String(value || "").trim().toLowerCase();
 
 const compareSongValues = (left, right) => {
+  const leftText = String(left || "").trim();
+  const rightText = String(right || "").trim();
+  const leftBlank = leftText === "";
+  const rightBlank = rightText === "";
+  if (leftBlank || rightBlank) {
+    if (leftBlank && rightBlank) {
+      return 0;
+    }
+    return leftBlank ? 1 : -1;
+  }
   const leftNumber = Number(left);
   const rightNumber = Number(right);
-  const leftLooksNumeric = Number.isFinite(leftNumber) && String(left).trim() !== "";
-  const rightLooksNumeric = Number.isFinite(rightNumber) && String(right).trim() !== "";
-  if (leftLooksNumeric || rightLooksNumeric) {
+  const leftLooksNumeric = Number.isFinite(leftNumber);
+  const rightLooksNumeric = Number.isFinite(rightNumber);
+  if (leftLooksNumeric && rightLooksNumeric) {
     return leftNumber - rightNumber;
   }
   return normalizeSongSortValue(left).localeCompare(normalizeSongSortValue(right));
@@ -469,7 +481,13 @@ function App() {
   const [configReady, setConfigReady] = createSignal(false);
   const [playlistMutationBusy, setPlaylistMutationBusy] = createSignal("");
   const [playlistCreateBusy, setPlaylistCreateBusy] = createSignal(false);
-  const [songSort, setSongSort] = createSignal({ key: "default", direction: "asc" });
+  const [songSortByScope, setSongSortByScope] = createSignal({
+    library: DEFAULT_SONG_SORT,
+    library_playlist: DEFAULT_SONG_SORT,
+    recents: DEFAULT_SONG_SORT,
+    favorites: DEFAULT_SONG_SORT,
+    playlists: DEFAULT_SONG_SORT,
+  });
 
   let worker;
   const audioRefs = [];
@@ -807,6 +825,25 @@ function App() {
   const showPlaylistDetail = createMemo(() => Boolean(visiblePlaylistDetail()));
   const currentRadioStation = createMemo(() => radioStations().find((station) => station.id === selectedRadioStationId()) || null);
   const radioPlaybackLocked = createMemo(() => mainTab() === "radio");
+  const songSortScope = createMemo(() => {
+    if (mainTab() === "library" && showPlaylistDetail()) {
+      return "library_playlist";
+    }
+    if (mainTab() === "library") {
+      return "library";
+    }
+    if (mainTab() === "recents") {
+      return "recents";
+    }
+    if (mainTab() === "favorites") {
+      return "favorites";
+    }
+    if (mainTab() === "playlists") {
+      return "playlists";
+    }
+    return "library";
+  });
+  const currentSongSort = createMemo(() => songSortByScope()[songSortScope()] || DEFAULT_SONG_SORT);
   const activeSongList = createMemo(() => {
     if (mainTab() === "recents") {
       return recentSongs();
@@ -828,7 +865,12 @@ function App() {
     }
     return visibleResults();
   });
-  const sortedActiveSongList = createMemo(() => sortSongs(activeSongList(), songSort()));
+  const sortedActiveSongList = createMemo(() => {
+    if (mainTab() === "radio") {
+      return activeSongList();
+    }
+    return sortSongs(activeSongList(), currentSongSort());
+  });
   const selectedSong = createMemo(() => {
     const visible = sortedActiveSongList();
     return (
@@ -902,11 +944,19 @@ function App() {
     setMainBrowseTab(tab);
   };
   const toggleSongSort = (columnKey) => {
-    setSongSort((current) => {
-      if (current.key === columnKey) {
-        return { key: columnKey, direction: current.direction === "asc" ? "desc" : "asc" };
-      }
-      return { key: columnKey, direction: columnKey === "default" ? "asc" : "asc" };
+    if (mainTab() === "radio" || mainTab() === "admin") {
+      return;
+    }
+    setSongSortByScope((current) => {
+      const scope = songSortScope();
+      const existing = current[scope] || DEFAULT_SONG_SORT;
+      const nextSort = existing.key === columnKey
+        ? { key: columnKey, direction: existing.direction === "asc" ? "desc" : "asc" }
+        : { key: columnKey, direction: "asc" };
+      return {
+        ...current,
+        [scope]: nextSort,
+      };
     });
   };
   const formatUpdatedAt = (value) => {
@@ -4391,12 +4441,12 @@ function App() {
                         </div>
                       </section>
                       <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-4 py-2">
-                        <SortableSongHeader columnKey="default" label="#" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="w-8 text-right" />
-                        <SortableSongHeader columnKey="track" label="Song Name" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="min-w-0 flex-[1.4]" />
-                        <SortableSongHeader columnKey="movie" label="Movie" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 md:block" />
-                        <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 lg:block" />
-                        <SortableSongHeader columnKey="singers" label="Singer" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
-                        <SortableSongHeader columnKey="year" label="Year" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="w-20" />
+                        <SortableSongHeader columnKey="default" label="#" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-8 text-right" />
+                        <SortableSongHeader columnKey="track" label="Song Name" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="min-w-0 flex-[1.4]" />
+                        <SortableSongHeader columnKey="movie" label="Movie" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 md:block" />
+                        <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 lg:block" />
+                        <SortableSongHeader columnKey="singers" label="Singer" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
+                        <SortableSongHeader columnKey="year" label="Year" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-20" />
                         <Show when={canManageVisiblePlaylist()}>
                           <span class="w-16 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Remove</span>
                         </Show>
@@ -4523,12 +4573,12 @@ function App() {
                 <Show when={searchTab() === "songs" || movieFilter() || artistFilter()}>
                   <>
                     <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-4 py-2">
-                      <SortableSongHeader columnKey="default" label="#" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="w-8 text-right" />
-                      <SortableSongHeader columnKey="track" label="Song Name" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="min-w-0 flex-[1.4]" />
-                      <SortableSongHeader columnKey="movie" label="Movie" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 md:block" />
-                      <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 lg:block" />
-                      <SortableSongHeader columnKey="singers" label="Singer" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
-                      <SortableSongHeader columnKey="year" label="Year" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="w-20" />
+                      <SortableSongHeader columnKey="default" label="#" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-8 text-right" />
+                      <SortableSongHeader columnKey="track" label="Song Name" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="min-w-0 flex-[1.4]" />
+                      <SortableSongHeader columnKey="movie" label="Movie" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 md:block" />
+                      <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 lg:block" />
+                      <SortableSongHeader columnKey="singers" label="Singer" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
+                      <SortableSongHeader columnKey="year" label="Year" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-20" />
                       <Show when={user()}>
                         <span class="w-8 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Fav</span>
                       </Show>
@@ -4651,12 +4701,12 @@ function App() {
           <section class="min-h-0 flex-1 overflow-hidden px-6 py-4">
             <div class="flex h-full min-h-0 flex-col overflow-hidden border border-[var(--line)] bg-[var(--panel)]">
             <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-6 py-2">
-              <SortableSongHeader columnKey="default" label="#" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="w-8 text-right" />
-              <SortableSongHeader columnKey="track" label="Song Name" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="min-w-0 flex-[1.2]" />
-              <SortableSongHeader columnKey="movie" label="Movie" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 md:block" />
-              <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 lg:block" />
-              <SortableSongHeader columnKey="singers" label="Singer" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
-              <SortableSongHeader columnKey="year" label="Year" sortKey={songSort().key} sortDirection={songSort().direction} onSort={toggleSongSort} class="w-20" />
+              <SortableSongHeader columnKey="default" label="#" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-8 text-right" />
+              <SortableSongHeader columnKey="track" label="Song Name" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="min-w-0 flex-[1.2]" />
+              <SortableSongHeader columnKey="movie" label="Movie" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 md:block" />
+              <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 lg:block" />
+              <SortableSongHeader columnKey="singers" label="Singer" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
+              <SortableSongHeader columnKey="year" label="Year" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-20" />
               <Show when={user()}>
                 <span class="w-8 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Fav</span>
               </Show>

@@ -180,11 +180,11 @@ def _ensure_migrations(conn: duckdb.DuckDBPyConnection) -> None:
 
 # ── Connection factory ────────────────────────────────────────────────────────
 
-def get_conn(path: str = DUCKDB_PATH, read_only: bool = False) -> duckdb.DuckDBPyConnection:
+def get_conn(path: str = DUCKDB_PATH, read_only: bool = False, initialize: bool = True) -> duckdb.DuckDBPyConnection:
     """Open DuckDB connection. Creates file + schema on first call."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = duckdb.connect(path, read_only=read_only)
-    if not read_only:
+    if not read_only and initialize:
         conn.execute(_SCHEMA)
         _ensure_migrations(conn)
     return conn

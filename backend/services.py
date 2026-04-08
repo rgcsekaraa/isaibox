@@ -308,7 +308,7 @@ def get_read_conn():
     # DuckDB cannot safely mix read-only and read-write handles to the same
     # live DB file in this process. Use the normal connection mode for reads so
     # stream and playlist requests do not fail under load.
-    return db.get_conn()
+    return db.get_conn(initialize=False)
 
 
 def now_utc() -> datetime:
