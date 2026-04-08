@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
+
+import duckdb
+
+
+def iso_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def sha256_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def collect_stats(path: Path) -> dict[str, object]:
+    conn = duckdb.connect(str(path), read_only=True)
+    try:
+        songs = int(conn.execute("SELECT COUNT(*) FROM songs").fetchone()[0])
+        albums = int(conn.execute("SELECT COUNT(*) FROM albums").fetchone()[0])
+        latest_updated_at = conn.execute(
+            "SELECT MAX(updated_at) FROM songs WHERE updated_at IS NOT NULL"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    return {
+        "songs": songs,
+        "albums": albums,
+        "latest_song_updated_at": latest_updated_at.isoformat() if latest_updated_at else "",
+    }
+
+
+def build_manifest(stats_db: Path, download_path: Path, repo: str, ref: str, version: str) -> dict[str, object]:
+    stats = collect_stats(stats_db)
+    return {
+        "version": version,
+        "updated_at": version,
+        "size": stats_db.stat().st_size,
+        "sha256": sha256_file(stats_db),
+        "download_url": f"https://raw.githubusercontent.com/{repo}/{ref}/{download_path.as_posix()}",
+        "songs": stats["songs"],
+        "albums": stats["albums"],
+        "latest_song_updated_at": stats["latest_song_updated_at"],
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Copy and publish the packaged DuckDB manifest.")
+    parser.add_argument("--db-path", required=True, help="Source DuckDB path")
+    parser.add_argument("--output-db", required=True, help="Destination DuckDB path committed to Git")
+    parser.add_argument("--manifest", required=True, help="Destination manifest JSON path")
+    parser.add_argument("--repo", required=True, help="GitHub owner/repo")
+    parser.add_argument("--ref", default="main", help="Git ref used for raw download URLs")
+    parser.add_argument("--version", default="", help="Manifest version timestamp; defaults to current UTC time")
+    parser.add_argument("--dry-run", action="store_true", help="Validate inputs and print the manifest without writing files")
+    args = parser.parse_args()
+
+    source_db = Path(args.db_path).resolve()
+    output_db = Path(args.output_db)
+    manifest_path = Path(args.manifest)
+    version = args.version or iso_now()
+
+    if not source_db.exists():
+        raise FileNotFoundError(f"Source DuckDB not found: {source_db}")
+
+    if args.dry_run:
+        manifest_source = source_db
+    else:
+        output_db.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_db, output_db)
+        manifest_source = output_db
+
+    manifest = build_manifest(manifest_source, output_db, args.repo, args.ref, version)
+
+    if args.dry_run:
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+        return 0
+
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    print(json.dumps({"output_db": output_db.as_posix(), "manifest": manifest}, indent=2, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

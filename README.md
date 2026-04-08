@@ -133,6 +133,22 @@ Note:
 - R2 is the shared backing cache for production
 - if `boto3` is not installed, R2 is skipped and the app continues with local cache only
 
+## Automated GitHub DuckDB refresh
+
+The repository now uses GitHub Actions directly to refresh the GitHub-hosted DuckDB snapshot used by local package sync.
+
+This is the right execution model because a full scan can take 2-3 hours, which fits GitHub Actions much better than a Cloudflare Worker runtime.
+
+Pieces added for this flow:
+- GitHub Actions workflow: `.github/workflows/refresh-library.yml`
+- Publish helper: `scripts/publish_library.py`
+
+Workflow behavior:
+- runs automatically every 12 hours
+- can still be started manually with `workflow_dispatch`
+- runs the scraper, republishes `packages/isaibox-local/app/data/masstamilan.duckdb`, and rewrites `packages/isaibox-local/app/data/library-manifest.json`
+- commits only when the packaged database or manifest actually changed
+
 ---
 
 ## Start Airflow
