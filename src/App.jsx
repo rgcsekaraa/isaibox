@@ -2177,6 +2177,7 @@ function App() {
     const controller = new AbortController();
     playlistDetailAbortController = controller;
     const requestToken = ++playlistDetailRequestToken;
+    setLibraryNavStack([]);
     setQuery("");
     setMovieFilter("");
     setArtistFilter("");
@@ -4717,7 +4718,7 @@ function App() {
                   </section>
                 </Show>
 
-                <Show when={!musicDirectorFilter() || movieFilter()}>
+                <Show when={!showPlaylistDetail() && (!musicDirectorFilter() || movieFilter())}>
                   <>
                     <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-4 py-2">
                       <SortableSongHeader columnKey="default" label="#" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-8 text-right" />
