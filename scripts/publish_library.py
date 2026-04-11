@@ -49,6 +49,20 @@ def _duckdb_literal(path: Path) -> str:
     return str(path).replace("'", "''")
 
 
+def _get_shared_columns(conn: duckdb.DuckDBPyConnection, table: str, source_schema: str = "source") -> list[str]:
+    """Return the list of column names present in both the target and source table."""
+    target_cols = {
+        row[1]
+        for row in conn.execute(f"PRAGMA table_info('{table}')").fetchall()
+    }
+    source_cols = [
+        row[1]
+        for row in conn.execute(f"PRAGMA table_info('{source_schema}.{table}')").fetchall()
+    ]
+    # Preserve source ordering, keep only columns that exist in both schemas.
+    return [c for c in source_cols if c in target_cols]
+
+
 def export_library_snapshot(source_db: Path, output_db: Path) -> None:
     temp_output = output_db.with_suffix(".tmp")
     if temp_output.exists():
@@ -59,26 +73,38 @@ def export_library_snapshot(source_db: Path, output_db: Path) -> None:
     conn = db.get_conn(str(temp_output))
     try:
         conn.execute(f"ATTACH '{_duckdb_literal(source_db)}' AS source (READ_ONLY)")
-        conn.execute("INSERT INTO albums SELECT * FROM source.albums")
-        conn.execute("INSERT INTO songs SELECT * FROM source.songs")
-        conn.execute("INSERT INTO scrape_runs SELECT * FROM source.scrape_runs")
+
+        for table in ("albums", "songs", "scrape_runs"):
+            cols = _get_shared_columns(conn, table)
+            col_list = ", ".join(cols)
+            conn.execute(f"INSERT INTO {table} ({col_list}) SELECT {col_list} FROM source.{table}")
+
+        # Playlists: only global ones
+        pl_cols = _get_shared_columns(conn, "playlists")
+        pl_col_list = ", ".join(pl_cols)
         conn.execute(
-            """
-            INSERT INTO playlists
-            SELECT *
+            f"""
+            INSERT INTO playlists ({pl_col_list})
+            SELECT {pl_col_list}
             FROM source.playlists
             WHERE COALESCE(is_global, FALSE) = TRUE
             """
         )
+
+        # Playlist songs: only from global playlists
+        ps_cols = _get_shared_columns(conn, "playlist_songs")
+        ps_col_list = ", ".join(f"ps.{c}" for c in ps_cols)
+        ps_target_list = ", ".join(ps_cols)
         conn.execute(
-            """
-            INSERT INTO playlist_songs
-            SELECT ps.*
+            f"""
+            INSERT INTO playlist_songs ({ps_target_list})
+            SELECT {ps_col_list}
             FROM source.playlist_songs ps
             JOIN source.playlists p ON p.playlist_id = ps.playlist_id
             WHERE COALESCE(p.is_global, FALSE) = TRUE
             """
         )
+
         conn.execute("DETACH source")
     finally:
         conn.close()
