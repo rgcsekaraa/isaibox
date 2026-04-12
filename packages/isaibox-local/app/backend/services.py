@@ -9,6 +9,7 @@ import inspect
 import json
 import logging
 import os
+import random
 import re
 import secrets
 import subprocess
@@ -237,6 +238,13 @@ GEMINI_TIMEOUT_SECONDS = max(2, int(os.environ.get("GEMINI_TIMEOUT_SECONDS", "8"
 DEFAULT_GLOBAL_PLAYLIST_SOURCE = "default"
 DEFAULT_LATEST_2026_SOURCE_URL = "isaibox:default:latest-tamil-hits-2026"
 DEFAULT_LATEST_2026_NAME = "Latest Tamil Hits 2026"
+RANDOM_500_PLAYLIST_ID = "isaibox-random-500"
+RANDOM_500_PLAYLIST_NAME = "Random 500"
+RANDOM_500_SOURCE = "dynamic"
+RANDOM_500_SOURCE_URL = "isaibox:dynamic:random-500"
+RANDOM_500_TRACK_COUNT = 500
+RANDOM_500_YEAR_START = 1980
+RANDOM_500_YEAR_END = 2026
 SESSION_SECRET = os.environ.get("ISAIBOX_SESSION_SECRET", "isaibox-dev-session-secret")
 ADMIN_EMAILS = {
     email.strip().lower()
@@ -1100,6 +1108,16 @@ def normalize_playlist_name(name: str, *, field_label: str = "Playlist name") ->
     return cleaned
 
 
+def normalize_spotify_playlist_url(playlist_url: str) -> str:
+    cleaned = re.sub(r"\s+", "", str(playlist_url or ""))
+    if not cleaned:
+        raise ValueError("Spotify playlist URL is required")
+    playlist_id = extract_spotify_playlist_id(cleaned)
+    if not playlist_id:
+        raise ValueError("Invalid Spotify playlist URL")
+    return f"https://open.spotify.com/playlist/{playlist_id}"
+
+
 def ensure_default_latest_2026_playlist() -> dict | None:
     with get_read_conn() as conn:
         rows = conn.execute(
@@ -1149,17 +1167,16 @@ def reorder_playlist_songs_for_user(user: dict, playlist_id: str, song_ids: list
         if not playlist or (playlist[1] and not user["is_admin"]) or (not playlist[1] and playlist[2] != user["user_id"]):
             raise LookupError("Playlist not found")
         existing_rows = conn.execute(
-            "SELECT song_id, added_at FROM playlist_songs WHERE playlist_id = ? ORDER BY position, added_at",
+            "SELECT song_id FROM playlist_songs WHERE playlist_id = ? ORDER BY position, added_at",
             [playlist_id],
         ).fetchall()
-        song_metadata = {row[0]: row[1] for row in existing_rows}
-        cleaned_song_ids = [song_id for song_id in song_ids if isinstance(song_id, str) and song_id]
-        if set(cleaned_song_ids) != set(song_metadata.keys()) or len(cleaned_song_ids) != len(song_metadata):
+        existing_song_ids = [row[0] for row in existing_rows]
+        if set(cleaned_song_ids) != set(existing_song_ids) or len(cleaned_song_ids) != len(existing_song_ids):
             raise ValueError("Reorder list must contain the same playlist songs")
         conn.execute("DELETE FROM playlist_songs WHERE playlist_id = ?", [playlist_id])
         conn.executemany(
             "INSERT INTO playlist_songs (playlist_id, song_id, position, added_at) VALUES (?, ?, ?, ?)",
-            [[playlist_id, song_id, index + 1, song_metadata.get(song_id, now_utc())] for index, song_id in enumerate(cleaned_song_ids)],
+            [[playlist_id, song_id, index + 1, now_utc()] for index, song_id in enumerate(cleaned_song_ids)],
         )
         conn.execute("UPDATE playlists SET updated_at = ? WHERE playlist_id = ?", [now_utc(), playlist_id])
     return {"ok": True}
@@ -1451,7 +1468,7 @@ def replace_live_duckdb(download_path: Path, manifest: dict) -> dict:
             backup_path.unlink()
         if db_path.exists():
             merge_preserved_user_state(db_path, download_path)
-            # Atomic replacement on Linux; handles existing open file handles gracefully
+            os.replace(db_path, backup_path)
         os.replace(download_path, db_path)
         manifest_tmp_path.write_text(json.dumps(manifest, indent=2, sort_keys=True))
         os.replace(manifest_tmp_path, LOCAL_DB_MANIFEST_PATH)
@@ -1583,14 +1600,6 @@ def ensure_db_sync_thread_started() -> None:
 @app.on_event("startup")
 async def startup_event() -> None:
     if LOCAL_MODE:
-        db_path = db.ensure_local_library_db()
-        app.logger.info(
-            "Local DB ready: live=%s bundled=%s exists=%s size=%s",
-            db_path,
-            db.BUNDLED_DUCKDB_PATH,
-            db_path.exists(),
-            db_path.stat().st_size if db_path.exists() else 0,
-        )
         ensure_db_sync_thread_started()
 
 
@@ -1814,6 +1823,52 @@ def favorite_song_ids_for_user(user_id: str) -> set[str]:
     return {row[0] for row in rows}
 
 
+def favorite_payload_for_user(user_id: str) -> dict:
+    with get_read_conn() as conn:
+        song_rows = conn.execute(
+            "SELECT song_id FROM favorite_songs WHERE user_id = ? ORDER BY created_at DESC, song_id ASC",
+            [user_id],
+        ).fetchall()
+        album_entity_rows = conn.execute(
+            """
+            SELECT album_url, album_name
+            FROM favorite_album_entities
+            WHERE user_id = ?
+            ORDER BY created_at DESC, album_name ASC, album_url ASC
+            """,
+            [user_id],
+        ).fetchall()
+        album_rows = conn.execute(
+            "SELECT album_name FROM favorite_albums WHERE user_id = ? ORDER BY created_at DESC, album_name ASC",
+            [user_id],
+        ).fetchall()
+        director_rows = conn.execute(
+            "SELECT music_director FROM favorite_music_directors WHERE user_id = ? ORDER BY created_at DESC, music_director ASC",
+            [user_id],
+        ).fetchall()
+    album_favorites: list[dict] = []
+    seen_album_keys: set[str] = set()
+    for row in album_entity_rows:
+        album_url = row[0] or ""
+        album_name = row[1] or ""
+        album_key = album_url or album_name
+        if not album_key or album_key in seen_album_keys:
+            continue
+        seen_album_keys.add(album_key)
+        album_favorites.append({"albumUrl": album_url, "albumName": album_name})
+    for row in album_rows:
+        album_name = row[0] or ""
+        if not album_name or album_name in seen_album_keys:
+            continue
+        seen_album_keys.add(album_name)
+        album_favorites.append({"albumUrl": "", "albumName": album_name})
+    return {
+        "songIds": [row[0] for row in song_rows if row[0]],
+        "albums": album_favorites,
+        "musicDirectors": [row[0] for row in director_rows if row[0]],
+    }
+
+
 def default_user_preferences() -> dict:
     return {
         "themePreference": "system",
@@ -1960,7 +2015,7 @@ def global_playlists() -> list[dict]:
             ,
             [DEFAULT_GLOBAL_PLAYLIST_SOURCE, DEFAULT_LATEST_2026_SOURCE_URL],
         ).fetchall()
-    return [
+    playlists = [
         {
             "id": row[0],
             "name": row[1] or "",
@@ -1972,6 +2027,160 @@ def global_playlists() -> list[dict]:
         }
         for row in rows
     ]
+    playlists.insert(
+        0,
+        {
+            "id": RANDOM_500_PLAYLIST_ID,
+            "name": RANDOM_500_PLAYLIST_NAME,
+            "isGlobal": True,
+            "source": RANDOM_500_SOURCE,
+            "sourceUrl": RANDOM_500_SOURCE_URL,
+            "updatedAt": now_utc().isoformat(),
+            "trackCount": RANDOM_500_TRACK_COUNT,
+        },
+    )
+    return playlists
+
+
+def song_payload_from_row(row) -> dict:
+    return {
+        "id": row[0],
+        "movie": row[1] or "",
+        "track": row[2] or "",
+        "singers": row[3] or "",
+        "musicDirector": row[4] or "",
+        "year": row[5] or "",
+        "trackNumber": row[6] or 0,
+        "audioUrl": f"/api/stream/{row[0]}",
+        "updatedAt": row[8].isoformat() if row[8] else "",
+        "albumUrl": row[9] or "",
+    }
+
+
+def random_500_playlist_detail() -> dict:
+    with get_read_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                song_id,
+                movie_name,
+                track_name,
+                singers,
+                music_director,
+                year,
+                track_number,
+                url_320kbps,
+                updated_at,
+                album_url
+            FROM songs
+            WHERE url_320kbps IS NOT NULL
+              AND url_320kbps != ''
+              AND album_url IS NOT NULL
+              AND album_url != ''
+              AND TRY_CAST(year AS INTEGER) BETWEEN ? AND ?
+            ORDER BY updated_at DESC NULLS LAST, movie_name, track_number
+            """
+            ,
+            [RANDOM_500_YEAR_START, RANDOM_500_YEAR_END],
+        ).fetchall()
+
+    years: dict[int, dict[str, dict]] = {}
+    for row in rows:
+        album_url = row[9] or ""
+        if not album_url:
+            continue
+        try:
+            sort_year = int(row[5] or "")
+        except (TypeError, ValueError):
+            continue
+        if sort_year < RANDOM_500_YEAR_START or sort_year > RANDOM_500_YEAR_END:
+            continue
+        year_bucket = years.setdefault(sort_year, {})
+        album = year_bucket.get(album_url)
+        if not album:
+            album = {
+                "albumUrl": album_url,
+                "album": row[1] or "",
+                "year": str(sort_year),
+                "sortYear": sort_year,
+                "tracks": [],
+                "nextTrackIndex": 0,
+            }
+            year_bucket[album_url] = album
+        album["tracks"].append(song_payload_from_row(row))
+
+    if not years:
+        return {
+            "id": RANDOM_500_PLAYLIST_ID,
+            "name": RANDOM_500_PLAYLIST_NAME,
+            "isGlobal": True,
+            "source": RANDOM_500_SOURCE,
+            "sourceUrl": RANDOM_500_SOURCE_URL,
+            "updatedAt": now_utc().isoformat(),
+            "tracks": [],
+        }
+
+    rng = random.SystemRandom()
+    year_sequence = list(years.keys())
+    rng.shuffle(year_sequence)
+    albums_by_year: dict[int, list[dict]] = {}
+    album_index_by_year: dict[int, int] = {}
+    for year in year_sequence:
+        albums = list(years[year].values())
+        rng.shuffle(albums)
+        for album in albums:
+            rng.shuffle(album["tracks"])
+        albums_by_year[year] = albums
+        album_index_by_year[year] = 0
+
+    selected_tracks: list[dict] = []
+    used_song_ids: set[str] = set()
+    while len(selected_tracks) < RANDOM_500_TRACK_COUNT:
+        cycle_added = 0
+        cycle_years = year_sequence[:]
+        rng.shuffle(cycle_years)
+        for year in cycle_years:
+            albums = albums_by_year.get(year) or []
+            if not albums:
+                continue
+            album_count = len(albums)
+            start_index = album_index_by_year[year] % album_count
+            chosen_album = None
+            for offset in range(album_count):
+                album = albums[(start_index + offset) % album_count]
+                while album["nextTrackIndex"] < len(album["tracks"]) and album["tracks"][album["nextTrackIndex"]]["id"] in used_song_ids:
+                    album["nextTrackIndex"] += 1
+                if album["nextTrackIndex"] < len(album["tracks"]):
+                    chosen_album = album
+                    album_index_by_year[year] = (start_index + offset + 1) % album_count
+                    break
+            if not chosen_album:
+                continue
+            track = chosen_album["tracks"][chosen_album["nextTrackIndex"]]
+            chosen_album["nextTrackIndex"] += 1
+            selected_tracks.append(
+                {
+                    **track,
+                    "playlistPosition": len(selected_tracks) + 1,
+                    "playlistAddedAt": "",
+                }
+            )
+            used_song_ids.add(track["id"])
+            cycle_added += 1
+            if len(selected_tracks) >= RANDOM_500_TRACK_COUNT:
+                break
+        if cycle_added == 0:
+            break
+
+    return {
+        "id": RANDOM_500_PLAYLIST_ID,
+        "name": RANDOM_500_PLAYLIST_NAME,
+        "isGlobal": True,
+        "source": RANDOM_500_SOURCE,
+        "sourceUrl": RANDOM_500_SOURCE_URL,
+        "updatedAt": now_utc().isoformat(),
+        "tracks": selected_tracks,
+    }
 
 
 def playlist_tracks(playlist_id: str) -> list[dict]:
@@ -2002,7 +2211,8 @@ def playlist_tracks(playlist_id: str) -> list[dict]:
                 year,
                 track_number,
                 url_320kbps,
-                updated_at
+                updated_at,
+                album_url
             FROM songs
             WHERE song_id IN ({placeholders})
               AND url_320kbps IS NOT NULL
@@ -2011,20 +2221,7 @@ def playlist_tracks(playlist_id: str) -> list[dict]:
             song_ids,
         ).fetchall()
 
-    song_map = {
-        row[0]: {
-            "id": row[0],
-            "movie": row[1] or "",
-            "track": row[2] or "",
-            "singers": row[3] or "",
-            "musicDirector": row[4] or "",
-            "year": row[5] or "",
-            "trackNumber": row[6] or 0,
-            "audioUrl": f"/api/stream/{row[0]}",
-            "updatedAt": row[8].isoformat() if row[8] else "",
-        }
-        for row in song_rows
-    }
+    song_map = {row[0]: song_payload_from_row(row) for row in song_rows}
 
     tracks: list[dict] = []
     for position, added_at, song_id in playlist_rows:
@@ -2735,12 +2932,7 @@ def is_playable_upstream_response(response: requests.Response | None) -> bool:
     return response.status_code in (200, 206) and is_audio_content_type(content_type)
 
 
-def build_upstream_headers(
-    song_id: str | None = None,
-    album_url: str | None = None,
-    *,
-    forward_range: bool = False,
-) -> dict[str, str]:
+def build_upstream_headers(song_id: str | None = None, album_url: str | None = None) -> dict[str, str]:
     headers = dict(UPSTREAM_HEADERS)
     if album_url:
         headers["Referer"] = album_url
@@ -2748,11 +2940,8 @@ def build_upstream_headers(
         row = get_song_row(song_id)
         if row and row.get("album_url"):
             headers["Referer"] = row["album_url"]
-    if has_request_context():
-        forwarded_headers = ("Range", "If-Range") if forward_range else ()
-        if not LOCAL_MODE:
-            forwarded_headers += ("If-Modified-Since", "If-None-Match")
-        for header in forwarded_headers:
+    if has_request_context() and not LOCAL_MODE:
+        for header in ("Range", "If-Range", "If-Modified-Since", "If-None-Match"):
             value = request.headers.get(header)
             if value:
                 headers[header] = value
@@ -2762,9 +2951,12 @@ def build_upstream_headers(
 def request_upstream(url: str, *, headers: dict[str, str], stream: bool, timeout: tuple[int, int]) -> tuple[requests.Response | None, str]:
     last_response: requests.Response | None = None
     last_source = "requests"
-
+    
     def cffi_get(url, **kwargs):
         from curl_cffi import requests as cffi_requests
+        # Convert requests-style stream=True to curl_cffi handling if needed
+        # curl_cffi handles streaming differently, but for simplicity here we use its synchronous interface
+        # note: curl_cffi response objects mimic requests enough for our is_playable check
         return cffi_requests.get(url, impersonate="chrome124", **kwargs)
 
     # Prefer curl_cffi ahead of cloudscraper for media URLs. cloudscraper can
@@ -2790,11 +2982,6 @@ def request_upstream(url: str, *, headers: dict[str, str], stream: bool, timeout
             continue
 
         if is_playable_upstream_response(response):
-            return response, source
-
-        # If upstream returned HTML, the URL is expired — stop trying other clients
-        content_type = response.headers.get("Content-Type", "")
-        if response.status_code == 200 and "text/html" in content_type:
             return response, source
 
         if last_response is not None:
@@ -2980,7 +3167,16 @@ def download_song_to_cache(song_id: str, url: str | None = None) -> None:
                 )
                 upstream.close()
             return
-
+        if not is_playable_upstream_response(upstream):
+            if upstream is not None:
+                app.logger.warning(
+                    "Refusing to cache non-audio upstream response for %s: status=%s content_type=%s",
+                    song_id,
+                    upstream.status_code,
+                    upstream.headers.get("Content-Type"),
+                )
+                upstream.close()
+            return
         try:
             with temp_path.open("wb") as output:
                 for chunk in upstream.iter_content(chunk_size=128 * 1024):

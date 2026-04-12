@@ -16,7 +16,6 @@ DuckDB advantages over SQLite here:
 
 import duckdb
 import os
-import shutil
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -26,13 +25,6 @@ DUCKDB_PATH = os.environ.get(
     "DUCKDB_PATH",
     str(_HERE / "data" / "masstamilan.duckdb"),
 )
-BUNDLED_DUCKDB_PATH = Path(
-    os.environ.get(
-        "ISAIBOX_BUNDLED_DUCKDB_PATH",
-        str(_HERE / "data" / "masstamilan.duckdb"),
-    )
-)
-REQUIRED_LIBRARY_TABLES = ("songs", "albums")
 
 # ── DDL ──────────────────────────────────────────────────────────────────────
 
@@ -115,6 +107,28 @@ CREATE TABLE IF NOT EXISTS favorite_songs (
     PRIMARY KEY (user_id, song_id)
 );
 
+CREATE TABLE IF NOT EXISTS favorite_albums (
+    user_id         VARCHAR NOT NULL,
+    album_name      VARCHAR NOT NULL,
+    created_at      TIMESTAMPTZ,
+    PRIMARY KEY (user_id, album_name)
+);
+
+CREATE TABLE IF NOT EXISTS favorite_album_entities (
+    user_id         VARCHAR NOT NULL,
+    album_url       VARCHAR NOT NULL,
+    album_name      VARCHAR,
+    created_at      TIMESTAMPTZ,
+    PRIMARY KEY (user_id, album_url)
+);
+
+CREATE TABLE IF NOT EXISTS favorite_music_directors (
+    user_id         VARCHAR NOT NULL,
+    music_director  VARCHAR NOT NULL,
+    created_at      TIMESTAMPTZ,
+    PRIMARY KEY (user_id, music_director)
+);
+
 CREATE TABLE IF NOT EXISTS playlists (
     playlist_id     VARCHAR PRIMARY KEY,
     user_id         VARCHAR NOT NULL,
@@ -148,6 +162,9 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON user_sessions (user_id);
 CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorite_songs (user_id);
+CREATE INDEX IF NOT EXISTS idx_favorite_albums_user_id ON favorite_albums (user_id);
+CREATE INDEX IF NOT EXISTS idx_favorite_album_entities_user_id ON favorite_album_entities (user_id);
+CREATE INDEX IF NOT EXISTS idx_favorite_music_directors_user_id ON favorite_music_directors (user_id);
 CREATE INDEX IF NOT EXISTS idx_playlists_user_id ON playlists (user_id);
 CREATE INDEX IF NOT EXISTS idx_playlist_songs_playlist_id ON playlist_songs (playlist_id);
 """
@@ -186,50 +203,11 @@ def _ensure_migrations(conn: duckdb.DuckDBPyConnection) -> None:
                 continue
             conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_sql}")
 
-
-def _has_required_library_tables(path: Path) -> bool:
-    if not path.exists() or path.stat().st_size <= 0:
-        return False
-    conn = duckdb.connect(str(path), read_only=False)
-    try:
-        existing = {
-            row[0]
-            for row in conn.execute("SHOW TABLES").fetchall()
-        }
-    finally:
-        conn.close()
-    return all(table_name in existing for table_name in REQUIRED_LIBRARY_TABLES)
-
-
-def ensure_local_library_db(path: str = DUCKDB_PATH) -> Path:
-    target_path = Path(path)
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if _has_required_library_tables(target_path):
-        return target_path
-
-    bundled_path = BUNDLED_DUCKDB_PATH
-    if bundled_path.resolve() != target_path.resolve() and _has_required_library_tables(bundled_path):
-        tmp_path = target_path.with_suffix(target_path.suffix + ".tmp")
-        if tmp_path.exists():
-            tmp_path.unlink()
-        shutil.copy2(bundled_path, tmp_path)
-        os.replace(tmp_path, target_path)
-        return target_path
-
-    conn = duckdb.connect(str(target_path), read_only=False)
-    try:
-        conn.execute(_SCHEMA)
-        _ensure_migrations(conn)
-    finally:
-        conn.close()
-    return target_path
-
 # ── Connection factory ────────────────────────────────────────────────────────
 
 def get_conn(path: str = DUCKDB_PATH, read_only: bool = False, initialize: bool = True) -> duckdb.DuckDBPyConnection:
     """Open DuckDB connection. Creates file + schema on first call."""
-    ensure_local_library_db(path)
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = duckdb.connect(path, read_only=read_only)
     if not read_only and initialize:
         conn.execute(_SCHEMA)

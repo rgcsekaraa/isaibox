@@ -30,12 +30,21 @@ def stats():
         latest_updated_at = conn.execute(
             "SELECT MAX(updated_at) FROM songs WHERE updated_at IS NOT NULL"
         ).fetchone()[0]
+    if LOCAL_MODE:
+        sync_state = get_db_sync_state()
+        sync_updated_at = (sync_state.get("updatedAt") or "").strip()
+        if sync_updated_at:
+            latest_updated_at_value = sync_updated_at
+        else:
+            latest_updated_at_value = latest_updated_at.isoformat() if latest_updated_at else ""
+    else:
+        latest_updated_at_value = latest_updated_at.isoformat() if latest_updated_at else ""
     return json_response(
         {
             "songs": songs,
             "albums": albums,
             "latestYear": latest_year,
-            "latestUpdatedAt": latest_updated_at.isoformat() if latest_updated_at else "",
+            "latestUpdatedAt": latest_updated_at_value,
         }
     )
 
@@ -54,7 +63,8 @@ def library():
                 year,
                 track_number,
                 url_320kbps,
-                updated_at
+                updated_at,
+                album_url
             FROM songs
             WHERE url_320kbps IS NOT NULL AND url_320kbps != ''
             ORDER BY TRY_CAST(year AS INTEGER) DESC NULLS LAST, movie_name, track_number
@@ -72,6 +82,7 @@ def library():
             "trackNumber": row[6] or 0,
             "audioUrl": f"/api/stream/{row[0]}",
             "updatedAt": row[8].isoformat() if row[8] else "",
+            "albumUrl": row[9] or "",
         }
         for row in rows
     ]
@@ -409,8 +420,7 @@ def favorites():
     user, error_response = require_session_user()
     if error_response:
         return error_response
-    favorite_ids = sorted(favorite_song_ids_for_user(user["user_id"]))
-    return json_response({"ok": True, "songIds": favorite_ids})
+    return json_response({"ok": True, **favorite_payload_for_user(user["user_id"])})
 
 
 @app.post("/api/favorites/<song_id>")
@@ -437,6 +447,96 @@ def remove_favorite(song_id: str):
         return error_response
     with db.get_conn() as conn:
         conn.execute("DELETE FROM favorite_songs WHERE user_id = ? AND song_id = ?", [user["user_id"], song_id])
+    return json_response({"ok": True})
+
+
+@app.post("/api/favorites/albums")
+def add_album_favorite():
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    album_name = (payload.get("albumName") or "").strip()
+    album_url = (payload.get("albumUrl") or "").strip()
+    if not album_name and not album_url:
+        return json_response({"ok": False, "message": "albumName or albumUrl is required"}), 400
+    with db.get_conn() as conn:
+        if album_url:
+            conn.execute(
+                """
+                INSERT INTO favorite_album_entities (user_id, album_url, album_name, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (user_id, album_url) DO UPDATE SET
+                    album_name = excluded.album_name,
+                    created_at = excluded.created_at
+                """,
+                [user["user_id"], album_url, album_name, now_utc()],
+            )
+        elif album_name:
+            conn.execute(
+                """
+                INSERT INTO favorite_albums (user_id, album_name, created_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT (user_id, album_name) DO NOTHING
+                """,
+                [user["user_id"], album_name, now_utc()],
+            )
+    return json_response({"ok": True})
+
+
+@app.delete("/api/favorites/albums")
+def remove_album_favorite():
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    album_name = (payload.get("albumName") or "").strip()
+    album_url = (payload.get("albumUrl") or "").strip()
+    if not album_name and not album_url:
+        return json_response({"ok": False, "message": "albumName or albumUrl is required"}), 400
+    with db.get_conn() as conn:
+        if album_url:
+            conn.execute("DELETE FROM favorite_album_entities WHERE user_id = ? AND album_url = ?", [user["user_id"], album_url])
+        if album_name:
+            conn.execute("DELETE FROM favorite_albums WHERE user_id = ? AND album_name = ?", [user["user_id"], album_name])
+    return json_response({"ok": True})
+
+
+@app.post("/api/favorites/music-directors")
+def add_music_director_favorite():
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    music_director = (payload.get("musicDirector") or "").strip()
+    if not music_director:
+        return json_response({"ok": False, "message": "musicDirector is required"}), 400
+    with db.get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO favorite_music_directors (user_id, music_director, created_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT (user_id, music_director) DO NOTHING
+            """,
+            [user["user_id"], music_director, now_utc()],
+        )
+    return json_response({"ok": True})
+
+
+@app.delete("/api/favorites/music-directors")
+def remove_music_director_favorite():
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    music_director = (payload.get("musicDirector") or "").strip()
+    if not music_director:
+        return json_response({"ok": False, "message": "musicDirector is required"}), 400
+    with db.get_conn() as conn:
+        conn.execute(
+            "DELETE FROM favorite_music_directors WHERE user_id = ? AND music_director = ?",
+            [user["user_id"], music_director],
+        )
     return json_response({"ok": True})
 
 
@@ -488,6 +588,8 @@ def admin_generate_ai_playlists():
 @app.get("/api/playlists/<playlist_id>")
 def get_playlist(playlist_id: str):
     user = get_session_user()
+    if playlist_id == RANDOM_500_PLAYLIST_ID:
+        return json_response({"ok": True, "playlist": random_500_playlist_detail()})
     with get_read_conn() as conn:
         playlist = conn.execute(
             "SELECT playlist_id, name, is_global, source, source_url, user_id, updated_at FROM playlists WHERE playlist_id = ?",

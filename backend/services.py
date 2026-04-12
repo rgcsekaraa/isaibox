@@ -9,6 +9,7 @@ import inspect
 import json
 import logging
 import os
+import random
 import re
 import secrets
 import subprocess
@@ -237,6 +238,13 @@ GEMINI_TIMEOUT_SECONDS = max(2, int(os.environ.get("GEMINI_TIMEOUT_SECONDS", "8"
 DEFAULT_GLOBAL_PLAYLIST_SOURCE = "default"
 DEFAULT_LATEST_2026_SOURCE_URL = "isaibox:default:latest-tamil-hits-2026"
 DEFAULT_LATEST_2026_NAME = "Latest Tamil Hits 2026"
+RANDOM_500_PLAYLIST_ID = "isaibox-random-500"
+RANDOM_500_PLAYLIST_NAME = "Random 500"
+RANDOM_500_SOURCE = "dynamic"
+RANDOM_500_SOURCE_URL = "isaibox:dynamic:random-500"
+RANDOM_500_TRACK_COUNT = 500
+RANDOM_500_YEAR_START = 1980
+RANDOM_500_YEAR_END = 2026
 SESSION_SECRET = os.environ.get("ISAIBOX_SESSION_SECRET", "isaibox-dev-session-secret")
 ADMIN_EMAILS = {
     email.strip().lower()
@@ -1815,6 +1823,52 @@ def favorite_song_ids_for_user(user_id: str) -> set[str]:
     return {row[0] for row in rows}
 
 
+def favorite_payload_for_user(user_id: str) -> dict:
+    with get_read_conn() as conn:
+        song_rows = conn.execute(
+            "SELECT song_id FROM favorite_songs WHERE user_id = ? ORDER BY created_at DESC, song_id ASC",
+            [user_id],
+        ).fetchall()
+        album_entity_rows = conn.execute(
+            """
+            SELECT album_url, album_name
+            FROM favorite_album_entities
+            WHERE user_id = ?
+            ORDER BY created_at DESC, album_name ASC, album_url ASC
+            """,
+            [user_id],
+        ).fetchall()
+        album_rows = conn.execute(
+            "SELECT album_name FROM favorite_albums WHERE user_id = ? ORDER BY created_at DESC, album_name ASC",
+            [user_id],
+        ).fetchall()
+        director_rows = conn.execute(
+            "SELECT music_director FROM favorite_music_directors WHERE user_id = ? ORDER BY created_at DESC, music_director ASC",
+            [user_id],
+        ).fetchall()
+    album_favorites: list[dict] = []
+    seen_album_keys: set[str] = set()
+    for row in album_entity_rows:
+        album_url = row[0] or ""
+        album_name = row[1] or ""
+        album_key = album_url or album_name
+        if not album_key or album_key in seen_album_keys:
+            continue
+        seen_album_keys.add(album_key)
+        album_favorites.append({"albumUrl": album_url, "albumName": album_name})
+    for row in album_rows:
+        album_name = row[0] or ""
+        if not album_name or album_name in seen_album_keys:
+            continue
+        seen_album_keys.add(album_name)
+        album_favorites.append({"albumUrl": "", "albumName": album_name})
+    return {
+        "songIds": [row[0] for row in song_rows if row[0]],
+        "albums": album_favorites,
+        "musicDirectors": [row[0] for row in director_rows if row[0]],
+    }
+
+
 def default_user_preferences() -> dict:
     return {
         "themePreference": "system",
@@ -1961,7 +2015,7 @@ def global_playlists() -> list[dict]:
             ,
             [DEFAULT_GLOBAL_PLAYLIST_SOURCE, DEFAULT_LATEST_2026_SOURCE_URL],
         ).fetchall()
-    return [
+    playlists = [
         {
             "id": row[0],
             "name": row[1] or "",
@@ -1973,6 +2027,160 @@ def global_playlists() -> list[dict]:
         }
         for row in rows
     ]
+    playlists.insert(
+        0,
+        {
+            "id": RANDOM_500_PLAYLIST_ID,
+            "name": RANDOM_500_PLAYLIST_NAME,
+            "isGlobal": True,
+            "source": RANDOM_500_SOURCE,
+            "sourceUrl": RANDOM_500_SOURCE_URL,
+            "updatedAt": now_utc().isoformat(),
+            "trackCount": RANDOM_500_TRACK_COUNT,
+        },
+    )
+    return playlists
+
+
+def song_payload_from_row(row) -> dict:
+    return {
+        "id": row[0],
+        "movie": row[1] or "",
+        "track": row[2] or "",
+        "singers": row[3] or "",
+        "musicDirector": row[4] or "",
+        "year": row[5] or "",
+        "trackNumber": row[6] or 0,
+        "audioUrl": f"/api/stream/{row[0]}",
+        "updatedAt": row[8].isoformat() if row[8] else "",
+        "albumUrl": row[9] or "",
+    }
+
+
+def random_500_playlist_detail() -> dict:
+    with get_read_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                song_id,
+                movie_name,
+                track_name,
+                singers,
+                music_director,
+                year,
+                track_number,
+                url_320kbps,
+                updated_at,
+                album_url
+            FROM songs
+            WHERE url_320kbps IS NOT NULL
+              AND url_320kbps != ''
+              AND album_url IS NOT NULL
+              AND album_url != ''
+              AND TRY_CAST(year AS INTEGER) BETWEEN ? AND ?
+            ORDER BY updated_at DESC NULLS LAST, movie_name, track_number
+            """
+            ,
+            [RANDOM_500_YEAR_START, RANDOM_500_YEAR_END],
+        ).fetchall()
+
+    years: dict[int, dict[str, dict]] = {}
+    for row in rows:
+        album_url = row[9] or ""
+        if not album_url:
+            continue
+        try:
+            sort_year = int(row[5] or "")
+        except (TypeError, ValueError):
+            continue
+        if sort_year < RANDOM_500_YEAR_START or sort_year > RANDOM_500_YEAR_END:
+            continue
+        year_bucket = years.setdefault(sort_year, {})
+        album = year_bucket.get(album_url)
+        if not album:
+            album = {
+                "albumUrl": album_url,
+                "album": row[1] or "",
+                "year": str(sort_year),
+                "sortYear": sort_year,
+                "tracks": [],
+                "nextTrackIndex": 0,
+            }
+            year_bucket[album_url] = album
+        album["tracks"].append(song_payload_from_row(row))
+
+    if not years:
+        return {
+            "id": RANDOM_500_PLAYLIST_ID,
+            "name": RANDOM_500_PLAYLIST_NAME,
+            "isGlobal": True,
+            "source": RANDOM_500_SOURCE,
+            "sourceUrl": RANDOM_500_SOURCE_URL,
+            "updatedAt": now_utc().isoformat(),
+            "tracks": [],
+        }
+
+    rng = random.SystemRandom()
+    year_sequence = list(years.keys())
+    rng.shuffle(year_sequence)
+    albums_by_year: dict[int, list[dict]] = {}
+    album_index_by_year: dict[int, int] = {}
+    for year in year_sequence:
+        albums = list(years[year].values())
+        rng.shuffle(albums)
+        for album in albums:
+            rng.shuffle(album["tracks"])
+        albums_by_year[year] = albums
+        album_index_by_year[year] = 0
+
+    selected_tracks: list[dict] = []
+    used_song_ids: set[str] = set()
+    while len(selected_tracks) < RANDOM_500_TRACK_COUNT:
+        cycle_added = 0
+        cycle_years = year_sequence[:]
+        rng.shuffle(cycle_years)
+        for year in cycle_years:
+            albums = albums_by_year.get(year) or []
+            if not albums:
+                continue
+            album_count = len(albums)
+            start_index = album_index_by_year[year] % album_count
+            chosen_album = None
+            for offset in range(album_count):
+                album = albums[(start_index + offset) % album_count]
+                while album["nextTrackIndex"] < len(album["tracks"]) and album["tracks"][album["nextTrackIndex"]]["id"] in used_song_ids:
+                    album["nextTrackIndex"] += 1
+                if album["nextTrackIndex"] < len(album["tracks"]):
+                    chosen_album = album
+                    album_index_by_year[year] = (start_index + offset + 1) % album_count
+                    break
+            if not chosen_album:
+                continue
+            track = chosen_album["tracks"][chosen_album["nextTrackIndex"]]
+            chosen_album["nextTrackIndex"] += 1
+            selected_tracks.append(
+                {
+                    **track,
+                    "playlistPosition": len(selected_tracks) + 1,
+                    "playlistAddedAt": "",
+                }
+            )
+            used_song_ids.add(track["id"])
+            cycle_added += 1
+            if len(selected_tracks) >= RANDOM_500_TRACK_COUNT:
+                break
+        if cycle_added == 0:
+            break
+
+    return {
+        "id": RANDOM_500_PLAYLIST_ID,
+        "name": RANDOM_500_PLAYLIST_NAME,
+        "isGlobal": True,
+        "source": RANDOM_500_SOURCE,
+        "sourceUrl": RANDOM_500_SOURCE_URL,
+        "updatedAt": now_utc().isoformat(),
+        "tracks": selected_tracks,
+    }
 
 
 def playlist_tracks(playlist_id: str) -> list[dict]:
@@ -2003,7 +2211,8 @@ def playlist_tracks(playlist_id: str) -> list[dict]:
                 year,
                 track_number,
                 url_320kbps,
-                updated_at
+                updated_at,
+                album_url
             FROM songs
             WHERE song_id IN ({placeholders})
               AND url_320kbps IS NOT NULL
@@ -2012,20 +2221,7 @@ def playlist_tracks(playlist_id: str) -> list[dict]:
             song_ids,
         ).fetchall()
 
-    song_map = {
-        row[0]: {
-            "id": row[0],
-            "movie": row[1] or "",
-            "track": row[2] or "",
-            "singers": row[3] or "",
-            "musicDirector": row[4] or "",
-            "year": row[5] or "",
-            "trackNumber": row[6] or 0,
-            "audioUrl": f"/api/stream/{row[0]}",
-            "updatedAt": row[8].isoformat() if row[8] else "",
-        }
-        for row in song_rows
-    }
+    song_map = {row[0]: song_payload_from_row(row) for row in song_rows}
 
     tracks: list[dict] = []
     for position, added_at, song_id in playlist_rows:

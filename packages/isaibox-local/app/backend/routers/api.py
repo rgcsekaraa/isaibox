@@ -21,56 +21,55 @@ def db_sync_check():
 
 @app.get("/api/stats")
 def stats():
-    try:
-        with get_read_conn() as conn:
-            songs = conn.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
-            albums = conn.execute("SELECT COUNT(*) FROM albums").fetchone()[0]
-            latest_year = conn.execute(
-                "SELECT MAX(TRY_CAST(year AS INTEGER)) FROM songs WHERE year IS NOT NULL AND year != ''"
-            ).fetchone()[0]
-            latest_updated_at = conn.execute(
-                "SELECT MAX(updated_at) FROM songs WHERE updated_at IS NOT NULL"
-            ).fetchone()[0]
-    except duckdb.Error:
-        app.logger.warning("Local library DB not ready for /api/stats", exc_info=True)
-        songs = 0
-        albums = 0
-        latest_year = None
-        latest_updated_at = None
+    with get_read_conn() as conn:
+        songs = conn.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
+        albums = conn.execute("SELECT COUNT(*) FROM albums").fetchone()[0]
+        latest_year = conn.execute(
+            "SELECT MAX(TRY_CAST(year AS INTEGER)) FROM songs WHERE year IS NOT NULL AND year != ''"
+        ).fetchone()[0]
+        latest_updated_at = conn.execute(
+            "SELECT MAX(updated_at) FROM songs WHERE updated_at IS NOT NULL"
+        ).fetchone()[0]
+    if LOCAL_MODE:
+        sync_state = get_db_sync_state()
+        sync_updated_at = (sync_state.get("updatedAt") or "").strip()
+        if sync_updated_at:
+            latest_updated_at_value = sync_updated_at
+        else:
+            latest_updated_at_value = latest_updated_at.isoformat() if latest_updated_at else ""
+    else:
+        latest_updated_at_value = latest_updated_at.isoformat() if latest_updated_at else ""
     return json_response(
         {
             "songs": songs,
             "albums": albums,
             "latestYear": latest_year,
-            "latestUpdatedAt": latest_updated_at.isoformat() if latest_updated_at else "",
+            "latestUpdatedAt": latest_updated_at_value,
         }
     )
 
 
 @app.get("/api/library")
 def library():
-    try:
-        with get_read_conn() as conn:
-            rows = conn.execute(
-                """
-                SELECT
-                    song_id,
-                    movie_name,
-                    track_name,
-                    singers,
-                    music_director,
-                    year,
-                    track_number,
-                    url_320kbps,
-                    updated_at
-                FROM songs
-                WHERE url_320kbps IS NOT NULL AND url_320kbps != ''
-                ORDER BY TRY_CAST(year AS INTEGER) DESC NULLS LAST, movie_name, track_number
-                """
-            ).fetchall()
-    except duckdb.Error:
-        app.logger.warning("Local library DB not ready for /api/library", exc_info=True)
-        rows = []
+    with get_read_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                song_id,
+                movie_name,
+                track_name,
+                singers,
+                music_director,
+                year,
+                track_number,
+                url_320kbps,
+                updated_at,
+                album_url
+            FROM songs
+            WHERE url_320kbps IS NOT NULL AND url_320kbps != ''
+            ORDER BY TRY_CAST(year AS INTEGER) DESC NULLS LAST, movie_name, track_number
+            """
+        ).fetchall()
 
     songs = [
         {
@@ -83,6 +82,7 @@ def library():
             "trackNumber": row[6] or 0,
             "audioUrl": f"/api/stream/{row[0]}",
             "updatedAt": row[8].isoformat() if row[8] else "",
+            "albumUrl": row[9] or "",
         }
         for row in rows
     ]
@@ -99,21 +99,17 @@ def warmup():
     except (TypeError, ValueError):
         limit = 24
 
-    try:
-        with get_read_conn() as conn:
-            rows = conn.execute(
-                """
-                SELECT song_id, url_320kbps
-                FROM songs
-                WHERE url_320kbps IS NOT NULL AND url_320kbps != ''
-                ORDER BY updated_at DESC NULLS LAST, movie_name, track_number
-                LIMIT ?
-                """,
-                [limit],
-            ).fetchall()
-    except duckdb.Error:
-        app.logger.warning("Local library DB not ready for /api/warmup", exc_info=True)
-        rows = []
+    with get_read_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT song_id, url_320kbps
+            FROM songs
+            WHERE url_320kbps IS NOT NULL AND url_320kbps != ''
+            ORDER BY updated_at DESC NULLS LAST, movie_name, track_number
+            LIMIT ?
+            """,
+            [limit],
+        ).fetchall()
 
     queued = 0
     cached = 0
@@ -150,6 +146,14 @@ def cache_trim():
     return json_response(result)
 
 
+@app.get("/api/radio/stations")
+def radio_stations():
+    if LOCAL_MODE:
+        return json_response({"ok": False, "message": "Radio disabled in local mode"}), 404
+    force_refresh = request.args.get("refresh") == "1"
+    return json_response(get_radio_stations(force_refresh=force_refresh))
+
+
 @app.post("/api/prefetch")
 def prefetch_songs():
     payload = request.get_json(silent=True) or {}
@@ -178,7 +182,7 @@ def song_status(song_id: str):
 
 
 def open_upstream_stream(song_id: str, url: str, album_url: str | None = None):
-    headers = build_upstream_headers(song_id=song_id, album_url=album_url, forward_range=True)
+    headers = build_upstream_headers(song_id=song_id, album_url=album_url)
     upstream, source = request_upstream(url, headers=headers, stream=True, timeout=(5, 30))
 
     if not is_playable_upstream_response(upstream):
@@ -291,12 +295,16 @@ def stream_song(song_id: str):
 
 @app.get("/api/config")
 def config():
+    origin = request.headers.get("Origin", "").rstrip("/")
     return json_response(
         {
             "localMode": LOCAL_MODE,
             "googleClientId": "" if LOCAL_MODE else GOOGLE_CLIENT_ID,
             "geminiRadioEnabled": False if LOCAL_MODE else bool(GEMINI_API_KEYS),
             "geminiKeyCount": len(GEMINI_API_KEYS),
+            "spotifyClientId": "" if LOCAL_MODE else SPOTIFY_CLIENT_ID,
+            "spotifyRedirectUri": "" if LOCAL_MODE else (SPOTIFY_REDIRECT_URI or origin),
+            "spotifyScopes": "" if LOCAL_MODE else SPOTIFY_SCOPES,
         }
     )
 
@@ -412,8 +420,7 @@ def favorites():
     user, error_response = require_session_user()
     if error_response:
         return error_response
-    favorite_ids = sorted(favorite_song_ids_for_user(user["user_id"]))
-    return json_response({"ok": True, "songIds": favorite_ids})
+    return json_response({"ok": True, **favorite_payload_for_user(user["user_id"])})
 
 
 @app.post("/api/favorites/<song_id>")
@@ -440,6 +447,96 @@ def remove_favorite(song_id: str):
         return error_response
     with db.get_conn() as conn:
         conn.execute("DELETE FROM favorite_songs WHERE user_id = ? AND song_id = ?", [user["user_id"], song_id])
+    return json_response({"ok": True})
+
+
+@app.post("/api/favorites/albums")
+def add_album_favorite():
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    album_name = (payload.get("albumName") or "").strip()
+    album_url = (payload.get("albumUrl") or "").strip()
+    if not album_name and not album_url:
+        return json_response({"ok": False, "message": "albumName or albumUrl is required"}), 400
+    with db.get_conn() as conn:
+        if album_url:
+            conn.execute(
+                """
+                INSERT INTO favorite_album_entities (user_id, album_url, album_name, created_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (user_id, album_url) DO UPDATE SET
+                    album_name = excluded.album_name,
+                    created_at = excluded.created_at
+                """,
+                [user["user_id"], album_url, album_name, now_utc()],
+            )
+        elif album_name:
+            conn.execute(
+                """
+                INSERT INTO favorite_albums (user_id, album_name, created_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT (user_id, album_name) DO NOTHING
+                """,
+                [user["user_id"], album_name, now_utc()],
+            )
+    return json_response({"ok": True})
+
+
+@app.delete("/api/favorites/albums")
+def remove_album_favorite():
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    album_name = (payload.get("albumName") or "").strip()
+    album_url = (payload.get("albumUrl") or "").strip()
+    if not album_name and not album_url:
+        return json_response({"ok": False, "message": "albumName or albumUrl is required"}), 400
+    with db.get_conn() as conn:
+        if album_url:
+            conn.execute("DELETE FROM favorite_album_entities WHERE user_id = ? AND album_url = ?", [user["user_id"], album_url])
+        if album_name:
+            conn.execute("DELETE FROM favorite_albums WHERE user_id = ? AND album_name = ?", [user["user_id"], album_name])
+    return json_response({"ok": True})
+
+
+@app.post("/api/favorites/music-directors")
+def add_music_director_favorite():
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    music_director = (payload.get("musicDirector") or "").strip()
+    if not music_director:
+        return json_response({"ok": False, "message": "musicDirector is required"}), 400
+    with db.get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO favorite_music_directors (user_id, music_director, created_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT (user_id, music_director) DO NOTHING
+            """,
+            [user["user_id"], music_director, now_utc()],
+        )
+    return json_response({"ok": True})
+
+
+@app.delete("/api/favorites/music-directors")
+def remove_music_director_favorite():
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    music_director = (payload.get("musicDirector") or "").strip()
+    if not music_director:
+        return json_response({"ok": False, "message": "musicDirector is required"}), 400
+    with db.get_conn() as conn:
+        conn.execute(
+            "DELETE FROM favorite_music_directors WHERE user_id = ? AND music_director = ?",
+            [user["user_id"], music_director],
+        )
     return json_response({"ok": True})
 
 
@@ -479,9 +576,20 @@ def create_playlist():
     return json_response({"ok": True, "playlist": {"id": playlist_id, "name": name, "isGlobal": False, "source": "manual", "sourceUrl": "", "trackCount": 0}})
 
 
+@app.post("/api/admin/playlists/ai/generate")
+def admin_generate_ai_playlists():
+    user, error_response = require_admin_user()
+    if error_response:
+        return error_response
+    payload = create_ai_playlists_for_user(user["user_id"])
+    return json_response(payload)
+
+
 @app.get("/api/playlists/<playlist_id>")
 def get_playlist(playlist_id: str):
     user = get_session_user()
+    if playlist_id == RANDOM_500_PLAYLIST_ID:
+        return json_response({"ok": True, "playlist": random_500_playlist_detail()})
     with get_read_conn() as conn:
         playlist = conn.execute(
             "SELECT playlist_id, name, is_global, source, source_url, user_id, updated_at FROM playlists WHERE playlist_id = ?",
@@ -622,13 +730,13 @@ def remove_song_from_playlist(playlist_id: str, song_id: str):
             return json_response({"ok": False, "message": "Playlist not found"}), 404
         conn.execute("DELETE FROM playlist_songs WHERE playlist_id = ? AND song_id = ?", [playlist_id, song_id])
         rows = conn.execute(
-            "SELECT song_id, added_at FROM playlist_songs WHERE playlist_id = ? ORDER BY position, added_at",
+            "SELECT song_id FROM playlist_songs WHERE playlist_id = ? ORDER BY position, added_at",
             [playlist_id],
         ).fetchall()
         conn.execute("DELETE FROM playlist_songs WHERE playlist_id = ?", [playlist_id])
         conn.executemany(
             "INSERT INTO playlist_songs (playlist_id, song_id, position, added_at) VALUES (?, ?, ?, ?)",
-            [[playlist_id, row[0], index + 1, row[1]] for index, row in enumerate(rows)],
+            [[playlist_id, row[0], index + 1, now_utc()] for index, row in enumerate(rows)],
         )
         conn.execute("UPDATE playlists SET updated_at = ? WHERE playlist_id = ?", [now_utc(), playlist_id])
     return json_response({"ok": True})
@@ -666,3 +774,353 @@ def delete_playlist(playlist_id: str):
         conn.execute("DELETE FROM playlist_songs WHERE playlist_id = ?", [playlist_id])
         conn.execute("DELETE FROM playlists WHERE playlist_id = ?", [playlist_id])
     return json_response({"ok": True})
+
+
+@app.post("/api/playlists/import/spotify")
+def import_spotify_playlist():
+    if LOCAL_MODE:
+        return json_response({"ok": False, "message": "Spotify import disabled in local mode"}), 403
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    try:
+        playlist_url = normalize_spotify_playlist_url(payload.get("url", ""))
+    except ValueError as exc:
+        return json_response({"ok": False, "message": str(exc)}), 400
+    access_token = (payload.get("accessToken") or "").strip()
+    try:
+        playlist_name, tracks = resolve_spotify_playlist_tracks(playlist_url, access_token=access_token)
+    except Exception as exc:
+        app.logger.warning("Spotify import failed", exc_info=True)
+        return json_response({"ok": False, "message": str(exc) or "Spotify import failed"}), 400
+
+    matched_ids, matched_details, unmatched = match_spotify_tracks(tracks)
+    with db.get_conn() as conn:
+        existing_playlist = conn.execute(
+            """
+            SELECT playlist_id
+            FROM playlists
+            WHERE user_id = ? AND source = 'spotify' AND source_url = ? AND is_global = FALSE
+            LIMIT 1
+            """,
+            [user["user_id"], playlist_url],
+        ).fetchone()
+        if existing_playlist:
+            playlist_id = existing_playlist[0]
+            conn.execute(
+                "UPDATE playlists SET name = ?, updated_at = ? WHERE playlist_id = ?",
+                [playlist_name, now_utc(), playlist_id],
+            )
+            conn.execute("DELETE FROM playlist_songs WHERE playlist_id = ?", [playlist_id])
+        else:
+            playlist_id = secrets.token_hex(16)
+            conn.execute(
+                """
+                INSERT INTO playlists (playlist_id, user_id, name, is_global, source, source_url, created_at, updated_at)
+                VALUES (?, ?, ?, FALSE, 'spotify', ?, ?, ?)
+                """,
+                [playlist_id, user["user_id"], playlist_name, playlist_url, now_utc(), now_utc()],
+            )
+        conn.executemany(
+            "INSERT INTO playlist_songs (playlist_id, song_id, position, added_at) VALUES (?, ?, ?, ?)",
+            [[playlist_id, song_id, index + 1, now_utc()] for index, song_id in enumerate(matched_ids)],
+        )
+    return json_response(
+        {
+            "ok": True,
+            "playlist": {
+                "id": playlist_id,
+                "name": playlist_name,
+                "isGlobal": False,
+                "source": "spotify",
+                "sourceUrl": playlist_url,
+                "trackCount": len(matched_ids),
+            },
+            "matchedCount": len(matched_ids),
+            "totalCount": len(tracks),
+            "updatedExisting": bool(existing_playlist),
+            "matched": matched_details[:20],
+            "unmatched": unmatched[:20],
+        }
+    )
+
+
+@app.post("/api/spotify/playlists")
+def spotify_playlists():
+    if LOCAL_MODE:
+        return json_response({"ok": False, "message": "Spotify disabled in local mode"}), 403
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    access_token = (payload.get("accessToken") or "").strip()
+    if not access_token:
+        return json_response({"ok": False, "message": "Spotify access token is required"}), 400
+    try:
+        playlists = resolve_spotify_account_playlists(access_token)
+    except requests.RequestException:
+        app.logger.warning("Spotify playlist listing failed", exc_info=True)
+        return json_response({"ok": False, "message": "Unable to load Spotify playlists"}), 400
+    return json_response({"ok": True, "playlists": playlists})
+
+
+@app.post("/api/spotify/import/liked-songs")
+def spotify_import_liked_songs():
+    if LOCAL_MODE:
+        return json_response({"ok": False, "message": "Spotify disabled in local mode"}), 403
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    access_token = (payload.get("accessToken") or "").strip()
+    if not access_token:
+        return json_response({"ok": False, "message": "Spotify access token is required"}), 400
+    try:
+        tracks = resolve_spotify_saved_tracks(access_token)
+    except requests.RequestException:
+        app.logger.warning("Spotify liked songs import failed", exc_info=True)
+        return json_response({"ok": False, "message": "Unable to load Spotify liked songs"}), 400
+
+    matched_ids, _, unmatched = match_spotify_tracks(tracks)
+
+    with db.get_conn() as conn:
+        conn.executemany(
+            """
+            INSERT INTO favorite_songs (user_id, song_id, created_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT (user_id, song_id) DO NOTHING
+            """,
+            [[user["user_id"], song_id, now_utc()] for song_id in matched_ids],
+        )
+
+    return json_response(
+        {
+            "ok": True,
+            "matchedCount": len(matched_ids),
+            "totalCount": len(tracks),
+            "unmatched": unmatched[:20],
+        }
+    )
+
+
+@app.post("/api/spotify/import/playlist")
+def spotify_import_account_playlist():
+    if LOCAL_MODE:
+        return json_response({"ok": False, "message": "Spotify disabled in local mode"}), 403
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    access_token = (payload.get("accessToken") or "").strip()
+    playlist_id = (payload.get("playlistId") or "").strip()
+    if not access_token or not playlist_id:
+        return json_response({"ok": False, "message": "Spotify access token and playlistId are required"}), 400
+
+    try:
+        playlist_name, tracks = resolve_spotify_playlist_tracks_api(access_token, playlist_id)
+    except requests.RequestException:
+        app.logger.warning("Spotify account playlist import failed", exc_info=True)
+        return json_response({"ok": False, "message": "Unable to import Spotify playlist"}), 400
+
+    matched_ids, _, unmatched = match_spotify_tracks(tracks)
+
+    playlist_id_local = secrets.token_hex(16)
+    with db.get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO playlists (playlist_id, user_id, name, is_global, source, source_url, created_at, updated_at)
+            VALUES (?, ?, ?, FALSE, 'spotify', ?, ?, ?)
+            """,
+            [playlist_id_local, user["user_id"], playlist_name, f"spotify:playlist:{playlist_id}", now_utc(), now_utc()],
+        )
+        conn.executemany(
+            "INSERT INTO playlist_songs (playlist_id, song_id, position, added_at) VALUES (?, ?, ?, ?)",
+            [[playlist_id_local, song_id, index + 1, now_utc()] for index, song_id in enumerate(matched_ids)],
+        )
+
+    return json_response(
+        {
+            "ok": True,
+            "playlist": {
+                "id": playlist_id_local,
+                "name": playlist_name,
+                "isGlobal": False,
+                "source": "spotify",
+                "sourceUrl": f"spotify:playlist:{playlist_id}",
+                "trackCount": len(matched_ids),
+            },
+            "matchedCount": len(matched_ids),
+            "totalCount": len(tracks),
+            "unmatched": unmatched[:20],
+        }
+    )
+
+
+@app.post("/api/admin/playlists")
+def admin_create_global_playlist():
+    admin_user, error_response = require_admin_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    try:
+        name = normalize_playlist_name(payload.get("name", ""))
+    except ValueError as exc:
+        return json_response({"ok": False, "message": str(exc)}), 400
+    playlist_id = secrets.token_hex(16)
+    with db.get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO playlists (playlist_id, user_id, name, is_global, source, source_url, created_at, updated_at)
+            VALUES (?, ?, ?, TRUE, 'manual', '', ?, ?)
+            """,
+            [playlist_id, admin_user["user_id"], name, now_utc(), now_utc()],
+        )
+    return json_response({"ok": True, "playlist": {"id": playlist_id, "name": name, "isGlobal": True, "source": "manual", "sourceUrl": "", "trackCount": 0}})
+
+
+@app.post("/api/admin/radio-stations/<station_id>/playlist")
+def admin_save_radio_station_as_global_playlist(station_id: str):
+    admin_user, error_response = require_admin_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    try:
+        payload = create_global_playlist_from_radio_station(
+            admin_user["user_id"],
+            station_id,
+            mode=(payload.get("mode") or "upsert").strip(),
+            target_playlist_id=(payload.get("targetPlaylistId") or "").strip(),
+            name=(payload.get("name") or "").strip(),
+        )
+    except ValueError as exc:
+        return json_response({"ok": False, "message": str(exc)}), 400
+    return json_response(payload)
+
+
+@app.get("/api/admin/overview")
+def admin_overview():
+    _, error_response = require_admin_user()
+    if error_response:
+        return error_response
+    with get_read_conn() as conn:
+        users = conn.execute(
+            """
+            SELECT user_id, email, name, picture, is_admin, is_banned, ban_reason, last_login_at, created_at
+            FROM users
+            ORDER BY updated_at DESC, created_at DESC
+            """
+        ).fetchall()
+    return json_response(
+        {
+            "ok": True,
+            "users": [
+                {
+                    "userId": row[0],
+                    "email": row[1] or "",
+                    "name": row[2] or "",
+                    "picture": row[3] or "",
+                    "isAdmin": bool(row[4]),
+                    "isBanned": bool(row[5]),
+                    "banReason": row[6] or "",
+                    "lastLoginAt": row[7].isoformat() if row[7] else "",
+                    "createdAt": row[8].isoformat() if row[8] else "",
+                }
+                for row in users
+            ],
+            "airflow": airflow_process_status(),
+        }
+    )
+
+
+@app.post("/api/admin/users/<user_id>/ban")
+def admin_ban_user(user_id: str):
+    _, error_response = require_admin_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    reason = (payload.get("reason") or "Banned by admin").strip()
+    with db.get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET is_banned = TRUE, ban_reason = ?, updated_at = ? WHERE user_id = ?",
+            [reason, now_utc(), user_id],
+        )
+        conn.execute(
+            "DELETE FROM user_sessions WHERE user_id = ?",
+            [user_id],
+        )
+    return json_response({"ok": True})
+
+
+@app.post("/api/admin/users/<user_id>/unban")
+def admin_unban_user(user_id: str):
+    _, error_response = require_admin_user()
+    if error_response:
+        return error_response
+    with db.get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET is_banned = FALSE, ban_reason = '', updated_at = ? WHERE user_id = ?",
+            [now_utc(), user_id],
+        )
+    return json_response({"ok": True})
+
+
+@app.post("/api/admin/users/<user_id>/admin")
+def admin_toggle_admin(user_id: str):
+    admin_user, error_response = require_admin_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    is_admin = bool(payload.get("isAdmin"))
+    if admin_user["user_id"] == user_id and not is_admin:
+        return json_response({"ok": False, "message": "You cannot remove your own admin access"}), 400
+    with db.get_conn() as conn:
+        conn.execute(
+            "UPDATE users SET is_admin = ?, updated_at = ? WHERE user_id = ?",
+            [is_admin, now_utc(), user_id],
+        )
+    return json_response({"ok": True})
+
+
+@app.get("/api/admin/airflow")
+def admin_airflow():
+    _, error_response = require_admin_user()
+    if error_response:
+        return error_response
+    return json_response({"ok": True, "airflow": airflow_process_status()})
+
+
+@app.post("/api/admin/airflow/start")
+def admin_airflow_start():
+    _, error_response = require_admin_user()
+    if error_response:
+        return error_response
+    code, stdout, stderr = run_local_command(["bash", "start.sh"])
+    return json_response({"ok": code == 0, "stdout": stdout, "stderr": stderr, "airflow": airflow_process_status()}), (200 if code == 0 else 500)
+
+
+@app.post("/api/admin/airflow/stop")
+def admin_airflow_stop():
+    _, error_response = require_admin_user()
+    if error_response:
+        return error_response
+    code, stdout, stderr = run_local_command(["bash", "stop.sh"])
+    return json_response({"ok": code == 0, "stdout": stdout, "stderr": stderr, "airflow": airflow_process_status()}), (200 if code == 0 else 500)
+
+
+@app.post("/api/admin/airflow/trigger-full")
+def admin_airflow_trigger_full():
+    _, error_response = require_admin_user()
+    if error_response:
+        return error_response
+    code, stdout, stderr = run_local_command(["bash", "trigger_full.sh"])
+    return json_response({"ok": code == 0, "stdout": stdout, "stderr": stderr, "airflow": airflow_process_status()}), (200 if code == 0 else 500)
+
+
+@app.post("/api/admin/airflow/trigger")
+def admin_airflow_trigger():
+    _, error_response = require_admin_user()
+    if error_response:
+        return error_response
+    code, stdout, stderr = airflow_cli(["dags", "trigger", "masstamilan_daily_scraper"])
+    return json_response({"ok": code == 0, "stdout": stdout, "stderr": stderr, "airflow": airflow_process_status()}), (200 if code == 0 else 500)

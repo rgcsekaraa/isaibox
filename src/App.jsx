@@ -70,6 +70,16 @@ const SONG_SORT_COLUMNS = {
 const DEFAULT_SONG_SORT = { key: "default", direction: "asc" };
 
 const normalizeSongSortValue = (value) => String(value || "").trim().toLowerCase();
+const matchesNormalizedField = (value, needle) => !needle || normalizeText(value).includes(needle);
+const albumIdentity = (item) => {
+  const albumUrl = String(item?.albumUrl || "").trim();
+  if (albumUrl) {
+    return albumUrl;
+  }
+  const albumName = String(item?.album || item?.movie || item?.albumName || "").trim();
+  const year = String(item?.year || "").trim();
+  return [albumName, year].filter(Boolean).join("::");
+};
 
 const compareSongValues = (left, right) => {
   const leftText = String(left || "").trim();
@@ -141,7 +151,7 @@ const DrilldownText = (props) => {
           return;
         }
         event.stopPropagation();
-        props.onClick?.(value());
+        props.onClick?.(props.payload ?? value());
       }}
       class={value()
         ? `cursor-pointer truncate underline decoration-transparent underline-offset-4 transition hover:text-[var(--fg)] hover:decoration-current ${props.class || ""}`
@@ -294,6 +304,76 @@ const HeartIcon = (props) => (
   </svg>
 );
 
+const SongRowFavoriteActions = (props) => {
+  const albumName = () => String(props.song?.movie || "").trim();
+  const albumValue = () => ({ albumName: albumName(), albumUrl: props.song?.albumUrl || "", year: props.song?.year || "" });
+  const musicDirector = () => String(props.song?.musicDirector || "").trim();
+  const anySaved = () => props.songActive || props.albumActive || props.musicDirectorActive;
+  return (
+    <Show when={props.show}>
+      <span class={`relative flex items-center justify-end ${props.class || ""}`}>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            props.onToggleOpen?.();
+          }}
+          class={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.18em] transition ${
+            props.open || anySaved()
+              ? "border-[var(--fg)] text-[var(--fg)]"
+              : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"
+          }`}
+          aria-label="Save options"
+        >
+          <HeartIcon filled={anySaved()} />
+          <span>Save</span>
+        </button>
+        <Show when={props.open}>
+          <div class="absolute right-0 top-full z-20 mt-2 min-w-[180px] border border-[var(--line)] bg-[var(--bg)] p-1 shadow-lg">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onToggleSong?.(props.song?.id);
+              }}
+              class={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition hover:bg-[var(--hover)] ${props.songActive ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}
+            >
+              <span>Song</span>
+              <HeartIcon filled={props.songActive} />
+            </button>
+            <Show when={albumName()}>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  props.onToggleAlbum?.(albumValue());
+                }}
+                class={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition hover:bg-[var(--hover)] ${props.albumActive ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}
+              >
+                <span class="truncate">Album</span>
+                <HeartIcon filled={props.albumActive} />
+              </button>
+            </Show>
+            <Show when={musicDirector()}>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  props.onToggleMusicDirector?.(musicDirector());
+                }}
+                class={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition hover:bg-[var(--hover)] ${props.musicDirectorActive ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}
+              >
+                <span class="truncate">Music Director</span>
+                <HeartIcon filled={props.musicDirectorActive} />
+              </button>
+            </Show>
+          </div>
+        </Show>
+      </span>
+    </Show>
+  );
+};
+
 const PlayingBars = () => (
   <span class="inline-flex h-3 items-end gap-px">
     <span class="playing-bar h-2 w-px bg-current" />
@@ -418,6 +498,7 @@ function App() {
   const [playbackSpeed, setPlaybackSpeed] = createSignal(1);
   const [repeatMode, setRepeatMode] = createSignal("off");
   const [movieFilter, setMovieFilter] = createSignal("");
+  const [albumFilterMeta, setAlbumFilterMeta] = createSignal(null);
   const [artistFilter, setArtistFilter] = createSignal("");
   const [musicDirectorFilter, setMusicDirectorFilter] = createSignal("");
   const [autoplayNext, setAutoplayNext] = createSignal(true);
@@ -442,6 +523,8 @@ function App() {
   const [spotifyScopes, setSpotifyScopes] = createSignal("");
   const [user, setUser] = createSignal(null);
   const [favoriteIds, setFavoriteIds] = createSignal([]);
+  const [favoriteAlbums, setFavoriteAlbums] = createSignal([]);
+  const [favoriteMusicDirectors, setFavoriteMusicDirectors] = createSignal([]);
   const [playlists, setPlaylists] = createSignal([]);
   const [globalPlaylists, setGlobalPlaylists] = createSignal([]);
   const [playlistNameInput, setPlaylistNameInput] = createSignal("");
@@ -458,6 +541,7 @@ function App() {
   const [radioSaveMode, setRadioSaveMode] = createSignal("overwrite");
   const [radioSaveName, setRadioSaveName] = createSignal("");
   const [searchTab, setSearchTab] = createSignal("songs");
+  const [favoritesTab, setFavoritesTab] = createSignal("songs");
   const [globalPlaylistDetail, setGlobalPlaylistDetail] = createSignal(null);
   const [playlistDetailCache, setPlaylistDetailCache] = createSignal(new Map());
   const [playlistDetailLoading, setPlaylistDetailLoading] = createSignal(false);
@@ -475,6 +559,7 @@ function App() {
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] = createSignal(false);
   const [showAuthPrompt, setShowAuthPrompt] = createSignal(false);
   const [showProfileMenu, setShowProfileMenu] = createSignal(false);
+  const [openSongSaveMenuId, setOpenSongSaveMenuId] = createSignal("");
   const [loadingFrame, setLoadingFrame] = createSignal(0);
   const [pendingRadioOffset, setPendingRadioOffset] = createSignal(null);
   const [pendingPlaylistSongId, setPendingPlaylistSongId] = createSignal("");
@@ -578,7 +663,10 @@ function App() {
     if (sync.status === "error") {
       return "Library sync error";
     }
-    return "";
+    if (sync.status === "idle") {
+      return "Library auto-update on";
+    }
+    return "Library auto-update";
   });
   const localDbSyncTone = createMemo(() => {
     const status = dbSyncState()?.status;
@@ -788,41 +876,64 @@ function App() {
   };
 
   const visibleResults = createMemo(() => {
+    const normalizedQuery = normalizeText(query());
     const sourceSongs = movieFilter() || artistFilter() || musicDirectorFilter()
       ? songs()
-      : (results().songs || []);
-    const filteredByAlbum = movieFilter() ? sourceSongs.filter((song) => song.movie === movieFilter()) : sourceSongs;
+      : (normalizedQuery ? (results().songs || []) : songs());
+    const filteredByAlbum = movieFilter() ? sourceSongs.filter((song) => albumIdentity(song) === movieFilter()) : sourceSongs;
     const filteredByArtist = artistFilter()
       ? filteredByAlbum.filter((song) => normalizeText(song.singers).includes(normalizeText(artistFilter())))
       : filteredByAlbum;
     const filteredByDirector = musicDirectorFilter()
       ? filteredByArtist.filter((song) => normalizeText(song.musicDirector) === normalizeText(musicDirectorFilter()))
       : filteredByArtist;
-    return (movieFilter() || artistFilter() || musicDirectorFilter()) ? filteredByDirector.slice(0, 2000) : filteredByDirector.slice(0, 200);
+    return filteredByDirector;
   });
   const visibleAlbums = createMemo(() => {
-    if (musicDirectorFilter() || artistFilter()) {
-      const grouped = new Map();
-      for (const song of visibleResults()) {
-        const existing = grouped.get(song.movie);
-        if (existing) {
-          existing.count += 1;
-          if (song.year && (!existing.year || song.year > existing.year)) {
-            existing.year = song.year;
-          }
-        } else {
-          grouped.set(song.movie, { album: song.movie, musicDirector: song.musicDirector, year: song.year, count: 1 });
-        }
+    const normalizedQuery = normalizeText(query());
+    const sourceSongs = musicDirectorFilter() || artistFilter() || movieFilter() ? visibleResults() : songs();
+    const grouped = new Map();
+    for (const song of sourceSongs) {
+      const albumName = String(song.movie || "").trim();
+      if (!albumName) {
+        continue;
       }
-      return Array.from(grouped.values()).sort((a, b) => {
-        if (musicDirectorFilter()) {
-          const yearDiff = (b.year || 0) - (a.year || 0);
-          if (yearDiff !== 0) return yearDiff;
+      if (
+        normalizedQuery &&
+        ![
+          song.movie,
+          song.musicDirector,
+          song.year,
+          song.track,
+          song.singers,
+        ].some((value) => matchesNormalizedField(value, normalizedQuery))
+      ) {
+        continue;
+      }
+      const existing = grouped.get(albumName);
+      if (existing) {
+        existing.count += 1;
+        if (song.year && (!existing.year || Number(song.year) > Number(existing.year))) {
+          existing.year = song.year;
         }
-        return b.count - a.count || a.album.localeCompare(b.album);
-      });
+      } else {
+        grouped.set(albumName, {
+          album: albumName,
+          albumUrl: song.albumUrl || "",
+          albumKey: albumIdentity(song),
+          musicDirector: song.musicDirector,
+          year: song.year,
+          count: 1,
+        });
+      }
     }
-    return results().albums || [];
+    return Array.from(grouped.values()).sort((a, b) => {
+      if (musicDirectorFilter()) {
+        const yearDiff = (Number(b.year) || 0) - (Number(a.year) || 0);
+        if (yearDiff !== 0) return yearDiff;
+      }
+      return (Number(b.year) || 0) - (Number(a.year) || 0) || b.count - a.count || a.album.localeCompare(b.album);
+    });
   });
   const visibleArtists = createMemo(() => {
     if (musicDirectorFilter() || movieFilter()) {
@@ -841,9 +952,106 @@ function App() {
     }
     return results().artists || [];
   });
+  const visibleMusicDirectors = createMemo(() => {
+    const grouped = new Map();
+    const normalizedQuery = normalizeText(query());
+    const sourceSongs = movieFilter() || artistFilter() || musicDirectorFilter() ? visibleResults() : songs();
+    for (const song of sourceSongs) {
+      const director = String(song.musicDirector || "").trim();
+      if (!director) {
+        continue;
+      }
+      if (
+        normalizedQuery &&
+        ![
+          director,
+          song.movie,
+          song.year,
+          song.track,
+          song.singers,
+        ].some((value) => matchesNormalizedField(value, normalizedQuery))
+      ) {
+        continue;
+      }
+      const existing = grouped.get(director);
+      if (existing) {
+        existing.count += 1;
+        if (song.year && (!existing.latestYear || Number(song.year) > Number(existing.latestYear))) {
+          existing.latestYear = song.year;
+        }
+      } else {
+        grouped.set(director, {
+          musicDirector: director,
+          count: 1,
+          latestYear: song.year || "",
+        });
+      }
+    }
+    return Array.from(grouped.values()).sort((a, b) =>
+      (Number(b.latestYear) || 0) - (Number(a.latestYear) || 0) ||
+      b.count - a.count ||
+      a.musicDirector.localeCompare(b.musicDirector)
+    );
+  });
   const songIndex = createMemo(() => new Map(songs().map((song) => [song.id, song])));
   const recentSongs = createMemo(() => recentIds().map((id) => songIndex().get(id)).filter(Boolean));
   const favoriteSongs = createMemo(() => favoriteIds().map((id) => songIndex().get(id)).filter(Boolean));
+  const favoriteAlbumSet = createMemo(() => new Set(favoriteAlbums().map((album) => albumIdentity(album))));
+  const favoriteMusicDirectorSet = createMemo(() => new Set(favoriteMusicDirectors()));
+  const favoriteAlbumRows = createMemo(() => {
+    const grouped = new Map();
+    for (const song of songs()) {
+      const albumName = String(song.movie || "").trim();
+      const albumKey = albumIdentity(song);
+      if (!albumName || !favoriteAlbumSet().has(albumKey)) {
+        continue;
+      }
+      const existing = grouped.get(albumKey);
+      if (existing) {
+        existing.count += 1;
+        if (song.year && (!existing.year || Number(song.year) > Number(existing.year))) {
+          existing.year = song.year;
+        }
+      } else {
+        grouped.set(albumKey, {
+          album: albumName,
+          albumUrl: song.albumUrl || "",
+          albumKey,
+          musicDirector: song.musicDirector || "",
+          year: song.year || "",
+          count: 1,
+        });
+      }
+    }
+    return favoriteAlbums()
+      .map((album) => grouped.get(albumIdentity(album)))
+      .filter(Boolean);
+  });
+  const favoriteMusicDirectorRows = createMemo(() => {
+    const grouped = new Map();
+    for (const song of songs()) {
+      const director = String(song.musicDirector || "").trim();
+      if (!director || !favoriteMusicDirectorSet().has(director)) {
+        continue;
+      }
+      const existing = grouped.get(director);
+      if (existing) {
+        existing.count += 1;
+        if (song.year && (!existing.latestYear || Number(song.year) > Number(existing.latestYear))) {
+          existing.latestYear = song.year;
+        }
+      } else {
+        grouped.set(director, {
+          musicDirector: director,
+          count: 1,
+          latestYear: song.year || "",
+        });
+      }
+    }
+    return favoriteMusicDirectors()
+      .map((director) => grouped.get(director))
+      .filter(Boolean);
+  });
   const theme = createMemo(() => (themePreference() === "system" ? systemTheme() : themePreference()));
   const normalizedPlaylistSearch = createMemo(() => playlistSearchQuery().trim().toLowerCase());
   const normalizedRadioSearch = createMemo(() => radioSearchQuery().trim().toLowerCase());
@@ -901,6 +1109,9 @@ function App() {
       return recentSongs();
     }
     if (mainTab() === "favorites") {
+      if (favoritesTab() !== "songs") {
+        return [];
+      }
       return favoriteSongs();
     }
     if (mainTab() === "radio") {
@@ -961,6 +1172,7 @@ function App() {
         query: query(),
         searchTab: searchTab(),
         movieFilter: movieFilter(),
+        albumFilterMeta: albumFilterMeta(),
         artistFilter: artistFilter(),
         musicDirectorFilter: musicDirectorFilter(),
         selectedGlobalPlaylistTarget: selectedGlobalPlaylistTarget(),
@@ -969,7 +1181,10 @@ function App() {
   };
 
   const navigateToMovie = (movie) => {
-    const nextMovie = String(movie || "").trim();
+    const payload = typeof movie === "object" && movie !== null
+      ? movie
+      : { album: String(movie || "").trim(), albumUrl: "", year: "" };
+    const nextMovie = albumIdentity(payload);
     if (!nextMovie) {
       return;
     }
@@ -981,6 +1196,11 @@ function App() {
     setQuery("");
     setSearchTab("songs");
     setMovieFilter(nextMovie);
+    setAlbumFilterMeta({
+      album: String(payload.album || payload.movie || "").trim(),
+      albumUrl: String(payload.albumUrl || "").trim(),
+      year: String(payload.year || "").trim(),
+    });
     setArtistFilter("");
     setMusicDirectorFilter("");
   };
@@ -1013,6 +1233,7 @@ function App() {
     setQuery(previous.query || "");
     setSearchTab(previous.searchTab || "songs");
     setMovieFilter(previous.movieFilter || "");
+    setAlbumFilterMeta(previous.albumFilterMeta || null);
     setArtistFilter(previous.artistFilter || "");
     setMusicDirectorFilter(previous.musicDirectorFilter || "");
     setSelectedGlobalPlaylistTarget(previous.selectedGlobalPlaylistTarget || "");
@@ -1033,7 +1254,6 @@ function App() {
   });
   const focusSearch = () => {
     setMainBrowseTab("library");
-    setSearchTab("songs");
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         searchInputRef?.focus();
@@ -1289,7 +1509,7 @@ function App() {
     }
     const list =
       tab === "recents" ? recentSongs()
-      : tab === "favorites" ? favoriteSongs()
+      : tab === "favorites" ? (favoritesTab() === "songs" ? favoriteSongs() : [])
       : tab === "library" ? visibleResults()
       : sortedActiveSongList();
     if (list[0]) {
@@ -1508,7 +1728,8 @@ function App() {
           if (!selectedPlaylistTarget() && nextPlaylists[0]?.id) {
             setSelectedPlaylistTarget(nextPlaylists[0].id);
           }
-          const defaultPlaylistId = globalPlaylistDetail()?.id || selectedGlobalPlaylistTarget() || nextPlaylists[0]?.id || nextGlobalPlaylists[0]?.id || "";
+          const preferredGlobalPlaylistId = nextGlobalPlaylists.find((playlist) => playlist.source !== "dynamic")?.id || nextGlobalPlaylists[0]?.id || "";
+          const defaultPlaylistId = globalPlaylistDetail()?.id || selectedGlobalPlaylistTarget() || nextPlaylists[0]?.id || preferredGlobalPlaylistId || "";
           if (defaultPlaylistId) {
             setSelectedGlobalPlaylistTarget(defaultPlaylistId);
             if (!globalPlaylistDetail()) {
@@ -1519,6 +1740,8 @@ function App() {
           setGlobalPlaylists([]);
         }
         setFavoriteIds([]);
+        setFavoriteAlbums([]);
+        setFavoriteMusicDirectors([]);
         setPlaylistDetailCache(new Map());
         setPlaylistDetailLoading(false);
         setPlaylistDetailError("");
@@ -1569,8 +1792,12 @@ function App() {
       if (favoritesResponse.ok) {
         const favoritesPayload = await favoritesResponse.json();
         setFavoriteIds(favoritesPayload.songIds || []);
+        setFavoriteAlbums(favoritesPayload.albums || []);
+        setFavoriteMusicDirectors(favoritesPayload.musicDirectors || []);
       } else {
         setFavoriteIds([]);
+        setFavoriteAlbums([]);
+        setFavoriteMusicDirectors([]);
       }
 
       if (playlistsResponse.ok) {
@@ -1595,7 +1822,8 @@ function App() {
         if (!selectedPlaylistTarget() && nextPlaylists[0]?.id) {
           setSelectedPlaylistTarget(nextPlaylists[0].id);
         }
-        const defaultPlaylistId = globalPlaylistDetail()?.id || selectedGlobalPlaylistTarget() || nextPlaylists[0]?.id || nextGlobalPlaylists[0]?.id || "";
+        const preferredGlobalPlaylistId = nextGlobalPlaylists.find((playlist) => playlist.source !== "dynamic")?.id || nextGlobalPlaylists[0]?.id || "";
+        const defaultPlaylistId = globalPlaylistDetail()?.id || selectedGlobalPlaylistTarget() || nextPlaylists[0]?.id || preferredGlobalPlaylistId || "";
         if (globalPlaylistDetail()) {
           const detailId = globalPlaylistDetail()?.id;
           const detailStillVisible = [...nextPlaylists, ...nextGlobalPlaylists]
@@ -1630,6 +1858,8 @@ function App() {
     } catch {
       setUser(null);
       setFavoriteIds([]);
+      setFavoriteAlbums([]);
+      setFavoriteMusicDirectors([]);
       setAdminUsers([]);
       setAirflowStatus(null);
       if (!localMode()) {
@@ -1687,6 +1917,8 @@ function App() {
     await fetch("/api/auth/logout", { method: "POST" });
     setUser(null);
     setFavoriteIds([]);
+    setFavoriteAlbums([]);
+    setFavoriteMusicDirectors([]);
     setPlaylists([]);
     setGlobalPlaylists([]);
     setSelectedPlaylistTarget("");
@@ -1954,6 +2186,63 @@ function App() {
       return;
     }
     setAccountMessage("Unable to update favorites");
+  };
+
+  const toggleAlbumFavorite = async (album) => {
+    const payload = typeof album === "object" && album !== null
+      ? album
+      : { albumName: String(album || "").trim(), albumUrl: "" };
+    const albumName = String(payload.albumName || payload.album || payload.movie || "").trim();
+    const albumUrl = String(payload.albumUrl || "").trim();
+    const albumKey = albumIdentity({ albumName, albumUrl, year: payload.year });
+    if (!albumKey) {
+      return;
+    }
+    if (!user()) {
+      setAccountMessage("Create an account to save favorites");
+      setShowAuthPrompt(true);
+      return;
+    }
+    const liked = favoriteAlbumSet().has(albumKey);
+    const response = await fetch("/api/favorites/albums", {
+      method: liked ? "DELETE" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ albumName, albumUrl }),
+    });
+    if (response.ok) {
+      setFavoriteAlbums((current) =>
+        liked
+          ? current.filter((value) => albumIdentity(value) !== albumKey)
+          : [{ albumName, albumUrl, year: String(payload.year || "").trim() }, ...current]
+      );
+      return;
+    }
+    setAccountMessage("Unable to update album favorites");
+  };
+
+  const toggleMusicDirectorFavorite = async (musicDirector) => {
+    const normalizedDirector = String(musicDirector || "").trim();
+    if (!normalizedDirector) {
+      return;
+    }
+    if (!user()) {
+      setAccountMessage("Create an account to save favorites");
+      setShowAuthPrompt(true);
+      return;
+    }
+    const liked = favoriteMusicDirectorSet().has(normalizedDirector);
+    const response = await fetch("/api/favorites/music-directors", {
+      method: liked ? "DELETE" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ musicDirector: normalizedDirector }),
+    });
+    if (response.ok) {
+      setFavoriteMusicDirectors((current) =>
+        liked ? current.filter((value) => value !== normalizedDirector) : [normalizedDirector, ...current]
+      );
+      return;
+    }
+    setAccountMessage("Unable to update music director favorites");
   };
 
   const createPlaylist = async () => {
@@ -2766,8 +3055,9 @@ function App() {
         return;
       }
       setResults(event.data.payload);
-      if (movieFilter() && !event.data.payload.songs.some((song) => song.movie === movieFilter())) {
+      if (movieFilter() && !event.data.payload.songs.some((song) => albumIdentity(song) === movieFilter())) {
         setMovieFilter("");
+        setAlbumFilterMeta(null);
       }
       if (artistFilter() && !event.data.payload.songs.some((song) => normalizeText(song.singers).includes(normalizeText(artistFilter())))) {
         setArtistFilter("");
@@ -2815,6 +3105,11 @@ function App() {
       }
 
       if (event.key === "Escape") {
+        if (openSongSaveMenuId()) {
+          event.preventDefault();
+          setOpenSongSaveMenuId("");
+          return;
+        }
         if (showShortcutHelp()) {
           event.preventDefault();
           setShowShortcutHelp(false);
@@ -2944,6 +3239,9 @@ function App() {
     };
 
     const onPointerDown = (event) => {
+      if (openSongSaveMenuId()) {
+        setOpenSongSaveMenuId("");
+      }
       if (!showProfileMenu()) {
         return;
       }
@@ -3635,7 +3933,7 @@ function App() {
             </button>
             <Show when={libraryProfileEnabled()}>
               <button type="button" onClick={() => setMainBrowseTab("favorites")} class={`px-1 py-1 ${mainTab() === "favorites" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
-                Favorites {favoriteSongs().length ? `(${favoriteSongs().length})` : ""}
+                Favorites
               </button>
             </Show>
             <Show when={radioEnabled()}>
@@ -3658,7 +3956,7 @@ function App() {
             <Show
               when={mainTab() === "library"}
               fallback={
-                <div class="flex min-h-[42px] w-full max-w-[560px] flex-wrap items-center justify-end gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)]">
+                <div class="flex h-[42px] w-full max-w-[560px] flex-wrap items-center justify-end gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)]">
                   <Show when={mainTab() === "recents"}>
                     <>
                       <span>{recentSongs().length} tracks</span>
@@ -3668,7 +3966,31 @@ function App() {
                     </>
                   </Show>
                   <Show when={mainTab() === "favorites" && libraryProfileEnabled()}>
-                    <span>{favoriteSongs().length} tracks</span>
+                    <>
+                      <div class="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setFavoritesTab("songs")}
+                          class={`transition ${favoritesTab() === "songs" ? "text-[var(--fg)]" : "hover:text-[var(--fg)]"}`}
+                        >
+                          Songs ({favoriteSongs().length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFavoritesTab("albums")}
+                          class={`transition ${favoritesTab() === "albums" ? "text-[var(--fg)]" : "hover:text-[var(--fg)]"}`}
+                        >
+                          Albums ({favoriteAlbumRows().length})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFavoritesTab("music-directors")}
+                          class={`transition ${favoritesTab() === "music-directors" ? "text-[var(--fg)]" : "hover:text-[var(--fg)]"}`}
+                        >
+                          Music Directors ({favoriteMusicDirectorRows().length})
+                        </button>
+                      </div>
+                    </>
                   </Show>
                   <Show when={mainTab() === "playlists" && localMode()}>
                     <span>{playlists().length} playlists</span>
@@ -3676,7 +3998,7 @@ function App() {
                 </div>
               }
             >
-              <div class="flex w-full max-w-[560px] items-center gap-3 border border-[var(--line)] px-3 py-2">
+              <div class="flex h-[42px] w-full max-w-[560px] items-center gap-3 border border-[var(--line)] px-3">
                 <span class="font-mono text-sm text-[var(--soft)]">/</span>
                 <input
                   ref={(el) => {
@@ -3689,7 +4011,13 @@ function App() {
                     setMusicDirectorFilter("");
                     setQuery(event.currentTarget.value);
                   }}
-                  placeholder="Search tracks, singers, albums..."
+                  placeholder={
+                    searchTab() === "albums"
+                      ? "Search albums, composers, years..."
+                      : searchTab() === "music-directors"
+                        ? "Search music directors, albums, years..."
+                        : "Search tracks, singers, albums..."
+                  }
                   class="w-full bg-transparent font-mono text-sm tracking-wide text-[var(--fg)] outline-none placeholder:text-[var(--muted)]"
                 />
                 <button
@@ -4570,10 +4898,36 @@ function App() {
                         <Show when={!visiblePlaylistDetail() && (movieFilter() || artistFilter() || musicDirectorFilter())}>
                           <>
                             <Show when={movieFilter()}>
-                              <div class="truncate text-sm font-semibold">{movieFilter()}</div>
+                              <div class="flex items-center gap-3">
+                              <div class="truncate text-sm font-semibold">
+                                {albumFilterMeta()?.year ? `${albumFilterMeta()?.album || "Album"} (${albumFilterMeta()?.year})` : (albumFilterMeta()?.album || "Album")}
+                              </div>
+                                <Show when={user()}>
+                                  <button
+                                    type="button"
+                                    onClick={() => void toggleAlbumFavorite(albumFilterMeta() || { albumName: albumFilterMeta()?.album || "", albumUrl: "", year: albumFilterMeta()?.year || "" })}
+                                    class={`shrink-0 transition-colors ${favoriteAlbumSet().has(movieFilter()) ? "text-[var(--fg)]" : "text-[var(--muted)] hover:text-[var(--fg)]"}`}
+                                    aria-label={favoriteAlbumSet().has(movieFilter()) ? "Remove album from favorites" : "Add album to favorites"}
+                                  >
+                                    <HeartIcon filled={favoriteAlbumSet().has(movieFilter())} />
+                                  </button>
+                                </Show>
+                              </div>
                             </Show>
                             <Show when={!movieFilter() && musicDirectorFilter()}>
-                              <div class="truncate text-sm font-semibold">{musicDirectorFilter()}</div>
+                              <div class="flex items-center gap-3">
+                                <div class="truncate text-sm font-semibold">{musicDirectorFilter()}</div>
+                                <Show when={user()}>
+                                  <button
+                                    type="button"
+                                    onClick={() => void toggleMusicDirectorFavorite(musicDirectorFilter())}
+                                    class={`shrink-0 transition-colors ${favoriteMusicDirectorSet().has(musicDirectorFilter()) ? "text-[var(--fg)]" : "text-[var(--muted)] hover:text-[var(--fg)]"}`}
+                                    aria-label={favoriteMusicDirectorSet().has(musicDirectorFilter()) ? "Remove music director from favorites" : "Add music director to favorites"}
+                                  >
+                                    <HeartIcon filled={favoriteMusicDirectorSet().has(musicDirectorFilter())} />
+                                  </button>
+                                </Show>
+                              </div>
                             </Show>
                             <Show when={!movieFilter() && !musicDirectorFilter() && artistFilter()}>
                               <div class="truncate text-sm font-semibold">{artistFilter()}</div>
@@ -4584,7 +4938,9 @@ function App() {
                           </>
                         </Show>
                         <Show when={!visiblePlaylistDetail() && !movieFilter() && !artistFilter() && !musicDirectorFilter()}>
-                          <div class="truncate text-sm font-semibold uppercase tracking-widest text-[var(--faint)]">Library</div>
+                          <div class="truncate text-sm font-semibold uppercase tracking-widest text-[var(--faint)]">
+                            {searchTab() === "albums" ? `Albums · ${visibleAlbums().length}` : searchTab() === "music-directors" ? `Music Directors · ${visibleMusicDirectors().length}` : `Songs · ${visibleResults().length}`}
+                          </div>
                         </Show>
                       </div>
 
@@ -4627,8 +4983,34 @@ function App() {
                       </div>
                     </header>
 
+                    <Show when={!visiblePlaylistDetail() && mainTab() === "library" && !movieFilter() && !artistFilter() && !musicDirectorFilter()}>
+                      <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-6 py-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)]">
+                        <button
+                          type="button"
+                          onClick={() => setSearchTab("songs")}
+                          class={`transition ${searchTab() === "songs" ? "text-[var(--fg)]" : "hover:text-[var(--fg)]"}`}
+                        >
+                          Songs
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSearchTab("albums")}
+                          class={`transition ${searchTab() === "albums" ? "text-[var(--fg)]" : "hover:text-[var(--fg)]"}`}
+                        >
+                          Albums
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSearchTab("music-directors")}
+                          class={`transition ${searchTab() === "music-directors" ? "text-[var(--fg)]" : "hover:text-[var(--fg)]"}`}
+                        >
+                          Music Directors
+                        </button>
+                      </div>
+                    </Show>
+
                     <Show
-                      when={searchTab() === "albums" || (musicDirectorFilter() && !movieFilter())}
+                      when={searchTab() === "albums" || searchTab() === "music-directors" || (musicDirectorFilter() && !movieFilter())}
                       fallback={
                         <>
                           <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-6 py-2">
@@ -4639,7 +5021,7 @@ function App() {
                             <SortableSongHeader columnKey="singers" label="Singer" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
                             <SortableSongHeader columnKey="year" label="Year" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-20" />
                             <Show when={user()}>
-                              <span class="w-8 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Fav</span>
+                              <span class="w-20 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Save</span>
                             </Show>
                           </div>
                           <Show when={!loading()} fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">Loading{loadingDots()}</div>}>
@@ -4673,25 +5055,23 @@ function App() {
                                               {currentTrackId() === song.id && isPlaying() && streamStarted() ? <PlayingBars /> : String(index() + 1).padStart(2, "0")}
                                             </span>
                                             <span class="min-w-0 flex-[1.4] truncate text-sm">{song.track}</span>
-                                            <DrilldownText value={song.movie} onClick={navigateToMovie} class="hidden min-w-0 flex-1 font-mono text-[11px] text-[var(--soft)] md:block" />
+                                            <DrilldownText value={song.movie} payload={{ album: song.movie, albumUrl: song.albumUrl, year: song.year }} onClick={navigateToMovie} class="hidden min-w-0 flex-1 font-mono text-[11px] text-[var(--soft)] md:block" />
                                             <DrilldownText value={song.musicDirector} onClick={navigateToMusicDirector} class="hidden min-w-0 flex-1 font-mono text-[11px] text-[var(--soft)] lg:block" />
                                             <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] xl:block">{song.singers || "-"}</span>
                                             <span class="w-20 font-mono text-[11px] text-[var(--soft)]">{song.year || "-"}</span>
-                                            <Show when={user()}>
-                                              <span class="flex w-8 justify-end">
-                                                <span
-                                                  role="button"
-                                                  tabindex="-1"
-                                                  onClick={(event) => {
-                                                    event.stopPropagation();
-                                                    void toggleFavorite(song.id);
-                                                  }}
-                                                  class={`transition-colors ${favoriteIdSet().has(song.id) ? "text-[var(--fg)]" : "text-[var(--muted)] hover:text-[var(--fg)]"}`}
-                                                >
-                                                  <HeartIcon filled={favoriteIdSet().has(song.id)} />
-                                                </span>
-                                              </span>
-                                            </Show>
+                                            <SongRowFavoriteActions
+                                              show={user()}
+                                              class="w-20"
+                                              song={song}
+                                              open={openSongSaveMenuId() === song.id}
+                                              onToggleOpen={() => setOpenSongSaveMenuId((current) => current === song.id ? "" : song.id)}
+                                              songActive={favoriteIdSet().has(song.id)}
+                                              albumActive={favoriteAlbumSet().has(albumIdentity(song))}
+                                              musicDirectorActive={favoriteMusicDirectorSet().has(song.musicDirector)}
+                                              onToggleSong={(songId) => { void toggleFavorite(songId); setOpenSongSaveMenuId(""); }}
+                                              onToggleAlbum={(albumValue) => { void toggleAlbumFavorite(albumValue); setOpenSongSaveMenuId(""); }}
+                                              onToggleMusicDirector={(musicDirector) => { void toggleMusicDirectorFavorite(musicDirector); setOpenSongSaveMenuId(""); }}
+                                            />
                                           </button>
                                         </li>
                                       );
@@ -4704,30 +5084,96 @@ function App() {
                         </>
                       }
                     >
-                      <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-6 py-2 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">
-                        <span class="min-w-0 flex-1">Movie / Album Name</span>
-                        <span class="w-20">Year</span>
-                        <span class="w-24 text-right">Tracks</span>
-                      </div>
-                      <ul class="min-h-0 flex-1 overflow-y-auto px-2">
-                        <For each={visibleAlbums()}>
-                          {(album) => (
-                            <li>
-                              <button
-                                type="button"
-                                onClick={() => navigateToMovie(album.album)}
-                                class="flex w-full items-center gap-4 border-b border-[var(--line-soft)] px-4 py-3 text-left transition hover:bg-[var(--hover)]"
-                              >
-                                <span class="min-w-0 flex-1 truncate text-sm">{album.album}</span>
-                                <span class="w-20 font-mono text-[11px] text-[var(--soft)]">{album.year || "-"}</span>
-                                <span class="w-24 text-right font-mono text-[11px] text-[var(--soft)]">
-                                  {album.count ? `${album.count} songs` : ""}
-                                </span>
-                              </button>
-                            </li>
-                          )}
-                        </For>
-                      </ul>
+                      <Show
+                        when={searchTab() === "music-directors" && !musicDirectorFilter()}
+                        fallback={
+                          <>
+                            <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-6 py-2 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">
+                              <span class="min-w-0 flex-1">Movie / Album Name</span>
+                              <span class="w-20">Year</span>
+                              <span class="w-24 text-right">Tracks</span>
+                              <Show when={user()}>
+                                <span class="w-8 text-right">Fav</span>
+                              </Show>
+                            </div>
+                            <ul class="min-h-0 flex-1 overflow-y-auto px-2">
+                              <For each={visibleAlbums()}>
+                                {(album) => (
+                                  <li>
+                                    <button
+                                      type="button"
+                                      onClick={() => navigateToMovie(album)}
+                                      class="flex w-full items-center gap-4 border-b border-[var(--line-soft)] px-4 py-3 text-left transition hover:bg-[var(--hover)]"
+                                    >
+                                      <span class="min-w-0 flex-1 truncate text-sm">{album.album}</span>
+                                      <span class="w-20 font-mono text-[11px] text-[var(--soft)]">{album.year || "-"}</span>
+                                      <span class="w-24 text-right font-mono text-[11px] text-[var(--soft)]">
+                                        {album.count ? `${album.count} songs` : ""}
+                                      </span>
+                                      <Show when={user()}>
+                                        <span class="flex w-8 justify-end">
+                                          <span
+                                            role="button"
+                                            tabindex="-1"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                            void toggleAlbumFavorite(album);
+                                          }}
+                                            class={`transition-colors ${favoriteAlbumSet().has(album.albumKey) ? "text-[var(--fg)]" : "text-[var(--muted)] hover:text-[var(--fg)]"}`}
+                                          >
+                                            <HeartIcon filled={favoriteAlbumSet().has(album.albumKey)} />
+                                          </span>
+                                        </span>
+                                      </Show>
+                                    </button>
+                                  </li>
+                                )}
+                              </For>
+                            </ul>
+                          </>
+                        }
+                      >
+                        <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-6 py-2 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">
+                          <span class="min-w-0 flex-1">Music Director</span>
+                          <span class="w-20">Latest</span>
+                          <span class="w-24 text-right">Songs</span>
+                          <Show when={user()}>
+                            <span class="w-8 text-right">Fav</span>
+                          </Show>
+                        </div>
+                        <ul class="min-h-0 flex-1 overflow-y-auto px-2">
+                          <For each={visibleMusicDirectors()}>
+                            {(director) => (
+                              <li>
+                                <button
+                                  type="button"
+                                  onClick={() => navigateToMusicDirector(director.musicDirector)}
+                                  class="flex w-full items-center gap-4 border-b border-[var(--line-soft)] px-4 py-3 text-left transition hover:bg-[var(--hover)]"
+                                >
+                                  <span class="min-w-0 flex-1 truncate text-sm">{director.musicDirector}</span>
+                                  <span class="w-20 font-mono text-[11px] text-[var(--soft)]">{director.latestYear || "-"}</span>
+                                  <span class="w-24 text-right font-mono text-[11px] text-[var(--soft)]">{director.count} songs</span>
+                                  <Show when={user()}>
+                                    <span class="flex w-8 justify-end">
+                                      <span
+                                        role="button"
+                                        tabindex="-1"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          void toggleMusicDirectorFavorite(director.musicDirector);
+                                        }}
+                                        class={`transition-colors ${favoriteMusicDirectorSet().has(director.musicDirector) ? "text-[var(--fg)]" : "text-[var(--muted)] hover:text-[var(--fg)]"}`}
+                                      >
+                                        <HeartIcon filled={favoriteMusicDirectorSet().has(director.musicDirector)} />
+                                      </span>
+                                    </span>
+                                  </Show>
+                                </button>
+                              </li>
+                            )}
+                          </For>
+                        </ul>
+                      </Show>
                     </Show>
                   </div>
                 </Show>
@@ -4739,85 +5185,187 @@ function App() {
         <Show when={mainTab() !== "library" && (mainTab() !== "radio" && mainTab() !== "admin" && mainTab() !== "playlists")}>
           <section class="min-h-0 flex-1 overflow-hidden px-6 py-4">
             <div class="flex h-full min-h-0 flex-col overflow-hidden border border-[var(--line)] bg-[var(--panel)]">
-            <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-6 py-2">
-              <SortableSongHeader columnKey="default" label="#" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-8 text-right" />
-              <SortableSongHeader columnKey="track" label="Song Name" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="min-w-0 flex-[1.2]" />
-              <SortableSongHeader columnKey="movie" label="Movie" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 md:block" />
-              <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 lg:block" />
-              <SortableSongHeader columnKey="singers" label="Singer" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
-              <SortableSongHeader columnKey="year" label="Year" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-20" />
-              <Show when={user()}>
-                <span class="w-8 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Fav</span>
-              </Show>
-            </div>
-
-            <Show when={!loading()} fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">Loading{loadingDots()}</div>}>
-              <Show when={!error()} fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--soft)]">{error()}</div>}>
-                <Show
-                  when={sortedActiveSongList().length > 0}
-                  fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">No results</div>}
-                >
-                  <ul ref={listRef} class="min-h-0 flex-1 overflow-y-auto">
-                    <For each={sortedActiveSongList()}>
-                      {(song, index) => {
-                        const active = () => selectedSong()?.id === song.id;
-                        return (
-                          <li>
-                            <button
-                              ref={(el) => {
-                                if (el) {
-                                  rowRefs.set(song.id, el);
-                                } else {
-                                  rowRefs.delete(song.id);
-                                }
-                              }}
-                              type="button"
-                              onClick={() => loadSong(song, true)}
-                              title={`Last updated: ${formatUpdatedAt(song.updatedAt)}`}
-                              class={`flex w-full items-center gap-4 px-6 py-3 text-left transition ${
-                                active()
-                                  ? currentTrackId() === song.id
-                                    ? "song-row-active text-[var(--fg)]"
-                                    : "bg-[var(--hover)] text-[var(--fg)]"
-                                  : "bg-transparent text-[var(--fg)] hover:bg-[var(--hover)]"
-                              }`}
-                            >
-                              <span class="w-8 text-right font-mono text-xs text-[var(--soft)]">
-                                {currentTrackId() === song.id && isPlaying() && streamStarted() ? <PlayingBars /> : String(index() + 1).padStart(2, "0")}
-                              </span>
-                              <span class="min-w-0 flex-[1.2] truncate text-sm">{song.track}</span>
-                              <DrilldownText value={song.movie} onClick={navigateToMovie} class="hidden min-w-0 flex-1 font-mono text-[11px] text-[var(--soft)] md:block" />
-                              <DrilldownText value={song.musicDirector} onClick={navigateToMusicDirector} class="hidden min-w-0 flex-1 font-mono text-[11px] text-[var(--soft)] lg:block" />
-                              <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] xl:block">
-                                {song.singers || "-"}
-                              </span>
-                              <span class="w-20 font-mono text-[11px] text-[var(--soft)]">
-                                {song.year || "-"}
-                              </span>
-                              <Show when={user()}>
-                                <span class="flex w-8 justify-end">
-                                  <span
-                                    role="button"
-                                    tabindex="-1"
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                      void toggleFavorite(song.id);
-                                    }}
-                                    class={`transition-colors ${favoriteIdSet().has(song.id) ? "text-[var(--fg)]" : "text-[var(--muted)] hover:text-[var(--fg)]"}`}
+              <Show
+                when={mainTab() !== "favorites" || favoritesTab() === "songs"}
+                fallback={
+                  <Show
+                    when={favoritesTab() === "albums"}
+                    fallback={
+                      <>
+                        <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-6 py-2 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">
+                          <span class="min-w-0 flex-1">Music Director</span>
+                          <span class="w-20">Latest</span>
+                          <span class="w-24 text-right">Songs</span>
+                          <Show when={user()}>
+                            <span class="w-8 text-right">Fav</span>
+                          </Show>
+                        </div>
+                        <Show
+                          when={favoriteMusicDirectorRows().length > 0}
+                          fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">No favorite music directors</div>}
+                        >
+                          <ul class="min-h-0 flex-1 overflow-y-auto">
+                            <For each={favoriteMusicDirectorRows()}>
+                              {(director) => (
+                                <li>
+                                  <button
+                                    type="button"
+                                    onClick={() => navigateToMusicDirector(director.musicDirector)}
+                                    class="flex w-full items-center gap-4 px-6 py-3 text-left transition hover:bg-[var(--hover)]"
                                   >
-                                    <HeartIcon filled={favoriteIdSet().has(song.id)} />
+                                    <span class="min-w-0 flex-1 truncate text-sm">{director.musicDirector}</span>
+                                    <span class="w-20 font-mono text-[11px] text-[var(--soft)]">{director.latestYear || "-"}</span>
+                                    <span class="w-24 text-right font-mono text-[11px] text-[var(--soft)]">{director.count} songs</span>
+                                    <Show when={user()}>
+                                      <span class="flex w-8 justify-end">
+                                        <span
+                                          role="button"
+                                          tabindex="-1"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            void toggleMusicDirectorFavorite(director.musicDirector);
+                                          }}
+                                          class={`transition-colors ${favoriteMusicDirectorSet().has(director.musicDirector) ? "text-[var(--fg)]" : "text-[var(--muted)] hover:text-[var(--fg)]"}`}
+                                        >
+                                          <HeartIcon filled={favoriteMusicDirectorSet().has(director.musicDirector)} />
+                                        </span>
+                                      </span>
+                                    </Show>
+                                  </button>
+                                </li>
+                              )}
+                            </For>
+                          </ul>
+                        </Show>
+                      </>
+                    }
+                  >
+                    <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-6 py-2 font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">
+                      <span class="min-w-0 flex-1">Album</span>
+                      <span class="w-20">Year</span>
+                      <span class="w-24 text-right">Songs</span>
+                      <Show when={user()}>
+                        <span class="w-8 text-right">Fav</span>
+                      </Show>
+                    </div>
+                    <Show
+                      when={favoriteAlbumRows().length > 0}
+                      fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">No favorite albums</div>}
+                    >
+                      <ul class="min-h-0 flex-1 overflow-y-auto">
+                        <For each={favoriteAlbumRows()}>
+                          {(album) => (
+                            <li>
+                              <button
+                                type="button"
+                                onClick={() => navigateToMovie(album)}
+                                class="flex w-full items-center gap-4 px-6 py-3 text-left transition hover:bg-[var(--hover)]"
+                              >
+                                <span class="min-w-0 flex-1 truncate text-sm">{album.album}</span>
+                                <span class="w-20 font-mono text-[11px] text-[var(--soft)]">{album.year || "-"}</span>
+                                <span class="w-24 text-right font-mono text-[11px] text-[var(--soft)]">{album.count} songs</span>
+                                <Show when={user()}>
+                                  <span class="flex w-8 justify-end">
+                                    <span
+                                      role="button"
+                                      tabindex="-1"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void toggleAlbumFavorite(album);
+                                      }}
+                                      class={`transition-colors ${favoriteAlbumSet().has(album.albumKey) ? "text-[var(--fg)]" : "text-[var(--muted)] hover:text-[var(--fg)]"}`}
+                                    >
+                                      <HeartIcon filled={favoriteAlbumSet().has(album.albumKey)} />
+                                    </span>
                                   </span>
-                                </span>
-                              </Show>
-                            </button>
-                          </li>
-                        );
-                      }}
-                    </For>
-                  </ul>
+                                </Show>
+                              </button>
+                            </li>
+                          )}
+                        </For>
+                      </ul>
+                    </Show>
+                  </Show>
+                }
+              >
+                <div class="flex items-center gap-4 border-b border-[var(--line-soft)] px-6 py-2">
+                  <SortableSongHeader columnKey="default" label="#" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-8 text-right" />
+                  <SortableSongHeader columnKey="track" label="Song Name" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="min-w-0 flex-[1.2]" />
+                  <SortableSongHeader columnKey="movie" label="Movie" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 md:block" />
+                  <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 lg:block" />
+                  <SortableSongHeader columnKey="singers" label="Singer" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
+                  <SortableSongHeader columnKey="year" label="Year" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-20" />
+                  <Show when={user()}>
+                    <span class="w-20 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Save</span>
+                  </Show>
+                </div>
+
+                <Show when={!loading()} fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">Loading{loadingDots()}</div>}>
+                  <Show when={!error()} fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--soft)]">{error()}</div>}>
+                    <Show
+                      when={sortedActiveSongList().length > 0}
+                      fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">No results</div>}
+                    >
+                      <ul ref={listRef} class="min-h-0 flex-1 overflow-y-auto">
+                        <For each={sortedActiveSongList()}>
+                          {(song, index) => {
+                            const active = () => selectedSong()?.id === song.id;
+                            return (
+                              <li>
+                                <button
+                                  ref={(el) => {
+                                    if (el) {
+                                      rowRefs.set(song.id, el);
+                                    } else {
+                                      rowRefs.delete(song.id);
+                                    }
+                                  }}
+                                  type="button"
+                                  onClick={() => loadSong(song, true)}
+                                  title={`Last updated: ${formatUpdatedAt(song.updatedAt)}`}
+                                  class={`flex w-full items-center gap-4 px-6 py-3 text-left transition ${
+                                    active()
+                                      ? currentTrackId() === song.id
+                                        ? "song-row-active text-[var(--fg)]"
+                                        : "bg-[var(--hover)] text-[var(--fg)]"
+                                      : "bg-transparent text-[var(--fg)] hover:bg-[var(--hover)]"
+                                  }`}
+                                >
+                                  <span class="w-8 text-right font-mono text-xs text-[var(--soft)]">
+                                    {currentTrackId() === song.id && isPlaying() && streamStarted() ? <PlayingBars /> : String(index() + 1).padStart(2, "0")}
+                                  </span>
+                                  <span class="min-w-0 flex-[1.2] truncate text-sm">{song.track}</span>
+                                  <DrilldownText value={song.movie} payload={{ album: song.movie, albumUrl: song.albumUrl, year: song.year }} onClick={navigateToMovie} class="hidden min-w-0 flex-1 font-mono text-[11px] text-[var(--soft)] md:block" />
+                                  <DrilldownText value={song.musicDirector} onClick={navigateToMusicDirector} class="hidden min-w-0 flex-1 font-mono text-[11px] text-[var(--soft)] lg:block" />
+                                  <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] xl:block">
+                                    {song.singers || "-"}
+                                  </span>
+                                  <span class="w-20 font-mono text-[11px] text-[var(--soft)]">
+                                    {song.year || "-"}
+                                  </span>
+                                  <SongRowFavoriteActions
+                                    show={user()}
+                                    class="w-20"
+                                    song={song}
+                                    open={openSongSaveMenuId() === song.id}
+                                    onToggleOpen={() => setOpenSongSaveMenuId((current) => current === song.id ? "" : song.id)}
+                                    songActive={favoriteIdSet().has(song.id)}
+                                    albumActive={favoriteAlbumSet().has(albumIdentity(song))}
+                                    musicDirectorActive={favoriteMusicDirectorSet().has(song.musicDirector)}
+                                    onToggleSong={(songId) => { void toggleFavorite(songId); setOpenSongSaveMenuId(""); }}
+                                    onToggleAlbum={(albumValue) => { void toggleAlbumFavorite(albumValue); setOpenSongSaveMenuId(""); }}
+                                    onToggleMusicDirector={(musicDirector) => { void toggleMusicDirectorFavorite(musicDirector); setOpenSongSaveMenuId(""); }}
+                                  />
+                                </button>
+                              </li>
+                            );
+                          }}
+                        </For>
+                      </ul>
+                    </Show>
+                  </Show>
                 </Show>
               </Show>
-            </Show>
             </div>
           </section>
         </Show>

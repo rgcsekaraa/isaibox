@@ -60,25 +60,6 @@ const hasNearTypo = (left, right, maxDistance = 1) => {
   return prev[right.length] <= maxDistance;
 };
 
-const matchesLooseField = (value, normalizedQuery) => {
-  const normalizedValue = normalize(value);
-  if (!normalizedValue) return false;
-  if (!normalizedQuery) return true;
-  if (normalizedValue.includes(normalizedQuery)) return true;
-
-  const queryTokens = tokenize(normalizedQuery);
-  const valueTokens = tokenize(normalizedValue);
-  if (queryTokens.length && queryTokens.every((token) => valueTokens.some((candidate) =>
-    candidate.startsWith(token) ||
-    token.startsWith(candidate) ||
-    (token.length >= 4 && candidate.length >= 4 && hasNearTypo(token, candidate, 1))
-  ))) {
-    return true;
-  }
-
-  return false;
-};
-
 const uniqueBy = (items, getKey) => {
   const seen = new Set();
   return items.filter((item) => {

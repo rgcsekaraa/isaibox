@@ -107,6 +107,28 @@ CREATE TABLE IF NOT EXISTS favorite_songs (
     PRIMARY KEY (user_id, song_id)
 );
 
+CREATE TABLE IF NOT EXISTS favorite_albums (
+    user_id         VARCHAR NOT NULL,
+    album_name      VARCHAR NOT NULL,
+    created_at      TIMESTAMPTZ,
+    PRIMARY KEY (user_id, album_name)
+);
+
+CREATE TABLE IF NOT EXISTS favorite_album_entities (
+    user_id         VARCHAR NOT NULL,
+    album_url       VARCHAR NOT NULL,
+    album_name      VARCHAR,
+    created_at      TIMESTAMPTZ,
+    PRIMARY KEY (user_id, album_url)
+);
+
+CREATE TABLE IF NOT EXISTS favorite_music_directors (
+    user_id         VARCHAR NOT NULL,
+    music_director  VARCHAR NOT NULL,
+    created_at      TIMESTAMPTZ,
+    PRIMARY KEY (user_id, music_director)
+);
+
 CREATE TABLE IF NOT EXISTS playlists (
     playlist_id     VARCHAR PRIMARY KEY,
     user_id         VARCHAR NOT NULL,
@@ -140,6 +162,9 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON user_sessions (user_id);
 CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorite_songs (user_id);
+CREATE INDEX IF NOT EXISTS idx_favorite_albums_user_id ON favorite_albums (user_id);
+CREATE INDEX IF NOT EXISTS idx_favorite_album_entities_user_id ON favorite_album_entities (user_id);
+CREATE INDEX IF NOT EXISTS idx_favorite_music_directors_user_id ON favorite_music_directors (user_id);
 CREATE INDEX IF NOT EXISTS idx_playlists_user_id ON playlists (user_id);
 CREATE INDEX IF NOT EXISTS idx_playlist_songs_playlist_id ON playlist_songs (playlist_id);
 """
