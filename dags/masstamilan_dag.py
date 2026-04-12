@@ -7,7 +7,7 @@ Schedule : daily at 06:00 IST (00:30 UTC)
 
 Task graph
 ──────────
-  discover_new_albums
+  plan_catalog_scrape
         │
         ▼
   scrape_album_batch   (dynamic task mapping — one task per batch of 20 albums)
@@ -25,6 +25,8 @@ Design notes
 ─────────────
 • Incremental  : On each run, discovery stops as soon as it hits a page of
                  already-known albums (site lists newest first).
+• Revisit pass : Each run also re-scrapes a rolling batch of known album URLs
+                 so late-added songs on existing albums are picked up.
 • Batching     : Albums are chunked into groups of 20 so each mapped task
                  handles a reasonable amount of work.
 • DuckDB       : Single .duckdb file under PROJECT_DIR/data/.  All writes
@@ -66,6 +68,9 @@ DUCKDB_PATH  = str(PROJECT_DIR / "data" / "masstamilan.duckdb")
 EXPORTS_DIR  = PROJECT_DIR / "exports"
 BATCH_SIZE   = 20          # albums per dynamic task
 START_PAGE   = 2           # listing always starts at page 2
+REFRESH_EXISTING_LIMIT = 240
+REFRESH_MIN_AGE_HOURS = 24
+REFRESH_RECENT_YEAR_WINDOW = 2
 
 # ── DAG defaults ─────────────────────────────────────────────────────────────
 
@@ -81,22 +86,31 @@ DEFAULT_ARGS = {
 # Task functions
 # ═════════════════════════════════════════════════════════════════════════════
 
-def task_discover_new_albums(**ctx) -> dict[str, Any]:
+def task_plan_catalog_scrape(**ctx) -> dict[str, Any]:
     """
-    Walk listing pages, collect album URLs not yet in DuckDB.
-    Pushes: { "batches": [[url, ...], ...], "run_id": str, "total_pages": int }
+    Plan work for both new album discovery and existing album revisits.
     """
     run_id = ctx["run_id"]
 
     # Should we do a full scrape (ignore known URLs)?
     full_scrape = Variable.get("MASSTAMILAN_FULL_SCRAPE", default_var="false").lower() == "true"
+    refresh_existing_limit = int(
+        Variable.get("MASSTAMILAN_REFRESH_EXISTING_LIMIT", default_var=str(REFRESH_EXISTING_LIMIT))
+    )
+    refresh_min_age_hours = float(
+        Variable.get("MASSTAMILAN_REFRESH_MIN_AGE_HOURS", default_var=str(REFRESH_MIN_AGE_HOURS))
+    )
+    refresh_recent_year_window = int(
+        Variable.get(
+            "MASSTAMILAN_REFRESH_RECENT_YEAR_WINDOW",
+            default_var=str(REFRESH_RECENT_YEAR_WINDOW),
+        )
+    )
 
     conn = db.get_conn(DUCKDB_PATH)
     db.start_run(conn, run_id)
 
     known_urls: set[str] = set() if full_scrape else db.get_known_album_urls(conn)
-    conn.close()
-
     log.info(f"Run {run_id} | Full scrape: {full_scrape} | Known albums: {len(known_urls)}")
 
     new_urls, total_pages = scraper_core.discover_new_album_urls(
@@ -104,22 +118,37 @@ def task_discover_new_albums(**ctx) -> dict[str, Any]:
         known_urls=known_urls,
     )
 
-    # Chunk into batches
-    batches = [
-        new_urls[i : i + BATCH_SIZE]
-        for i in range(0, max(len(new_urls), 1), BATCH_SIZE)
-        if new_urls[i : i + BATCH_SIZE]
-    ]
-    if not batches:
-        batches = [[]]  # ensure at least one downstream task runs
+    refresh_urls = [] if full_scrape else db.get_album_urls_for_refresh(
+        conn,
+        limit=refresh_existing_limit,
+        min_age_hours=refresh_min_age_hours,
+        recent_year_window=refresh_recent_year_window,
+        exclude_urls=set(new_urls),
+    )
+    conn.close()
 
-    log.info(f"New albums: {len(new_urls)} → {len(batches)} batch(es)")
+    batches: list[dict[str, Any]] = []
+    for kind, urls in (("new", new_urls), ("refresh", refresh_urls)):
+        for i in range(0, len(urls), BATCH_SIZE):
+            batch_urls = urls[i : i + BATCH_SIZE]
+            if batch_urls:
+                batches.append({"kind": kind, "urls": batch_urls})
+    if not batches:
+        batches = [{"kind": "noop", "urls": []}]
+
+    log.info(
+        "Planned %s new album(s) and %s refresh album(s) across %s batch(es)",
+        len(new_urls),
+        len(refresh_urls),
+        len(batches),
+    )
 
     return {
-        "batches":     batches,
-        "run_id":      run_id,
+        "batches": batches,
+        "run_id": run_id,
         "total_pages": total_pages,
-        "new_count":   len(new_urls),
+        "new_count": len(new_urls),
+        "refresh_count": len(refresh_urls),
     }
 
 
@@ -129,22 +158,24 @@ def task_scrape_batch(batch_index: int, **ctx) -> dict[str, Any]:
     Returns serialisable dict of albums + songs for the write task.
     """
     ti         = ctx["ti"]
-    discovery  = ti.xcom_pull(task_ids="discover_new_albums")
+    discovery  = ti.xcom_pull(task_ids="plan_catalog_scrape")
     batches    = discovery["batches"]
 
     if batch_index >= len(batches):
-        return {"albums": [], "songs": [], "failed": []}
+        return {"kind": "noop", "albums": [], "songs": [], "failed": []}
 
-    album_urls = batches[batch_index]
+    batch = batches[batch_index]
+    album_urls = batch["urls"]
     if not album_urls:
-        return {"albums": [], "songs": [], "failed": []}
+        return {"kind": batch.get("kind", "noop"), "albums": [], "songs": [], "failed": []}
 
-    log.info(f"Batch {batch_index}: {len(album_urls)} album(s)")
+    log.info("Batch %s (%s): %s album(s)", batch_index, batch.get("kind", "noop"), len(album_urls))
     albums, songs, failed = scraper_core.scrape_albums(album_urls)
 
     return {
+        "kind": batch.get("kind", "noop"),
         "albums": albums,
-        "songs":  songs,
+        "songs": songs,
         "failed": failed,
     }
 
@@ -156,32 +187,59 @@ def task_write_to_duckdb(**ctx) -> dict[str, Any]:
     """
     ti       = ctx["ti"]
     run_id   = ctx["run_id"]
-    discovery = ti.xcom_pull(task_ids="discover_new_albums")
+    discovery = ti.xcom_pull(task_ids="plan_catalog_scrape")
     batches  = discovery["batches"]
 
-    all_albums: list[dict] = []
-    all_songs:  list[dict] = []
+    new_albums: list[dict] = []
+    new_songs: list[dict] = []
+    refreshed_albums: list[dict] = []
+    refreshed_song_map: dict[str, list[dict]] = {}
     all_failed: list[str]  = []
 
     for i in range(len(batches)):
         result = ti.xcom_pull(task_ids=f"scrape_batch_{i}")
         if result:
-            all_albums.extend(result.get("albums", []))
-            all_songs.extend(result.get("songs",  []))
+            kind = result.get("kind", "noop")
+            result_albums = result.get("albums", [])
+            result_songs = result.get("songs", [])
+            if kind == "refresh":
+                refreshed_albums.extend(result_albums)
+                for song in result_songs:
+                    album_url = song.get("album_url") or ""
+                    if not album_url:
+                        continue
+                    refreshed_song_map.setdefault(album_url, []).append(song)
+            else:
+                new_albums.extend(result_albums)
+                new_songs.extend(result_songs)
             all_failed.extend(result.get("failed", []))
 
-    log.info(f"Writing {len(all_albums)} albums, {len(all_songs)} songs to DuckDB…")
+    log.info(
+        "Writing %s new album(s), %s refreshed album(s), %s new song row(s) to DuckDB…",
+        len(new_albums),
+        len(refreshed_albums),
+        len(new_songs),
+    )
 
     conn = db.get_conn(DUCKDB_PATH)
     try:
-        for album in all_albums:
+        for album in new_albums:
             db.upsert_album(conn, album)
+        if new_songs:
+            db.upsert_songs(conn, new_songs)
+
+        refreshed_count = 0
+        for album in refreshed_albums:
+            album_url = album.get("album_url") or ""
+            songs = refreshed_song_map.get(album_url, [])
+            if not album_url or not songs:
+                continue
+            db.upsert_album(conn, album)
+            db.replace_album_songs(conn, album_url, songs)
+            refreshed_count += 1
 
         for url in all_failed:
             db.mark_album_failed(conn, url)
-
-        if all_songs:
-            db.upsert_songs(conn, all_songs)
 
         total_songs = conn.execute("SELECT COUNT(*) FROM songs").fetchone()[0]
         total_albums = conn.execute(
@@ -189,12 +247,12 @@ def task_write_to_duckdb(**ctx) -> dict[str, Any]:
         ).fetchone()[0]
 
         stats = {
-            "albums_new":     len(all_albums),
-            "albums_failed":  len(all_failed),
-            "albums_updated": 0,
-            "songs_total":    total_songs,
-            "pages_scraped":  discovery["total_pages"],
-            "status":         "success",
+            "albums_new": len(new_albums),
+            "albums_failed": len(all_failed),
+            "albums_updated": refreshed_count,
+            "songs_total": total_songs,
+            "pages_scraped": discovery["total_pages"],
+            "status": "success",
         }
         db.finish_run(conn, run_id, stats)
         conn.close()
@@ -229,7 +287,7 @@ def task_summary(**ctx) -> None:
     """Print a human-readable run summary to Airflow logs."""
     ti    = ctx["ti"]
     write = ti.xcom_pull(task_ids="write_to_duckdb")
-    disc  = ti.xcom_pull(task_ids="discover_new_albums")
+    disc  = ti.xcom_pull(task_ids="plan_catalog_scrape")
 
     conn  = db.get_conn(DUCKDB_PATH, read_only=True)
     db.print_stats(conn)
@@ -238,6 +296,7 @@ def task_summary(**ctx) -> None:
     log.info("\n" + "═" * 54)
     log.info("  RUN SUMMARY")
     log.info(f"  New albums scraped : {write.get('albums_new', 0):>6,}")
+    log.info(f"  Albums refreshed   : {write.get('albums_updated', 0):>6,}")
     log.info(f"  Failed albums      : {write.get('albums_failed', 0):>6,}")
     log.info(f"  Total songs in DB  : {write.get('songs_total', 0):>6,}")
     log.info(f"  Pages walked       : {write.get('pages_scraped', 0):>6,}")
@@ -256,7 +315,7 @@ def task_summary(**ctx) -> None:
 
 with DAG(
     dag_id="masstamilan_daily_scraper",
-    description="Scrape source catalog daily — new albums only (incremental)",
+    description="Scrape source catalog daily — new albums plus rolling album refresh",
     schedule_interval="30 0 * * *",     # 06:00 IST = 00:30 UTC
     start_date=days_ago(1),
     catchup=False,
@@ -267,8 +326,8 @@ with DAG(
 
     # ── T1: Discovery ────────────────────────────────────────────────────────
     discover = PythonOperator(
-        task_id="discover_new_albums",
-        python_callable=task_discover_new_albums,
+        task_id="plan_catalog_scrape",
+        python_callable=task_plan_catalog_scrape,
     )
 
     # ── T2: Dynamic batch scrape tasks ──────────────────────────────────────

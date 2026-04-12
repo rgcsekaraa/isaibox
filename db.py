@@ -17,7 +17,7 @@ DuckDB advantages over SQLite here:
 import duckdb
 import os
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 # Resolve path relative to this file so it works from any cwd
 _HERE = Path(__file__).resolve().parent
@@ -225,6 +225,60 @@ def get_known_album_urls(conn: duckdb.DuckDBPyConnection) -> set[str]:
     return {r[0] for r in rows}
 
 
+def get_album_urls_for_refresh(
+    conn: duckdb.DuckDBPyConnection,
+    *,
+    limit: int = 200,
+    min_age_hours: float = 24,
+    recent_year_window: int = 2,
+    exclude_urls: set[str] | None = None,
+) -> list[str]:
+    """
+    Return existing album URLs that should be revisited.
+
+    Newest releases are prioritized, but ordering by the oldest successful
+    refresh timestamp ensures the whole catalog is eventually revisited.
+    """
+    if limit <= 0:
+        return []
+
+    exclude_urls = exclude_urls or set()
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=max(min_age_hours, 0))
+    recent_cutoff_year = now.year - max(recent_year_window, 0)
+    fetch_limit = limit + len(exclude_urls)
+
+    rows = conn.execute(
+        """
+        SELECT album_url
+        FROM albums
+        WHERE scrape_ok = TRUE
+          AND album_url IS NOT NULL
+          AND album_url != ''
+          AND COALESCE(updated_at, first_seen_at, TIMESTAMPTZ '1970-01-01 00:00:00+00') <= ?
+        ORDER BY
+          CASE
+            WHEN TRY_CAST(year AS INTEGER) >= ? THEN 0
+            ELSE 1
+          END,
+          COALESCE(updated_at, first_seen_at, TIMESTAMPTZ '1970-01-01 00:00:00+00') ASC,
+          TRY_CAST(year AS INTEGER) DESC NULLS LAST,
+          album_url ASC
+        LIMIT ?
+        """,
+        [cutoff, recent_cutoff_year, fetch_limit],
+    ).fetchall()
+
+    urls: list[str] = []
+    for (album_url,) in rows:
+        if album_url in exclude_urls:
+            continue
+        urls.append(album_url)
+        if len(urls) >= limit:
+            break
+    return urls
+
+
 def upsert_album(conn: duckdb.DuckDBPyConnection, data: dict) -> None:
     now = datetime.now(timezone.utc)
     conn.execute("""
@@ -316,6 +370,16 @@ def upsert_songs(conn: duckdb.DuckDBPyConnection, songs: list[dict]) -> None:
         ]
         for s in songs
     ])
+
+
+def replace_album_songs(conn: duckdb.DuckDBPyConnection, album_url: str, songs: list[dict]) -> None:
+    """
+    Replace the stored tracklist for a successfully re-scraped album.
+    """
+    if not album_url or not songs:
+        return
+    conn.execute("DELETE FROM songs WHERE album_url = ?", [album_url])
+    upsert_songs(conn, songs)
 
 
 # ── Run log helpers ───────────────────────────────────────────────────────────

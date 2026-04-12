@@ -400,6 +400,8 @@ def scrape_albums(
         try:
             soup = fetch(url)
             album, songs = parse_album_page(soup, url)
+            if not songs:
+                raise ValueError("parsed 0 tracks")
             albums.append(album)
             all_songs.extend(songs)
             log.info(f"    → {album['movie_name']} | {len(songs)} track(s)")
