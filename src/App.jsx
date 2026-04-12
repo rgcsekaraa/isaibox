@@ -570,6 +570,8 @@ function App() {
   const [cacheMessage, setCacheMessage] = createSignal("");
   const [showSettings, setShowSettings] = createSignal(false);
   const [dbSyncState, setDbSyncState] = createSignal(null);
+  const [dbSyncActionBusy, setDbSyncActionBusy] = createSignal(false);
+  const [dbSyncActionMessage, setDbSyncActionMessage] = createSignal("");
   const [configReady, setConfigReady] = createSignal(false);
   const [playlistMutationBusy, setPlaylistMutationBusy] = createSignal("");
   const [playlistCreateBusy, setPlaylistCreateBusy] = createSignal(false);
@@ -678,6 +680,44 @@ function App() {
     }
     return "border-[var(--line)] text-[var(--soft)]";
   });
+  const localDbSyncActionLabel = createMemo(() => {
+    if (dbSyncActionBusy()) {
+      return "Checking...";
+    }
+    const status = dbSyncState()?.status;
+    if (status === "checking") {
+      return "Checking...";
+    }
+    if (status === "downloading") {
+      return "Updating...";
+    }
+    return "Check update";
+  });
+
+  const refreshLibrarySnapshot = async () => {
+    const [statsResponse, songsResponse] = await Promise.all([
+      fetch("/api/stats", { cache: "no-store" }),
+      fetch("/api/library", { cache: "no-store" }),
+    ]);
+    if (!statsResponse.ok || !songsResponse.ok) {
+      throw new Error("Unable to refresh library");
+    }
+    const statsPayload = await statsResponse.json();
+    const songsPayload = await songsResponse.json();
+    const nextSongs = songsPayload.songs || [];
+    setStats(statsPayload);
+    setSongs(nextSongs);
+    setResults((current) => ({
+      songs: query().trim() ? current.songs || [] : nextSongs.slice(0, 200),
+      albums: current.albums || [],
+      artists: current.artists || [],
+    }));
+    if (!nextSongs.some((song) => song.id === selectedId())) {
+      setSelectedId(nextSongs[0]?.id || "");
+    }
+    worker?.postMessage({ type: "index", payload: nextSongs });
+    sendSearch(query().trim().toLowerCase());
+  };
 
   const animateListScroll = (targetScrollTop) => {
     if (!listRef) {
@@ -872,6 +912,38 @@ function App() {
         message: syncError?.message || "Unable to read library sync status",
         githubIssuesUrl: "https://github.com/rgcsekaraa/isaibox/issues",
       });
+    }
+  };
+
+  const checkForLibraryUpdate = async () => {
+    if (!localMode() || dbSyncActionBusy()) {
+      return;
+    }
+    setDbSyncActionBusy(true);
+    try {
+      const previousVersion = dbSyncState()?.currentVersion || "";
+      const response = await fetch("/api/db-sync/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: false }),
+      });
+      if (!response.ok) {
+        throw new Error("Unable to check for library updates");
+      }
+      const payload = await response.json();
+      const sync = payload.sync || null;
+      setDbSyncState(sync);
+      setDbSyncActionMessage(sync?.message || "Library status updated");
+      if (sync?.status === "idle") {
+        await refreshLibrarySnapshot();
+      }
+      if (sync?.currentVersion && sync.currentVersion !== previousVersion) {
+        setDbSyncActionMessage("Library updated successfully");
+      }
+    } catch (syncError) {
+      setDbSyncActionMessage(syncError?.message || "Unable to check for library updates");
+    } finally {
+      setDbSyncActionBusy(false);
     }
   };
 
@@ -1218,6 +1290,7 @@ function App() {
     setQuery("");
     setSearchTab("albums");
     setMovieFilter("");
+    setAlbumFilterMeta(null);
     setArtistFilter("");
     setMusicDirectorFilter(nextDirector);
   };
@@ -2459,6 +2532,7 @@ function App() {
     setLibraryNavStack([]);
     setQuery("");
     setMovieFilter("");
+    setAlbumFilterMeta(null);
     setArtistFilter("");
     setMusicDirectorFilter("");
     setSearchTab("songs");
@@ -2561,6 +2635,7 @@ function App() {
     setPlaylistDetailLoading(false);
     setQuery("");
     setMovieFilter("");
+    setAlbumFilterMeta(null);
     setArtistFilter("");
     setMusicDirectorFilter("");
     setSearchTab("songs");
@@ -2924,7 +2999,7 @@ function App() {
 
   const pickRelativeSong = (offset, baseId = selectedId(), options = {}) => {
     const { respectRandom = true } = options;
-    const list = activeSongList();
+    const list = sortedActiveSongList();
     if (!list.length) {
       return null;
     }
@@ -3055,15 +3130,17 @@ function App() {
         return;
       }
       setResults(event.data.payload);
-      if (movieFilter() && !event.data.payload.songs.some((song) => albumIdentity(song) === movieFilter())) {
-        setMovieFilter("");
-        setAlbumFilterMeta(null);
-      }
-      if (artistFilter() && !event.data.payload.songs.some((song) => normalizeText(song.singers).includes(normalizeText(artistFilter())))) {
-        setArtistFilter("");
-      }
-      if (musicDirectorFilter() && !event.data.payload.songs.some((song) => normalizeText(song.musicDirector) === normalizeText(musicDirectorFilter()))) {
-        setMusicDirectorFilter("");
+      if (query().trim()) {
+        if (movieFilter() && !event.data.payload.songs.some((song) => albumIdentity(song) === movieFilter())) {
+          setMovieFilter("");
+          setAlbumFilterMeta(null);
+        }
+        if (artistFilter() && !event.data.payload.songs.some((song) => normalizeText(song.singers).includes(normalizeText(artistFilter())))) {
+          setArtistFilter("");
+        }
+        if (musicDirectorFilter() && !event.data.payload.songs.some((song) => normalizeText(song.musicDirector) === normalizeText(musicDirectorFilter()))) {
+          setMusicDirectorFilter("");
+        }
       }
     };
 
@@ -3688,6 +3765,27 @@ function App() {
                   {localDbSyncLabel()}
                 </span>
               </Show>
+              <button
+                type="button"
+                onClick={() => void checkForLibraryUpdate()}
+                disabled={dbSyncActionBusy() || dbSyncState()?.status === "downloading"}
+                class={`font-mono text-[10px] uppercase tracking-[0.18em] transition ${
+                  dbSyncActionBusy() || dbSyncState()?.status === "downloading"
+                    ? "cursor-not-allowed text-[var(--line)]"
+                    : "text-[var(--soft)] hover:text-[var(--fg)]"
+                }`}
+                title={dbSyncState()?.message || "Check for library updates"}
+              >
+                {localDbSyncActionLabel()}
+              </button>
+              <Show when={dbSyncActionMessage()}>
+                <span
+                  class={`max-w-[220px] truncate font-mono text-[10px] uppercase tracking-[0.18em] ${localDbSyncTone()}`}
+                  title={dbSyncActionMessage()}
+                >
+                  {dbSyncActionMessage()}
+                </span>
+              </Show>
               <Show when={dbSyncState()?.status === "error" && dbSyncState()?.githubIssuesUrl}>
                 <a
                   href={dbSyncState().githubIssuesUrl}
@@ -4007,6 +4105,7 @@ function App() {
                   value={query()}
                   onInput={(event) => {
                     setMovieFilter("");
+                    setAlbumFilterMeta(null);
                     setArtistFilter("");
                     setMusicDirectorFilter("");
                     setQuery(event.currentTarget.value);
@@ -4024,6 +4123,7 @@ function App() {
                   type="button"
                   onClick={() => {
                     setMovieFilter("");
+                    setAlbumFilterMeta(null);
                     setArtistFilter("");
                     setMusicDirectorFilter("");
                     setQuery("");
@@ -4972,6 +5072,7 @@ function App() {
                             type="button"
                             onClick={() => {
                               setMovieFilter("");
+                              setAlbumFilterMeta(null);
                               setArtistFilter("");
                               setMusicDirectorFilter("");
                             }}
@@ -5296,7 +5397,7 @@ function App() {
                   <SortableSongHeader columnKey="singers" label="Singer" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
                   <SortableSongHeader columnKey="year" label="Year" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-20" />
                   <Show when={user()}>
-                    <span class="w-20 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Save</span>
+                    <span class="w-20 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">{mainTab() === "favorites" ? "Fav" : "Save"}</span>
                   </Show>
                 </div>
 
@@ -5304,7 +5405,7 @@ function App() {
                   <Show when={!error()} fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--soft)]">{error()}</div>}>
                     <Show
                       when={sortedActiveSongList().length > 0}
-                      fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">No results</div>}
+                      fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">{mainTab() === "favorites" ? "No favorite songs yet" : "No results"}</div>}
                     >
                       <ul ref={listRef} class="min-h-0 flex-1 overflow-y-auto">
                         <For each={sortedActiveSongList()}>
@@ -5343,19 +5444,40 @@ function App() {
                                   <span class="w-20 font-mono text-[11px] text-[var(--soft)]">
                                     {song.year || "-"}
                                   </span>
-                                  <SongRowFavoriteActions
-                                    show={user()}
-                                    class="w-20"
-                                    song={song}
-                                    open={openSongSaveMenuId() === song.id}
-                                    onToggleOpen={() => setOpenSongSaveMenuId((current) => current === song.id ? "" : song.id)}
-                                    songActive={favoriteIdSet().has(song.id)}
-                                    albumActive={favoriteAlbumSet().has(albumIdentity(song))}
-                                    musicDirectorActive={favoriteMusicDirectorSet().has(song.musicDirector)}
-                                    onToggleSong={(songId) => { void toggleFavorite(songId); setOpenSongSaveMenuId(""); }}
-                                    onToggleAlbum={(albumValue) => { void toggleAlbumFavorite(albumValue); setOpenSongSaveMenuId(""); }}
-                                    onToggleMusicDirector={(musicDirector) => { void toggleMusicDirectorFavorite(musicDirector); setOpenSongSaveMenuId(""); }}
-                                  />
+                                  <Show
+                                    when={mainTab() === "favorites"}
+                                    fallback={
+                                      <SongRowFavoriteActions
+                                        show={user()}
+                                        class="w-20"
+                                        song={song}
+                                        open={openSongSaveMenuId() === song.id}
+                                        onToggleOpen={() => setOpenSongSaveMenuId((current) => current === song.id ? "" : song.id)}
+                                        songActive={favoriteIdSet().has(song.id)}
+                                        albumActive={favoriteAlbumSet().has(albumIdentity(song))}
+                                        musicDirectorActive={favoriteMusicDirectorSet().has(song.musicDirector)}
+                                        onToggleSong={(songId) => { void toggleFavorite(songId); setOpenSongSaveMenuId(""); }}
+                                        onToggleAlbum={(albumValue) => { void toggleAlbumFavorite(albumValue); setOpenSongSaveMenuId(""); }}
+                                        onToggleMusicDirector={(musicDirector) => { void toggleMusicDirectorFavorite(musicDirector); setOpenSongSaveMenuId(""); }}
+                                      />
+                                    }
+                                  >
+                                    <Show when={user()}>
+                                      <span class="flex w-20 justify-end">
+                                        <button
+                                          type="button"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            void toggleFavorite(song.id);
+                                          }}
+                                          class={`transition-colors ${favoriteIdSet().has(song.id) ? "text-[var(--fg)]" : "text-[var(--muted)] hover:text-[var(--fg)]"}`}
+                                          aria-label={favoriteIdSet().has(song.id) ? "Remove from favorites" : "Add to favorites"}
+                                        >
+                                          <HeartIcon filled={favoriteIdSet().has(song.id)} />
+                                        </button>
+                                      </span>
+                                    </Show>
+                                  </Show>
                                 </button>
                               </li>
                             );
