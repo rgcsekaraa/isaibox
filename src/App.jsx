@@ -241,6 +241,12 @@ const ChevronDownIcon = () => (
   </svg>
 );
 
+const HamburgerIcon = () => (
+  <svg viewBox="0 0 24 24" class="h-4 w-4 fill-none stroke-current stroke-2">
+    <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
+  </svg>
+);
+
 const ShuffleIcon = () => (
   <svg viewBox="0 0 24 24" class="h-4 w-4 fill-none stroke-current stroke-2">
     <path d="M16 3h5v5" />
@@ -304,75 +310,23 @@ const HeartIcon = (props) => (
   </svg>
 );
 
-const SongRowFavoriteActions = (props) => {
-  const albumName = () => String(props.song?.movie || "").trim();
-  const albumValue = () => ({ albumName: albumName(), albumUrl: props.song?.albumUrl || "", year: props.song?.year || "" });
-  const musicDirector = () => String(props.song?.musicDirector || "").trim();
-  const anySaved = () => props.songActive || props.albumActive || props.musicDirectorActive;
-  return (
-    <Show when={props.show}>
-      <span class={`relative flex items-center justify-end ${props.class || ""}`}>
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            props.onToggleOpen?.();
-          }}
-          class={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.18em] transition ${
-            props.open || anySaved()
-              ? "border-[var(--fg)] text-[var(--fg)]"
-              : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"
-          }`}
-          aria-label="Save options"
-        >
-          <HeartIcon filled={anySaved()} />
-          <span>Save</span>
-        </button>
-        <Show when={props.open}>
-          <div class="absolute right-0 top-full z-20 mt-2 min-w-[180px] border border-[var(--line)] bg-[var(--bg)] p-1 shadow-lg">
-            <button
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                props.onToggleSong?.(props.song?.id);
-              }}
-              class={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition hover:bg-[var(--hover)] ${props.songActive ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}
-            >
-              <span>Song</span>
-              <HeartIcon filled={props.songActive} />
-            </button>
-            <Show when={albumName()}>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  props.onToggleAlbum?.(albumValue());
-                }}
-                class={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition hover:bg-[var(--hover)] ${props.albumActive ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}
-              >
-                <span class="truncate">Album</span>
-                <HeartIcon filled={props.albumActive} />
-              </button>
-            </Show>
-            <Show when={musicDirector()}>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  props.onToggleMusicDirector?.(musicDirector());
-                }}
-                class={`flex w-full items-center justify-between px-3 py-2 text-left text-xs transition hover:bg-[var(--hover)] ${props.musicDirectorActive ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}
-              >
-                <span class="truncate">Music Director</span>
-                <HeartIcon filled={props.musicDirectorActive} />
-              </button>
-            </Show>
-          </div>
-        </Show>
-      </span>
-    </Show>
-  );
-};
+const SongRowHeartButton = (props) => (
+  <Show when={props.show}>
+    <span class={`flex items-center justify-end ${props.class || ""}`}>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          props.onClick?.();
+        }}
+        class={`transition-colors ${props.active ? "text-[var(--fg)]" : "text-[var(--muted)] hover:text-[var(--fg)]"}`}
+        aria-label={props.active ? "Remove from favorites" : "Add to favorites"}
+      >
+        <HeartIcon filled={props.active} />
+      </button>
+    </span>
+  </Show>
+);
 
 const PlayingBars = () => (
   <span class="inline-flex h-3 items-end gap-px">
@@ -559,7 +513,9 @@ function App() {
   const [showCreatePlaylistModal, setShowCreatePlaylistModal] = createSignal(false);
   const [showAuthPrompt, setShowAuthPrompt] = createSignal(false);
   const [showProfileMenu, setShowProfileMenu] = createSignal(false);
-  const [openSongSaveMenuId, setOpenSongSaveMenuId] = createSignal("");
+  const [showMobileMenu, setShowMobileMenu] = createSignal(false);
+  const [showMobilePlayerPanel, setShowMobilePlayerPanel] = createSignal(false);
+  const [mobilePlayerDragOffset, setMobilePlayerDragOffset] = createSignal(0);
   const [loadingFrame, setLoadingFrame] = createSignal(0);
   const [pendingRadioOffset, setPendingRadioOffset] = createSignal(null);
   const [pendingPlaylistSongId, setPendingPlaylistSongId] = createSignal("");
@@ -614,6 +570,7 @@ function App() {
   let playlistDetailAbortController = null;
   let activeDeckIndex = 0;
   let fadingAudio = null;
+  let mobilePlayerTouchStartY = null;
   const prefetchedIds = new Set();
   const rowRefs = new Map();
 
@@ -3182,11 +3139,6 @@ function App() {
       }
 
       if (event.key === "Escape") {
-        if (openSongSaveMenuId()) {
-          event.preventDefault();
-          setOpenSongSaveMenuId("");
-          return;
-        }
         if (showShortcutHelp()) {
           event.preventDefault();
           setShowShortcutHelp(false);
@@ -3316,9 +3268,6 @@ function App() {
     };
 
     const onPointerDown = (event) => {
-      if (openSongSaveMenuId()) {
-        setOpenSongSaveMenuId("");
-      }
       if (!showProfileMenu()) {
         return;
       }
@@ -3329,8 +3278,19 @@ function App() {
       setShowProfileMenu(false);
     };
 
+    const onResize = () => {
+      if (window.innerWidth >= 640) {
+        setShowMobileMenu(false);
+      }
+      if (window.innerWidth >= 768) {
+        setShowMobilePlayerPanel(false);
+        setMobilePlayerDragOffset(0);
+      }
+    };
+
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("resize", onResize);
     const onBrowserOnline = () => {
       void verifyAppOnline();
     };
@@ -3343,6 +3303,7 @@ function App() {
     removePointerdownListener = () => window.removeEventListener("pointerdown", onPointerDown);
     removeOnlineListener = () => window.removeEventListener("online", onBrowserOnline);
     removeOfflineListener = () => window.removeEventListener("offline", onBrowserOffline);
+    onCleanup(() => window.removeEventListener("resize", onResize));
 
     void verifyAppOnline();
 
@@ -3423,6 +3384,76 @@ function App() {
   createEffect(() => {
     playbackSpeed();
     syncDeckPlaybackSpeed();
+  });
+
+  createEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator)) {
+      return;
+    }
+    const mediaSession = navigator.mediaSession;
+    const activeSong = currentSong() || selectedActiveSong() || selectedSong() || sortedActiveSongList()[0] || null;
+    mediaSession.playbackState = isPlaying() ? "playing" : "paused";
+    mediaSession.metadata = activeSong
+      ? new MediaMetadata({
+          title: activeSong.track || "isaibox",
+          artist: activeSong.singers || activeSong.musicDirector || "isaibox",
+          album: activeSong.movie || "",
+        })
+      : null;
+
+    try {
+      mediaSession.setActionHandler("play", () => {
+        if (!isPlaying()) {
+          loadSong(selectedActiveSong() || selectedSong() || sortedActiveSongList()[0], true);
+          return;
+        }
+        togglePlayback();
+      });
+      mediaSession.setActionHandler("pause", () => {
+        if (isPlaying()) {
+          togglePlayback();
+        }
+      });
+      mediaSession.setActionHandler("previoustrack", () => {
+        if (!radioPlaybackLocked()) {
+          selectRelative(-1, true, currentTrackId() || selectedId(), { allowCrossfade: true });
+        }
+      });
+      mediaSession.setActionHandler("nexttrack", () => {
+        if (!radioPlaybackLocked()) {
+          selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true });
+        }
+      });
+      mediaSession.setActionHandler("seekbackward", () => adjustSeek(-10));
+      mediaSession.setActionHandler("seekforward", () => adjustSeek(10));
+      mediaSession.setActionHandler("seekto", (details) => {
+        if (radioPlaybackLocked()) {
+          return;
+        }
+        const seekTime = Number(details?.seekTime);
+        if (!Number.isFinite(seekTime)) {
+          return;
+        }
+        const activeAudio = getActiveAudio();
+        if (activeAudio) {
+          activeAudio.currentTime = seekTime;
+        }
+        setCurrentTime(seekTime);
+      });
+    } catch {}
+  });
+
+  createEffect(() => {
+    if (typeof navigator === "undefined" || !("mediaSession" in navigator) || !Number.isFinite(duration()) || duration() <= 0) {
+      return;
+    }
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: duration(),
+        playbackRate: playbackSpeed(),
+        position: Math.min(duration(), Math.max(0, currentTime())),
+      });
+    } catch {}
   });
 
   createEffect(() => {
@@ -3557,6 +3588,13 @@ function App() {
     void fetchSpotifyPlaylists().catch((error) => {
       setAccountMessage(error?.message || "Unable to load Spotify playlists");
     });
+  });
+
+  createEffect(() => {
+    if (!showMobilePlayerPanel()) {
+      setMobilePlayerDragOffset(0);
+      mobilePlayerTouchStartY = null;
+    }
   });
 
   createEffect(() => {
@@ -3731,7 +3769,7 @@ function App() {
             aria-hidden="true"
             class="pointer-events-none absolute left-[-9999px] top-0 opacity-0"
           />
-          <div class="flex items-center gap-3 sm:gap-4">
+          <div class="hidden items-center gap-3 sm:flex sm:gap-4">
             <button
               type="button"
               onClick={() => setShowSettings(!showSettings())}
@@ -3749,9 +3787,17 @@ function App() {
               Shortcuts
             </button>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowMobileMenu(true)}
+            aria-label="Open menu"
+            class="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] transition hover:border-[var(--fg)] hover:text-[var(--fg)] sm:hidden"
+          >
+            <HamburgerIcon />
+          </button>
 
           <Show when={localMode()}>
-            <div class="flex items-center gap-3">
+            <div class="hidden items-center gap-3 sm:flex">
               <Show when={cacheNearFull() && !cacheFull()}>
                 <span class="font-mono text-[10px] uppercase tracking-[0.18em] text-yellow-500">
                   Cache {cachePercent()}%
@@ -3923,8 +3969,89 @@ function App() {
         </div>
       </header>
 
+      <Show when={showMobileMenu()}>
+        <div class="fixed inset-0 z-50 bg-black/55 sm:hidden">
+          <button
+            type="button"
+            aria-label="Close mobile menu"
+            class="absolute inset-0"
+            onClick={() => setShowMobileMenu(false)}
+          />
+          <div class="absolute right-0 top-0 h-full w-[min(88vw,340px)] border-l border-[var(--line)] bg-[var(--bg)] px-5 py-5 shadow-2xl">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Menu</div>
+                <div class="mt-2 text-lg font-semibold">Mobile controls</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMobileMenu(false)}
+                class="rounded-full border border-[var(--line)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]"
+              >
+                Close
+              </button>
+            </div>
+
+            <div class="mt-5 space-y-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowMobileMenu(false);
+                  setShowShortcutHelp(true);
+                }}
+                class="flex w-full items-center justify-between rounded-[18px] border border-[var(--line)] px-4 py-4 text-left transition hover:border-[var(--fg)]"
+              >
+                <span>Shortcuts</span>
+                <span class="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">Open</span>
+              </button>
+
+              <div class="rounded-[18px] border border-[var(--line)] px-4 py-4">
+                <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--faint)]">Theme</div>
+                <div class="mt-3 grid grid-cols-3 gap-2">
+                  <button type="button" onClick={() => setThemePreferenceChoice("light")} class={`border px-2 py-3 font-mono text-[10px] uppercase tracking-[0.16em] transition ${themePreference() === "light" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]" : "border-[var(--line)] text-[var(--soft)]"}`}>Light</button>
+                  <button type="button" onClick={() => setThemePreferenceChoice("system")} class={`border px-2 py-3 font-mono text-[10px] uppercase tracking-[0.16em] transition ${themePreference() === "system" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]" : "border-[var(--line)] text-[var(--soft)]"}`}>System</button>
+                  <button type="button" onClick={() => setThemePreferenceChoice("dark")} class={`border px-2 py-3 font-mono text-[10px] uppercase tracking-[0.16em] transition ${themePreference() === "dark" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]" : "border-[var(--line)] text-[var(--soft)]"}`}>Dark</button>
+                </div>
+              </div>
+
+              <Show when={localMode()}>
+                <div class="rounded-[18px] border border-[var(--line)] px-4 py-4">
+                  <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--faint)]">Local status</div>
+                  <div class="mt-3 space-y-2 text-sm text-[var(--soft)]">
+                    <Show when={localDbSyncLabel()}>
+                      <div>{localDbSyncLabel()}</div>
+                    </Show>
+                    <Show when={cacheStatus()}>
+                      <div>Cache {cachePercent()}%</div>
+                    </Show>
+                  </div>
+                  <div class="mt-4 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void checkForLibraryUpdate()}
+                      disabled={dbSyncActionBusy() || dbSyncState()?.status === "downloading"}
+                      class="rounded-full border border-[var(--line)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)] disabled:opacity-40"
+                    >
+                      {localDbSyncActionLabel()}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void trimCache(false)}
+                      disabled={cacheTrimming()}
+                      class="rounded-full border border-[var(--line)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)] disabled:opacity-40"
+                    >
+                      Clear cache
+                    </button>
+                  </div>
+                </div>
+              </Show>
+            </div>
+          </div>
+        </div>
+      </Show>
+
       <Show when={showSettings()}>
-        <section class="border-b border-[var(--line)] bg-[var(--panel)] px-6 py-4">
+        <section class="hidden border-b border-[var(--line)] bg-[var(--panel)] px-6 py-4 sm:block">
           <div class="flex items-center justify-between gap-4">
             <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Settings</div>
             <button
@@ -4022,30 +4149,30 @@ function App() {
 
       <section class="border-b border-[var(--line)] px-4 py-3 sm:px-6">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div class="flex overflow-x-auto pb-1 font-mono text-[10px] uppercase tracking-[0.22em] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <button type="button" onClick={() => setMainBrowseTab("library")} class={`px-1 py-1 ${mainTab() === "library" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
+          <div class="flex gap-2 overflow-x-auto pb-1 font-mono text-[10px] uppercase tracking-[0.22em] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <button type="button" onClick={() => setMainBrowseTab("library")} class={`shrink-0 rounded-full border px-3 py-2 transition sm:border-transparent sm:px-1 sm:py-1 ${mainTab() === "library" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)] sm:bg-transparent sm:text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>
               Library
             </button>
-            <button type="button" onClick={() => setMainBrowseTab("recents")} class={`px-1 py-1 ${mainTab() === "recents" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
+            <button type="button" onClick={() => setMainBrowseTab("recents")} class={`shrink-0 rounded-full border px-3 py-2 transition sm:border-transparent sm:px-1 sm:py-1 ${mainTab() === "recents" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)] sm:bg-transparent sm:text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>
               Recents {recentSongs().length ? `(${recentSongs().length})` : ""}
             </button>
             <Show when={libraryProfileEnabled()}>
-              <button type="button" onClick={() => setMainBrowseTab("favorites")} class={`px-1 py-1 ${mainTab() === "favorites" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
+              <button type="button" onClick={() => setMainBrowseTab("favorites")} class={`shrink-0 rounded-full border px-3 py-2 transition sm:border-transparent sm:px-1 sm:py-1 ${mainTab() === "favorites" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)] sm:bg-transparent sm:text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>
                 Favorites
               </button>
             </Show>
             <Show when={radioEnabled()}>
-              <button type="button" onClick={() => setMainBrowseTab("radio")} class={`px-1 py-1 ${mainTab() === "radio" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
+              <button type="button" onClick={() => setMainBrowseTab("radio")} class={`shrink-0 rounded-full border px-3 py-2 transition sm:border-transparent sm:px-1 sm:py-1 ${mainTab() === "radio" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)] sm:bg-transparent sm:text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>
                 Radio
               </button>
             </Show>
             <Show when={localMode()}>
-              <button type="button" onClick={() => setMainBrowseTab("playlists")} class={`px-1 py-1 ${mainTab() === "playlists" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
+              <button type="button" onClick={() => setMainBrowseTab("playlists")} class={`shrink-0 rounded-full border px-3 py-2 transition sm:border-transparent sm:px-1 sm:py-1 ${mainTab() === "playlists" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)] sm:bg-transparent sm:text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>
                 Playlists {playlists().length ? `(${playlists().length})` : ""}
               </button>
             </Show>
             <Show when={authEnabled() && user()?.is_admin}>
-              <button type="button" onClick={() => setMainBrowseTab("admin")} class={`px-1 py-1 ${mainTab() === "admin" ? "text-[var(--fg)]" : "text-[var(--soft)]"}`}>
+              <button type="button" onClick={() => setMainBrowseTab("admin")} class={`shrink-0 rounded-full border px-3 py-2 transition sm:border-transparent sm:px-1 sm:py-1 ${mainTab() === "admin" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)] sm:bg-transparent sm:text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>
                 Admin
               </button>
             </Show>
@@ -4065,7 +4192,7 @@ function App() {
                   </Show>
                   <Show when={mainTab() === "favorites" && libraryProfileEnabled()}>
                     <>
-                      <div class="flex items-center gap-3">
+                      <div class="hidden items-center gap-3 sm:flex">
                         <button
                           type="button"
                           onClick={() => setFavoritesTab("songs")}
@@ -4711,7 +4838,7 @@ function App() {
               <>
               <section class="min-h-0 flex-1 overflow-hidden px-4 py-3 sm:px-6 sm:py-4">
                 <div class="grid h-full min-h-0 gap-3 xl:grid-cols-[280px_minmax(0,1fr)] xl:gap-4">
-                  <aside class="order-2 min-h-0 max-h-[32vh] overflow-y-auto border border-[var(--line)] bg-[var(--panel)] p-4 xl:order-1 xl:max-h-none">
+                  <aside class="hidden min-h-0 overflow-y-auto border border-[var(--line)] bg-[var(--panel)] p-4 xl:block xl:max-h-none">
                     <div class="flex items-center gap-2">
                       <input
                         value={playlistNameInput()}
@@ -4772,7 +4899,67 @@ function App() {
                     </div>
                   </aside>
 
-                  <div class="order-1 flex min-h-0 flex-col overflow-hidden border border-[var(--line)] bg-[var(--panel)] xl:order-2">
+                  <div class="order-2 flex min-h-0 flex-col overflow-hidden border border-[var(--line)] bg-[var(--panel)] xl:order-2">
+                    <div class="border-b border-[var(--line-soft)] px-4 py-4 xl:hidden">
+                      <div class="rounded-[24px] border border-[var(--line)] bg-[var(--hover)] px-4 py-4">
+                        <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Playlists</div>
+                        <div class="mt-2 text-lg font-semibold">Manage your saved sets.</div>
+                        <div class="mt-2 text-sm text-[var(--soft)]">
+                          Create playlists, rename them, and jump back into library search when you want to add more songs.
+                        </div>
+                      </div>
+                      <div class="mt-4 flex items-center gap-2">
+                        <input
+                          value={playlistNameInput()}
+                          onInput={(event) => setPlaylistNameInput(sanitizePlaylistName(event.currentTarget.value))}
+                          onKeyDown={(event) => { if (event.key === "Enter") void createPlaylist(); }}
+                          placeholder="New playlist name"
+                          maxLength={PLAYLIST_NAME_MAX_LENGTH}
+                          class="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-transparent px-4 py-3 font-mono text-xs text-[var(--fg)] outline-none placeholder:text-[var(--muted)]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void createPlaylist()}
+                          disabled={playlistCreateBusy()}
+                          class={`rounded-full border px-4 py-3 font-mono text-[10px] uppercase tracking-[0.2em] transition ${
+                            playlistCreateBusy() ? "cursor-not-allowed border-[var(--line-soft)] text-[var(--line)]" : "border-[var(--line)] text-[var(--soft)]"
+                          }`}
+                        >
+                          Add
+                        </button>
+                      </div>
+                      <div class="mt-3">
+                        <input
+                          value={playlistSearchQuery()}
+                          onInput={(event) => setPlaylistSearchQuery(event.currentTarget.value)}
+                          placeholder="Search playlists"
+                          class="w-full rounded-full border border-[var(--line)] bg-transparent px-4 py-3 font-mono text-xs text-[var(--fg)] outline-none placeholder:text-[var(--muted)]"
+                        />
+                      </div>
+                      <div class="mt-4 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                        <For each={filteredUserPlaylists()}>
+                          {(playlist) => (
+                            <button
+                              type="button"
+                              onClick={() => void openGlobalPlaylist(playlist.id)}
+                              class={`min-w-[170px] rounded-[18px] border px-4 py-3 text-left transition ${
+                                myPlaylistDetail()?.id === playlist.id
+                                  ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
+                                  : "border-[var(--line)] bg-[var(--hover)] text-[var(--fg)]"
+                              }`}
+                            >
+                              <div class="line-clamp-2 text-sm font-semibold">{playlist.name}</div>
+                              <div class="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] opacity-70">{playlist.trackCount} tracks</div>
+                            </button>
+                          )}
+                        </For>
+                        <Show when={!normalizedPlaylistSearch() && filteredUserPlaylists().length === 0}>
+                          <div class="rounded-[18px] border border-[var(--line)] px-4 py-3 text-sm text-[var(--soft)]">
+                            No playlists yet.
+                          </div>
+                        </Show>
+                      </div>
+                    </div>
                     <Show when={playlistDetailLoading() && !myPlaylistDetail()}>
                       <div class="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
                         <div>
@@ -4867,7 +5054,7 @@ function App() {
         <Show when={mainTab() === "library"}>
           <section class="min-h-0 flex-1 overflow-hidden px-4 py-3 sm:px-6 sm:py-4">
             <div class="grid h-full min-h-0 gap-3 xl:grid-cols-[320px_minmax(0,1fr)] xl:gap-4">
-              <aside class="order-2 min-h-0 max-h-[34vh] overflow-y-auto border border-[var(--line)] bg-[var(--panel)] p-4 xl:order-1 xl:max-h-none">
+              <aside class="hidden min-h-0 max-h-[34vh] overflow-y-auto border border-[var(--line)] bg-[var(--panel)] p-4 xl:block xl:max-h-none">
                 <div class="flex items-center justify-between gap-3">
                   <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Playlists</div>
                   <Show when={authEnabled() && !user()}>
@@ -5084,26 +5271,75 @@ function App() {
                       </div>
                     </header>
 
+                    <Show when={mainTab() === "library"}>
+                      <div class="border-b border-[var(--line-soft)] px-4 py-4 xl:hidden">
+                        <Show when={visiblePlaylistDetail()}>
+                          {(playlist) => (
+                            <div class="rounded-[22px] border border-[var(--line)] bg-[var(--hover)] p-4">
+                              <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Playlist</div>
+                              <div class="mt-2 text-lg font-semibold">{playlist().name}</div>
+                              <div class="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">
+                                {(playlist().tracks || []).length} tracks
+                              </div>
+                            </div>
+                          )}
+                        </Show>
+                        <Show when={!visiblePlaylistDetail() && !movieFilter() && !artistFilter() && !musicDirectorFilter()}>
+                          <div class="rounded-[24px] border border-[var(--line)] bg-[var(--hover)] px-4 py-4">
+                            <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Mobile library</div>
+                            <div class="mt-2 text-lg font-semibold">Your music, built for touch.</div>
+                            <div class="mt-2 text-sm text-[var(--soft)]">
+                              {visibleResults().length} songs ready. Pick a lane, jump between playlists, and keep playback controls close.
+                            </div>
+                          </div>
+                        </Show>
+                        <Show when={!visiblePlaylistDetail() && libraryPlaylistCards().length > 0}>
+                          <div class="mt-4">
+                            <div class="mb-2 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Playlists</div>
+                            <div class="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                              <For each={libraryPlaylistCards()}>
+                                {(playlist) => (
+                                  <button
+                                    type="button"
+                                    onClick={() => void openGlobalPlaylist(playlist.id)}
+                                    class={`min-w-[160px] rounded-[18px] border px-4 py-3 text-left transition ${
+                                      selectedGlobalPlaylistTarget() === playlist.id
+                                        ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
+                                        : "border-[var(--line)] bg-[var(--hover)] text-[var(--fg)]"
+                                    }`}
+                                  >
+                                    <div class="font-mono text-[10px] uppercase tracking-[0.18em] opacity-70">{playlist.section}</div>
+                                    <div class="mt-2 line-clamp-2 text-sm font-semibold">{playlist.name}</div>
+                                    <div class="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] opacity-70">{playlist.trackCount} tracks</div>
+                                  </button>
+                                )}
+                              </For>
+                            </div>
+                          </div>
+                        </Show>
+                      </div>
+                    </Show>
+
                     <Show when={!visiblePlaylistDetail() && mainTab() === "library" && !movieFilter() && !artistFilter() && !musicDirectorFilter()}>
-                      <div class="flex items-center gap-4 overflow-x-auto border-b border-[var(--line-soft)] px-4 py-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)] sm:px-6">
+                      <div class="flex items-center gap-2 overflow-x-auto border-b border-[var(--line-soft)] px-4 py-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)] sm:gap-4 sm:px-6">
                         <button
                           type="button"
                           onClick={() => setSearchTab("songs")}
-                          class={`transition ${searchTab() === "songs" ? "text-[var(--fg)]" : "hover:text-[var(--fg)]"}`}
+                          class={`rounded-full border px-3 py-2 transition ${searchTab() === "songs" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]" : "border-[var(--line)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}
                         >
                           Songs
                         </button>
                         <button
                           type="button"
                           onClick={() => setSearchTab("albums")}
-                          class={`transition ${searchTab() === "albums" ? "text-[var(--fg)]" : "hover:text-[var(--fg)]"}`}
+                          class={`rounded-full border px-3 py-2 transition ${searchTab() === "albums" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]" : "border-[var(--line)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}
                         >
                           Albums
                         </button>
                         <button
                           type="button"
                           onClick={() => setSearchTab("music-directors")}
-                          class={`transition ${searchTab() === "music-directors" ? "text-[var(--fg)]" : "hover:text-[var(--fg)]"}`}
+                          class={`rounded-full border px-3 py-2 transition ${searchTab() === "music-directors" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]" : "border-[var(--line)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}
                         >
                           Music Directors
                         </button>
@@ -5114,15 +5350,15 @@ function App() {
                       when={searchTab() === "albums" || searchTab() === "music-directors" || (musicDirectorFilter() && !movieFilter())}
                       fallback={
                         <>
-                          <div class="hidden items-center gap-4 border-b border-[var(--line-soft)] px-6 py-2 sm:flex">
-                            <SortableSongHeader columnKey="default" label="#" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-8 text-right" />
-                            <SortableSongHeader columnKey="track" label="Song Name" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="min-w-0 flex-[1.4]" />
-                            <SortableSongHeader columnKey="movie" label="Movie" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 md:block" />
-                            <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 lg:block" />
-                            <SortableSongHeader columnKey="singers" label="Singer" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
-                            <SortableSongHeader columnKey="year" label="Year" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-20" />
+                          <div class="song-table-header hidden border-b border-[var(--line-soft)] px-6 py-2 sm:grid">
+                            <SortableSongHeader columnKey="default" label="#" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-index text-right" />
+                            <SortableSongHeader columnKey="track" label="Song Name" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-title" />
+                            <SortableSongHeader columnKey="movie" label="Movie" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-movie hidden md:block" />
+                            <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-director hidden lg:block" />
+                            <SortableSongHeader columnKey="singers" label="Singer" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-singers hidden xl:block" />
+                            <SortableSongHeader columnKey="year" label="Year" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-year" />
                             <Show when={user()}>
-                              <span class="w-20 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Save</span>
+                              <span class="song-col-action text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Fav</span>
                             </Show>
                           </div>
                           <Show when={!loading()} fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">Loading{loadingDots()}</div>}>
@@ -5144,7 +5380,7 @@ function App() {
                                     }}
                                     type="button"
                                     onClick={() => loadSong(song, true)}
-                                    class={`flex w-full flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3 text-left transition sm:items-center sm:gap-4 ${
+                                    class={`song-table-row flex w-full flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3 text-left transition ${
                                       active()
                                         ? currentTrackId() === song.id
                                           ? "song-row-active text-[var(--fg)]"
@@ -5152,10 +5388,10 @@ function App() {
                                                 : "bg-transparent text-[var(--fg)] hover:bg-[var(--hover)]"
                                             }`}
                                           >
-                                    <span class="w-8 shrink-0 pt-0.5 text-right font-mono text-xs text-[var(--soft)] sm:pt-0">
+                                    <span class="song-col-index w-8 shrink-0 pt-0.5 text-right font-mono text-xs text-[var(--soft)] sm:pt-0">
                                       {currentTrackId() === song.id && isPlaying() && streamStarted() ? <PlayingBars /> : String(index() + 1).padStart(2, "0")}
                                     </span>
-                                    <div class="min-w-0 flex-1 basis-[calc(100%-2.75rem)] sm:flex-[1.4] sm:basis-auto">
+                                    <div class="song-col-title min-w-0 flex-1 basis-[calc(100%-5.75rem)] sm:basis-auto">
                                       <div class="truncate text-sm">{song.track}</div>
                                       <div class="mt-1 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)] sm:hidden">
                                         <Show when={song.movie}><span>{song.movie}</span></Show>
@@ -5164,23 +5400,16 @@ function App() {
                                         <Show when={song.year}><span>{song.year}</span></Show>
                                       </div>
                                     </div>
-                                    <DrilldownText value={song.movie} payload={{ album: song.movie, albumUrl: song.albumUrl, year: song.year }} onClick={navigateToMovie} class="hidden min-w-0 flex-1 font-mono text-[11px] text-[var(--soft)] md:block" />
-                                    <DrilldownText value={song.musicDirector} onClick={navigateToMusicDirector} class="hidden min-w-0 flex-1 font-mono text-[11px] text-[var(--soft)] lg:block" />
-                                    <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] xl:block">{song.singers || "-"}</span>
-                                    <span class="hidden w-20 font-mono text-[11px] text-[var(--soft)] sm:block">{song.year || "-"}</span>
-                                    <SongRowFavoriteActions
+                                    <DrilldownText value={song.movie} payload={{ album: song.movie, albumUrl: song.albumUrl, year: song.year }} onClick={navigateToMovie} class="song-col-movie hidden font-mono text-[11px] text-[var(--soft)] md:block" />
+                                    <DrilldownText value={song.musicDirector} onClick={navigateToMusicDirector} class="song-col-director hidden font-mono text-[11px] text-[var(--soft)] lg:block" />
+                                    <span class="song-col-singers hidden truncate font-mono text-[11px] text-[var(--soft)] xl:block">{song.singers || "-"}</span>
+                                    <span class="song-col-year hidden font-mono text-[11px] text-[var(--soft)] sm:block">{song.year || "-"}</span>
+                                    <SongRowHeartButton
                                       show={user()}
-                                      class="ml-auto w-auto sm:w-20"
-                                      song={song}
-                                      open={openSongSaveMenuId() === song.id}
-                                      onToggleOpen={() => setOpenSongSaveMenuId((current) => current === song.id ? "" : song.id)}
-                                              songActive={favoriteIdSet().has(song.id)}
-                                              albumActive={favoriteAlbumSet().has(albumIdentity(song))}
-                                              musicDirectorActive={favoriteMusicDirectorSet().has(song.musicDirector)}
-                                              onToggleSong={(songId) => { void toggleFavorite(songId); setOpenSongSaveMenuId(""); }}
-                                              onToggleAlbum={(albumValue) => { void toggleAlbumFavorite(albumValue); setOpenSongSaveMenuId(""); }}
-                                              onToggleMusicDirector={(musicDirector) => { void toggleMusicDirectorFavorite(musicDirector); setOpenSongSaveMenuId(""); }}
-                                            />
+                                      class="song-col-action ml-auto"
+                                      active={favoriteIdSet().has(song.id)}
+                                      onClick={() => void toggleFavorite(song.id)}
+                                    />
                                           </button>
                                         </li>
                                       );
@@ -5298,8 +5527,39 @@ function App() {
         </Show>
 
         <Show when={mainTab() !== "library" && (mainTab() !== "radio" && mainTab() !== "admin" && mainTab() !== "playlists")}>
-          <section class="min-h-0 flex-1 overflow-hidden px-6 py-4">
+          <section class="min-h-0 flex-1 overflow-hidden px-4 py-3 sm:px-6 sm:py-4">
             <div class="flex h-full min-h-0 flex-col overflow-hidden border border-[var(--line)] bg-[var(--panel)]">
+              <Show when={mainTab() === "favorites"}>
+                <div class="border-b border-[var(--line-soft)] px-4 py-4 sm:px-6">
+                  <div class="rounded-[24px] border border-[var(--line)] bg-[var(--hover)] px-4 py-4 sm:hidden">
+                    <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Favorites</div>
+                    <div class="mt-2 text-lg font-semibold">Your pinned songs, albums, and composers.</div>
+                  </div>
+                  <div class="mt-0 flex gap-2 overflow-x-auto font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)] sm:mt-0">
+                    <button
+                      type="button"
+                      onClick={() => setFavoritesTab("songs")}
+                      class={`shrink-0 rounded-full border px-3 py-2 transition ${favoritesTab() === "songs" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]" : "border-[var(--line)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}
+                    >
+                      Songs
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFavoritesTab("albums")}
+                      class={`shrink-0 rounded-full border px-3 py-2 transition ${favoritesTab() === "albums" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]" : "border-[var(--line)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}
+                    >
+                      Albums
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFavoritesTab("music-directors")}
+                      class={`shrink-0 rounded-full border px-3 py-2 transition ${favoritesTab() === "music-directors" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]" : "border-[var(--line)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}
+                    >
+                      Music Directors
+                    </button>
+                  </div>
+                </div>
+              </Show>
               <Show
                 when={mainTab() !== "favorites" || favoritesTab() === "songs"}
                 fallback={
@@ -5403,15 +5663,15 @@ function App() {
                   </Show>
                 }
               >
-                <div class="hidden items-center gap-4 border-b border-[var(--line-soft)] px-6 py-2 sm:flex">
-                  <SortableSongHeader columnKey="default" label="#" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-8 text-right" />
-                  <SortableSongHeader columnKey="track" label="Song Name" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="min-w-0 flex-[1.2]" />
-                  <SortableSongHeader columnKey="movie" label="Movie" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 md:block" />
-                  <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 lg:block" />
-                  <SortableSongHeader columnKey="singers" label="Singer" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="hidden min-w-0 flex-1 xl:block" />
-                  <SortableSongHeader columnKey="year" label="Year" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="w-20" />
+                <div class="song-table-header hidden border-b border-[var(--line-soft)] px-6 py-2 sm:grid">
+                  <SortableSongHeader columnKey="default" label="#" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-index text-right" />
+                  <SortableSongHeader columnKey="track" label="Song Name" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-title" />
+                  <SortableSongHeader columnKey="movie" label="Movie" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-movie hidden md:block" />
+                  <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-director hidden lg:block" />
+                  <SortableSongHeader columnKey="singers" label="Singer" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-singers hidden xl:block" />
+                  <SortableSongHeader columnKey="year" label="Year" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-year" />
                   <Show when={user()}>
-                    <span class="w-20 text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">{mainTab() === "favorites" ? "Fav" : "Save"}</span>
+                    <span class="song-col-action text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Fav</span>
                   </Show>
                 </div>
 
@@ -5438,7 +5698,7 @@ function App() {
                                   type="button"
                                   onClick={() => loadSong(song, true)}
                                   title={`Last updated: ${formatUpdatedAt(song.updatedAt)}`}
-                                class={`flex w-full flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3 text-left transition sm:items-center sm:gap-4 sm:px-6 ${
+                                class={`song-table-row flex w-full flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3 text-left transition sm:px-6 ${
                                   active()
                                     ? currentTrackId() === song.id
                                       ? "song-row-active text-[var(--fg)]"
@@ -5446,10 +5706,10 @@ function App() {
                                       : "bg-transparent text-[var(--fg)] hover:bg-[var(--hover)]"
                                   }`}
                                 >
-                                  <span class="w-8 shrink-0 pt-0.5 text-right font-mono text-xs text-[var(--soft)] sm:pt-0">
+                                  <span class="song-col-index w-8 shrink-0 pt-0.5 text-right font-mono text-xs text-[var(--soft)] sm:pt-0">
                                     {currentTrackId() === song.id && isPlaying() && streamStarted() ? <PlayingBars /> : String(index() + 1).padStart(2, "0")}
                                   </span>
-                                  <div class="min-w-0 flex-1 basis-[calc(100%-2.75rem)] sm:flex-[1.2] sm:basis-auto">
+                                  <div class="song-col-title min-w-0 flex-1 basis-[calc(100%-5.75rem)] sm:basis-auto">
                                     <div class="truncate text-sm">{song.track}</div>
                                     <div class="mt-1 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)] sm:hidden">
                                       <Show when={song.movie}><span>{song.movie}</span></Show>
@@ -5458,47 +5718,31 @@ function App() {
                                       <Show when={song.year}><span>{song.year}</span></Show>
                                     </div>
                                   </div>
-                                  <DrilldownText value={song.movie} payload={{ album: song.movie, albumUrl: song.albumUrl, year: song.year }} onClick={navigateToMovie} class="hidden min-w-0 flex-1 font-mono text-[11px] text-[var(--soft)] md:block" />
-                                  <DrilldownText value={song.musicDirector} onClick={navigateToMusicDirector} class="hidden min-w-0 flex-1 font-mono text-[11px] text-[var(--soft)] lg:block" />
-                                  <span class="hidden min-w-0 flex-1 truncate font-mono text-[11px] text-[var(--soft)] xl:block">
+                                  <DrilldownText value={song.movie} payload={{ album: song.movie, albumUrl: song.albumUrl, year: song.year }} onClick={navigateToMovie} class="song-col-movie hidden font-mono text-[11px] text-[var(--soft)] md:block" />
+                                  <DrilldownText value={song.musicDirector} onClick={navigateToMusicDirector} class="song-col-director hidden font-mono text-[11px] text-[var(--soft)] lg:block" />
+                                  <span class="song-col-singers hidden truncate font-mono text-[11px] text-[var(--soft)] xl:block">
                                     {song.singers || "-"}
                                   </span>
-                                  <span class="hidden w-20 font-mono text-[11px] text-[var(--soft)] sm:block">
+                                  <span class="song-col-year hidden font-mono text-[11px] text-[var(--soft)] sm:block">
                                     {song.year || "-"}
                                   </span>
                                   <Show
                                     when={mainTab() === "favorites"}
                                     fallback={
-                                      <SongRowFavoriteActions
+                                      <SongRowHeartButton
                                         show={user()}
-                                        class="ml-auto w-auto sm:w-20"
-                                        song={song}
-                                        open={openSongSaveMenuId() === song.id}
-                                        onToggleOpen={() => setOpenSongSaveMenuId((current) => current === song.id ? "" : song.id)}
-                                        songActive={favoriteIdSet().has(song.id)}
-                                        albumActive={favoriteAlbumSet().has(albumIdentity(song))}
-                                        musicDirectorActive={favoriteMusicDirectorSet().has(song.musicDirector)}
-                                        onToggleSong={(songId) => { void toggleFavorite(songId); setOpenSongSaveMenuId(""); }}
-                                        onToggleAlbum={(albumValue) => { void toggleAlbumFavorite(albumValue); setOpenSongSaveMenuId(""); }}
-                                        onToggleMusicDirector={(musicDirector) => { void toggleMusicDirectorFavorite(musicDirector); setOpenSongSaveMenuId(""); }}
+                                        class="song-col-action ml-auto"
+                                        active={favoriteIdSet().has(song.id)}
+                                        onClick={() => void toggleFavorite(song.id)}
                                       />
                                     }
                                   >
-                                    <Show when={user()}>
-                                      <span class="ml-auto flex w-auto justify-end sm:w-20">
-                                        <button
-                                          type="button"
-                                          onClick={(event) => {
-                                            event.stopPropagation();
-                                            void toggleFavorite(song.id);
-                                          }}
-                                          class={`transition-colors ${favoriteIdSet().has(song.id) ? "text-[var(--fg)]" : "text-[var(--muted)] hover:text-[var(--fg)]"}`}
-                                          aria-label={favoriteIdSet().has(song.id) ? "Remove from favorites" : "Add to favorites"}
-                                        >
-                                          <HeartIcon filled={favoriteIdSet().has(song.id)} />
-                                        </button>
-                                      </span>
-                                    </Show>
+                                    <SongRowHeartButton
+                                      show={user()}
+                                      class="song-col-action ml-auto"
+                                      active={favoriteIdSet().has(song.id)}
+                                      onClick={() => void toggleFavorite(song.id)}
+                                    />
                                   </Show>
                                 </button>
                               </li>
@@ -5517,9 +5761,14 @@ function App() {
 
       <footer class="border-t border-[var(--line)] bg-[var(--bg)] px-3 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-6">
         <div class="md:hidden">
-          <div class="rounded-[20px] border border-[var(--line)] bg-[var(--hover)] px-3 py-3">
-            <div class="flex items-start gap-3">
-              <div class="flex h-10 w-10 shrink-0 items-center justify-center border border-[var(--line)] font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)]">
+          <div class="rounded-[28px] border border-[var(--line)] bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] px-4 py-4 shadow-[0_-12px_40px_rgba(0,0,0,0.25)]">
+            <button
+              type="button"
+              onClick={() => setShowMobilePlayerPanel(true)}
+              class="flex w-full items-start gap-4 text-left"
+              aria-label="Open now playing controls"
+            >
+              <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] border border-[var(--line)] bg-[rgba(255,255,255,0.04)] font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)]">
                 <Show when={currentSong() && isPlaying() && streamStarted()} fallback={"Play"}>
                   <PlayingBars />
                 </Show>
@@ -5528,7 +5777,7 @@ function App() {
                 <Show when={currentSong()} fallback={<p class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--muted)]">No track selected</p>}>
                   {(song) => (
                     <>
-                      <p class="truncate text-sm font-semibold">{song().track}</p>
+                      <p class="truncate text-base font-semibold">{song().track}</p>
                       <div class="mt-1 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)]">
                         <Show when={song().movie}><span>{song().movie}</span></Show>
                         <Show when={song().singers}><span>{song().singers}</span></Show>
@@ -5537,33 +5786,12 @@ function App() {
                   )}
                 </Show>
               </div>
-              <div class="flex shrink-0 items-center gap-1.5">
-                <Show when={user() && currentSong()}>
-                  <button
-                    type="button"
-                    onClick={() => void toggleFavorite(currentSong().id)}
-                    aria-label={favoriteIdSet().has(currentSong()?.id) ? "Remove from favorites" : "Add to favorites"}
-                    class={`flex h-9 w-9 items-center justify-center rounded-full border transition ${
-                      favoriteIdSet().has(currentSong()?.id)
-                        ? "border-[var(--fg)] text-[var(--fg)]"
-                        : "border-[var(--line)] text-[var(--soft)]"
-                    }`}
-                  >
-                    <HeartIcon filled={favoriteIdSet().has(currentSong()?.id)} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void saveCurrentToPlaylist()}
-                    aria-label="Add to playlist"
-                    class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)]"
-                  >
-                    <PlusIcon />
-                  </button>
-                </Show>
+              <div class="shrink-0 rounded-full border border-[var(--line)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">
+                Pull up
               </div>
-            </div>
+            </button>
 
-            <div class="mt-3 flex items-center gap-2">
+            <div class="mt-4 flex items-center gap-2">
               <span class="w-9 text-right font-mono text-[10px] text-[var(--muted)]">{formatTime(currentTime())}</span>
               <input
                 type="range"
@@ -5595,14 +5823,13 @@ function App() {
               </button>
             </div>
 
-            <div class="mt-3 flex items-center justify-between gap-2">
-              <div class="flex items-center gap-1.5">
+            <div class="mt-4 flex items-center justify-center gap-3">
                 <button
                   type="button"
                   onClick={() => selectRelative(-1, true, currentTrackId() || selectedId(), { allowCrossfade: true })}
                   disabled={radioPlaybackLocked()}
                   aria-label="Previous"
-                  class="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] disabled:opacity-40"
+                  class="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] disabled:opacity-40"
                 >
                   <PrevIcon />
                 </button>
@@ -5610,7 +5837,7 @@ function App() {
                   type="button"
                   onClick={togglePlayback}
                   aria-label={isPlaying() ? (streamStarted() ? "Pause" : "Loading") : "Play"}
-                  class="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--fg)] text-[var(--fg)]"
+                  class="flex h-14 w-14 items-center justify-center rounded-full border border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
                 >
                   {isPlaying() ? (streamStarted() ? <PauseIcon /> : <LoadingSpinnerIcon />) : <PlayIcon />}
                 </button>
@@ -5619,54 +5846,41 @@ function App() {
                   onClick={() => selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true })}
                   disabled={radioPlaybackLocked()}
                   aria-label="Next"
-                  class="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] disabled:opacity-40"
+                  class="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] disabled:opacity-40"
                 >
                   <NextIcon />
                 </button>
-              </div>
-              <button
-                type="button"
-                onClick={cyclePlaybackMode}
-                disabled={radioPlaybackLocked()}
-                aria-label={radioPlaybackLocked() ? "Playback mode locked for radio" : `Playback mode: ${playbackModeLabel()}`}
-                class={`flex h-10 min-w-[3rem] items-center justify-center rounded-full border px-2 ${
-                  repeatMode() !== "off" && !radioPlaybackLocked()
-                    ? "border-[var(--fg)] text-[var(--fg)]"
-                    : "border-[var(--line)] text-[var(--soft)]"
-                } disabled:opacity-40`}
-              >
-                {playbackModeIcon()}
-              </button>
             </div>
 
-            <div class="mt-3 grid grid-cols-[auto_auto_1fr_auto] items-center gap-2">
-              <button
-                type="button"
-                onClick={cyclePlaybackSpeed}
-                aria-label={playbackSpeedLabel()}
-                class="flex h-9 min-w-[3.25rem] items-center justify-center rounded-full border border-[var(--line)] px-2 text-[var(--soft)]"
-              >
-                <SpeedIcon speed={playbackSpeed()} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setMuted((value) => !value)}
-                aria-label={muted() ? "Unmute" : "Mute"}
-                class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)]"
-              >
-                <VolumeIcon muted={muted() || volume() === 0} />
-              </button>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={volume()}
-                onInput={(event) => setVolume(Number(event.currentTarget.value))}
-                class="w-full"
-                style={{ "accent-color": "var(--fg)" }}
-              />
-              <span class="w-8 text-right font-mono text-[10px] text-[var(--muted)]">{Math.round(muted() ? 0 : volume() * 100)}</span>
+            <div class="mt-4 flex flex-wrap gap-2">
+              <div class="flex min-h-[44px] items-center rounded-full border border-[var(--line)] px-4 text-sm text-[var(--soft)]">
+                Pull up for full controls
+              </div>
+            </div>
+
+            <div class="mt-3 rounded-[20px] border border-[var(--line)] bg-[rgba(255,255,255,0.03)] px-3 py-3">
+              <div class="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setMuted((value) => !value)}
+                  aria-label={muted() ? "Unmute" : "Mute"}
+                  class="flex h-10 min-w-[76px] items-center justify-center gap-2 rounded-full border border-[var(--line)] px-3 text-sm text-[var(--soft)]"
+                >
+                  <VolumeIcon muted={muted() || volume() === 0} />
+                  <span>{muted() ? "Muted" : "Sound"}</span>
+                </button>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  value={volume()}
+                  onInput={(event) => setVolume(Number(event.currentTarget.value))}
+                  class="w-full"
+                  style={{ "accent-color": "var(--fg)" }}
+                />
+                <span class="w-8 text-right font-mono text-[10px] text-[var(--muted)]">{Math.round(muted() ? 0 : volume() * 100)}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -5792,6 +6006,194 @@ function App() {
           </div>
         </div>
         </div>
+        <Show when={showMobilePlayerPanel()}>
+          <div class="fixed inset-0 z-50 flex items-end bg-black/55 md:hidden">
+            <button
+              type="button"
+              aria-label="Close player"
+              class="absolute inset-0"
+              onClick={() => setShowMobilePlayerPanel(false)}
+            />
+            <div
+              class="relative z-10 w-full rounded-t-[32px] border-t border-[var(--line)] bg-[var(--bg)] px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-5 shadow-2xl transition-transform duration-150"
+              style={{ transform: `translateY(${mobilePlayerDragOffset()}px)` }}
+              onTouchStart={(event) => {
+                mobilePlayerTouchStartY = event.touches[0]?.clientY ?? null;
+              }}
+              onTouchMove={(event) => {
+                if (mobilePlayerTouchStartY == null) {
+                  return;
+                }
+                const delta = (event.touches[0]?.clientY ?? mobilePlayerTouchStartY) - mobilePlayerTouchStartY;
+                setMobilePlayerDragOffset(Math.max(0, delta));
+              }}
+              onTouchEnd={() => {
+                if (mobilePlayerDragOffset() > 90) {
+                  setShowMobilePlayerPanel(false);
+                }
+                setMobilePlayerDragOffset(0);
+                mobilePlayerTouchStartY = null;
+              }}
+            >
+              <div class="mx-auto h-1.5 w-14 rounded-full bg-[var(--line)]" />
+              <div class="mt-5 flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                  <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Now playing</div>
+                  <Show when={currentSong()} fallback={<div class="mt-2 text-base font-semibold">No track selected</div>}>
+                    {(song) => (
+                      <>
+                        <div class="mt-2 truncate text-2xl font-semibold">{song().track}</div>
+                        <div class="mt-2 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)]">
+                          <Show when={song().movie}><span>{song().movie}</span></Show>
+                          <Show when={song().singers}><span>{song().singers}</span></Show>
+                          <Show when={song().musicDirector}><span>{song().musicDirector}</span></Show>
+                        </div>
+                      </>
+                    )}
+                  </Show>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowMobilePlayerPanel(false)}
+                  class="rounded-full border border-[var(--line)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div class="mt-6 flex items-center gap-3">
+                <span class="w-10 text-right font-mono text-[10px] text-[var(--muted)]">{formatTime(currentTime())}</span>
+                <input
+                  type="range"
+                  min="0"
+                  max={duration() || 0}
+                  step="0.1"
+                  value={currentTime()}
+                  onInput={(event) => {
+                    if (radioPlaybackLocked()) {
+                      return;
+                    }
+                    const next = Number(event.currentTarget.value);
+                    const activeAudio = getActiveAudio();
+                    if (activeAudio) {
+                      activeAudio.currentTime = next;
+                    }
+                    setCurrentTime(next);
+                  }}
+                  class="flex-1"
+                  disabled={radioPlaybackLocked()}
+                  style={{ "accent-color": "var(--fg)" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowRemainingTime((prev) => !prev)}
+                  class="w-12 text-right font-mono text-[10px] text-[var(--muted)]"
+                >
+                  {showRemainingTime() ? `-${formatTime(Math.max(0, duration() - currentTime()))}` : formatTime(duration())}
+                </button>
+              </div>
+
+              <div class="mt-6 flex items-center justify-center gap-4">
+                <button
+                  type="button"
+                  onClick={() => selectRelative(-1, true, currentTrackId() || selectedId(), { allowCrossfade: true })}
+                  disabled={radioPlaybackLocked()}
+                  aria-label="Previous"
+                  class="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] disabled:opacity-40"
+                >
+                  <PrevIcon />
+                </button>
+                <button
+                  type="button"
+                  onClick={togglePlayback}
+                  aria-label={isPlaying() ? (streamStarted() ? "Pause" : "Loading") : "Play"}
+                  class="flex h-16 w-16 items-center justify-center rounded-full border border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
+                >
+                  {isPlaying() ? (streamStarted() ? <PauseIcon /> : <LoadingSpinnerIcon />) : <PlayIcon />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true })}
+                  disabled={radioPlaybackLocked()}
+                  aria-label="Next"
+                  class="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] disabled:opacity-40"
+                >
+                  <NextIcon />
+                </button>
+              </div>
+
+              <div class="mt-6 grid grid-cols-2 gap-3">
+                <Show when={user() && currentSong()}>
+                  <button
+                    type="button"
+                    onClick={() => void toggleFavorite(currentSong().id)}
+                    class={`flex min-h-[48px] items-center justify-center gap-2 rounded-[18px] border px-4 text-sm ${
+                      favoriteIdSet().has(currentSong()?.id)
+                        ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
+                        : "border-[var(--line)] text-[var(--soft)]"
+                    }`}
+                  >
+                    <HeartIcon filled={favoriteIdSet().has(currentSong()?.id)} />
+                    <span>Favorite</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void saveCurrentToPlaylist()}
+                    class="flex min-h-[48px] items-center justify-center gap-2 rounded-[18px] border border-[var(--line)] px-4 text-sm text-[var(--soft)]"
+                  >
+                    <PlusIcon />
+                    <span>Playlist</span>
+                  </button>
+                </Show>
+                <button
+                  type="button"
+                  onClick={cyclePlaybackMode}
+                  disabled={radioPlaybackLocked()}
+                  class={`flex min-h-[48px] items-center justify-center gap-2 rounded-[18px] border px-4 text-sm ${
+                    repeatMode() !== "off" && !radioPlaybackLocked()
+                      ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
+                      : "border-[var(--line)] text-[var(--soft)]"
+                  } disabled:opacity-40`}
+                >
+                  {playbackModeIcon()}
+                  <span>{playbackModeLabel()}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={cyclePlaybackSpeed}
+                  class="flex min-h-[48px] items-center justify-center gap-2 rounded-[18px] border border-[var(--line)] px-4 text-sm text-[var(--soft)]"
+                >
+                  <SpeedIcon speed={playbackSpeed()} />
+                  <span>{formatPlaybackSpeed(playbackSpeed())}</span>
+                </button>
+              </div>
+
+              <div class="mt-4 rounded-[22px] border border-[var(--line)] bg-[rgba(255,255,255,0.03)] px-4 py-4">
+                <div class="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setMuted((value) => !value)}
+                    class="flex h-11 min-w-[88px] items-center justify-center gap-2 rounded-full border border-[var(--line)] px-3 text-sm text-[var(--soft)]"
+                  >
+                    <VolumeIcon muted={muted() || volume() === 0} />
+                    <span>{muted() ? "Muted" : "Sound"}</span>
+                  </button>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={volume()}
+                    onInput={(event) => setVolume(Number(event.currentTarget.value))}
+                    class="w-full"
+                    style={{ "accent-color": "var(--fg)" }}
+                  />
+                  <span class="w-8 text-right font-mono text-[10px] text-[var(--muted)]">{Math.round(muted() ? 0 : volume() * 100)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Show>
         <For each={[0, 1]}>
           {(deckIndex) => (
             <audio

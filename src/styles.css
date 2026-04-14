@@ -71,6 +71,73 @@ button {
     border-color 140ms ease-out;
 }
 
+.song-table-header {
+  display: none;
+}
+
+.song-table-row {
+  margin-bottom: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02));
+}
+
+@media (min-width: 640px) {
+  .song-table-header,
+  .song-table-row {
+    display: grid;
+    grid-template-columns: 2.5rem minmax(0, 1.3fr) 5rem 2.75rem;
+    align-items: center;
+    column-gap: 1rem;
+  }
+
+  .song-table-row {
+    margin-bottom: 0;
+    border: 0;
+    border-bottom: 1px solid var(--line-soft);
+    border-radius: 0;
+    background: transparent;
+    padding-top: 0.85rem;
+    padding-bottom: 0.85rem;
+  }
+
+  .song-col-index {
+    width: auto;
+  }
+
+  .song-col-title,
+  .song-col-movie,
+  .song-col-director,
+  .song-col-singers {
+    min-width: 0;
+  }
+
+  .song-col-action {
+    justify-self: end;
+  }
+}
+
+@media (min-width: 768px) {
+  .song-table-header,
+  .song-table-row {
+    grid-template-columns: 2.5rem minmax(0, 1.25fr) minmax(0, 1fr) 5rem 2.75rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .song-table-header,
+  .song-table-row {
+    grid-template-columns: 2.5rem minmax(0, 1.2fr) minmax(0, 0.95fr) minmax(0, 0.95fr) 5rem 2.75rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  .song-table-header,
+  .song-table-row {
+    grid-template-columns: 2.5rem minmax(0, 1.2fr) minmax(0, 0.95fr) minmax(0, 0.95fr) minmax(0, 0.95fr) 5rem 2.75rem;
+  }
+}
+
 .playing-bar {
   animation: isaibox-bars 0.6s ease-in-out infinite;
   transform-origin: bottom;

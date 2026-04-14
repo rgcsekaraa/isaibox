@@ -1419,11 +1419,17 @@ def merge_preserved_user_state(source_path: Path, target_path: Path) -> None:
         conn.execute(f"ATTACH '{_duckdb_literal(source_path)}' AS previous (READ_ONLY)")
         conn.execute("DELETE FROM user_sessions")
         conn.execute("DELETE FROM favorite_songs")
+        conn.execute("DELETE FROM favorite_albums")
+        conn.execute("DELETE FROM favorite_album_entities")
+        conn.execute("DELETE FROM favorite_music_directors")
         conn.execute("DELETE FROM user_preferences")
         conn.execute("DELETE FROM users")
         conn.execute("INSERT INTO users SELECT * FROM previous.users")
         conn.execute("INSERT INTO user_sessions SELECT * FROM previous.user_sessions")
         conn.execute("INSERT INTO favorite_songs SELECT * FROM previous.favorite_songs")
+        conn.execute("INSERT INTO favorite_albums SELECT * FROM previous.favorite_albums")
+        conn.execute("INSERT INTO favorite_album_entities SELECT * FROM previous.favorite_album_entities")
+        conn.execute("INSERT INTO favorite_music_directors SELECT * FROM previous.favorite_music_directors")
         conn.execute("INSERT INTO user_preferences SELECT * FROM previous.user_preferences")
         conn.execute(
             """
