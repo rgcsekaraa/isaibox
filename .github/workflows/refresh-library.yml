@@ -78,8 +78,21 @@ jobs:
       - name: Ensure data directories exist
         run: mkdir -p data exports packages/isaibox-local/app/data
 
+      - name: Download current published DB
+        shell: bash
+        run: |
+          DOWNLOAD_URL="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("packages/isaibox-local/app/data/library-manifest.json").read_text())
+          print(manifest["download_url"])
+          PY
+          )"
+          curl -fL --retry 3 --retry-delay 20 \
+            -o packages/isaibox-local/app/data/masstamilan.duckdb \
+            "${DOWNLOAD_URL}"
+
       - name: Back up current published DB
-        if: hashFiles('packages/isaibox-local/app/data/masstamilan.duckdb') != ''
         uses: actions/upload-artifact@v4
         with:
           name: duckdb-backup-${{ github.run_id }}
@@ -113,11 +126,23 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --ref "${INPUT_PUBLISH_REF}" \
             --version "${VERSION}"
+          gh release upload local-library \
+            packages/isaibox-local/app/data/masstamilan.duckdb#masstamilan.duckdb \
+            --repo "${GITHUB_REPOSITORY}" \
+            --clobber
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest_path = Path("packages/isaibox-local/app/data/library-manifest.json")
+          manifest = json.loads(manifest_path.read_text())
+          manifest["download_url"] = "https://github.com/${{ github.repository }}/releases/download/local-library/masstamilan.duckdb"
+          manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+          PY
 
       - name: Detect repository changes
         id: changes
         run: |
-          if git diff --quiet -- packages/isaibox-local/app/data/masstamilan.duckdb packages/isaibox-local/app/data/library-manifest.json; then
+          if git diff --quiet -- packages/isaibox-local/app/data/library-manifest.json; then
             echo "changed=false" >> "${GITHUB_OUTPUT}"
           else
             echo "changed=true" >> "${GITHUB_OUTPUT}"
@@ -128,7 +153,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add packages/isaibox-local/app/data/masstamilan.duckdb packages/isaibox-local/app/data/library-manifest.json
+          git add packages/isaibox-local/app/data/library-manifest.json
           git commit -m "chore(data): refresh DuckDB library"
 
       - name: Push refreshed library
