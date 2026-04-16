@@ -241,6 +241,12 @@ const ChevronDownIcon = () => (
   </svg>
 );
 
+const ChevronUpIcon = () => (
+  <svg viewBox="0 0 24 24" class="h-4 w-4 fill-none stroke-current stroke-2">
+    <path d="m6 15 6-6 6 6" stroke-linecap="round" stroke-linejoin="round" />
+  </svg>
+);
+
 const HamburgerIcon = () => (
   <svg viewBox="0 0 24 24" class="h-4 w-4 fill-none stroke-current stroke-2">
     <path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round" />
@@ -6052,9 +6058,14 @@ function App() {
                     <HeartIcon filled={favoriteIdSet().has(currentSong()?.id)} />
                   </button>
                 </Show>
-                <div class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)]">
-                  <ChevronDownIcon />
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowMobilePlayerPanel(true)}
+                  aria-label="Expand player"
+                  class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)]"
+                >
+                  <ChevronUpIcon />
+                </button>
               </div>
             </div>
           </div>

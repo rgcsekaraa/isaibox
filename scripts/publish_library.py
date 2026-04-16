@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -55,6 +56,76 @@ def collect_stats(path: Path) -> dict[str, object]:
 
 def _duckdb_literal(path: Path) -> str:
     return str(path).replace("'", "''")
+
+
+def slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or hashlib.md5(value.encode()).hexdigest()[:12]
+
+
+def display_music_director_name(value: str) -> str:
+    overrides = {
+        "A.R.Rahman": "A.R. Rahman",
+        "D.Imman": "D. Imman",
+    }
+    return overrides.get(value, value)
+
+
+def ensure_top_music_director_playlists(path: Path, limit: int = 12) -> None:
+    conn = db.get_conn(str(path))
+    try:
+        now = iso_now()
+        directors = conn.execute(
+            """
+            SELECT music_director, COUNT(DISTINCT album_url) AS album_count, COUNT(*) AS song_count
+            FROM songs
+            WHERE COALESCE(TRIM(music_director), '') <> ''
+            GROUP BY music_director
+            ORDER BY album_count DESC, song_count DESC, music_director
+            LIMIT ?
+            """,
+            [limit],
+        ).fetchall()
+
+        for director, _album_count, _song_count in directors:
+            playlist_id = f"global-md-{slugify(director)}"
+            playlist_name = f"{display_music_director_name(director)} Songs"
+            source_url = f"music-director:{director}"
+            conn.execute("DELETE FROM playlist_songs WHERE playlist_id = ?", [playlist_id])
+            conn.execute(
+                """
+                INSERT INTO playlists (playlist_id, user_id, name, is_global, source, source_url, created_at, updated_at)
+                VALUES (?, 'global', ?, TRUE, 'music-director', ?, ?, ?)
+                ON CONFLICT (playlist_id) DO UPDATE SET
+                    name = excluded.name,
+                    is_global = TRUE,
+                    source = excluded.source,
+                    source_url = excluded.source_url,
+                    updated_at = excluded.updated_at
+                """,
+                [playlist_id, playlist_name, source_url, now, now],
+            )
+            song_rows = conn.execute(
+                """
+                SELECT song_id
+                FROM songs
+                WHERE music_director = ?
+                ORDER BY
+                    TRY_CAST(year AS INTEGER) DESC NULLS LAST,
+                    updated_at DESC NULLS LAST,
+                    movie_name,
+                    track_number,
+                    track_name
+                """,
+                [director],
+            ).fetchall()
+            conn.executemany(
+                "INSERT INTO playlist_songs (playlist_id, song_id, position, added_at) VALUES (?, ?, ?, ?)",
+                [(playlist_id, row[0], index + 1, now) for index, row in enumerate(song_rows)],
+            )
+            print(f"  {playlist_name}: {len(song_rows):,} songs")
+    finally:
+        conn.close()
 
 
 # ── Schema introspection helpers ──────────────────────────────────────────────
@@ -204,6 +275,9 @@ def export_library_snapshot(source_db: Path, output_db: Path) -> None:
         stats = collect_stats(output_db)
         print(f"  Songs : {stats['songs']:,}  (fresh snapshot)")
         print(f"  Albums: {stats['albums']:,}")
+
+    print("✓ Ensuring top music-director global playlists")
+    ensure_top_music_director_playlists(output_db)
 
 
 def build_manifest(stats_db: Path, download_path: Path, repo: str, ref: str, version: str) -> dict[str, object]:
