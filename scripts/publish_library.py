@@ -71,6 +71,55 @@ def display_music_director_name(value: str) -> str:
     return overrides.get(value, value)
 
 
+LEGACY_MUSIC_DIRECTOR_SHORTLISTS = {
+    "A.R.Rahman": ["A.R. Rahman Hits"],
+    "Anirudh Ravichander": ["Anirudh Ravichander Chartbusters"],
+    "D.Imman": ["D. Imman Melodies"],
+    "Deva": ["Deva Gaana Hits"],
+    "G. V. Prakash Kumar": ["G.V. Prakash Kumar Favorites"],
+    "Ilaiyaraaja": ["Ilaiyaraaja Classics"],
+    "Santhosh Narayanan": ["Santhosh Narayanan Vibes"],
+    "Vidyasagar": ["Vidyasagar Melodies"],
+    "Yuvan Shankar Raja": ["Yuvan Shankar Raja Essentials"],
+}
+
+
+def remove_legacy_music_director_shortlists(
+    conn: duckdb.DuckDBPyConnection,
+    director_names: list[str],
+) -> None:
+    legacy_names = sorted(
+        {
+            playlist_name
+            for director in director_names
+            for playlist_name in LEGACY_MUSIC_DIRECTOR_SHORTLISTS.get(director, [])
+        }
+    )
+    if not legacy_names:
+        return
+
+    placeholders = ", ".join("?" for _ in legacy_names)
+    legacy_rows = conn.execute(
+        f"""
+        SELECT playlist_id, name
+        FROM playlists
+        WHERE is_global = TRUE
+          AND source = 'gemini'
+          AND name IN ({placeholders})
+        """,
+        legacy_names,
+    ).fetchall()
+    if not legacy_rows:
+        return
+
+    legacy_ids = [row[0] for row in legacy_rows]
+    id_placeholders = ", ".join("?" for _ in legacy_ids)
+    conn.execute(f"DELETE FROM playlist_songs WHERE playlist_id IN ({id_placeholders})", legacy_ids)
+    conn.execute(f"DELETE FROM playlists WHERE playlist_id IN ({id_placeholders})", legacy_ids)
+    for _playlist_id, playlist_name in legacy_rows:
+        print(f"  Removed legacy 50-track playlist: {playlist_name}")
+
+
 def ensure_top_music_director_playlists(path: Path, limit: int = 12) -> None:
     conn = db.get_conn(str(path))
     try:
@@ -86,6 +135,8 @@ def ensure_top_music_director_playlists(path: Path, limit: int = 12) -> None:
             """,
             [limit],
         ).fetchall()
+        director_names = [row[0] for row in directors]
+        remove_legacy_music_director_shortlists(conn, director_names)
 
         for director, _album_count, _song_count in directors:
             playlist_id = f"global-md-{slugify(director)}"
