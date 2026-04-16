@@ -515,6 +515,9 @@ function App() {
   const [showProfileMenu, setShowProfileMenu] = createSignal(false);
   const [showMobileMenu, setShowMobileMenu] = createSignal(false);
   const [showMobilePlayerPanel, setShowMobilePlayerPanel] = createSignal(false);
+  const [showMobileVolumeSlider, setShowMobileVolumeSlider] = createSignal(false);
+  const [showMobilePlaylistPicker, setShowMobilePlaylistPicker] = createSignal(false);
+  const [mobilePlaylistSection, setMobilePlaylistSection] = createSignal("global");
   const [mobilePlayerDragOffset, setMobilePlayerDragOffset] = createSignal(0);
   const [loadingFrame, setLoadingFrame] = createSignal(0);
   const [pendingRadioOffset, setPendingRadioOffset] = createSignal(null);
@@ -1194,6 +1197,7 @@ function App() {
   ]);
 
   const pushLibraryNavState = () => {
+    const playlistDetail = globalPlaylistDetail();
     setLibraryNavStack((current) => [
       ...current,
       {
@@ -1205,6 +1209,12 @@ function App() {
         artistFilter: artistFilter(),
         musicDirectorFilter: musicDirectorFilter(),
         selectedGlobalPlaylistTarget: selectedGlobalPlaylistTarget(),
+        globalPlaylistDetail: playlistDetail
+          ? {
+              ...playlistDetail,
+              tracks: Array.isArray(playlistDetail.tracks) ? [...playlistDetail.tracks] : [],
+            }
+          : null,
       },
     ]);
   };
@@ -1267,6 +1277,26 @@ function App() {
     setArtistFilter(previous.artistFilter || "");
     setMusicDirectorFilter(previous.musicDirectorFilter || "");
     setSelectedGlobalPlaylistTarget(previous.selectedGlobalPlaylistTarget || "");
+    setGlobalPlaylistDetail(previous.globalPlaylistDetail || null);
+    setGlobalPlaylistNameEdit(previous.globalPlaylistDetail?.name || "");
+    setPlaylistDetailError("");
+    setPlaylistDetailLoading(false);
+    if (previous.globalPlaylistDetail?.id) {
+      setPlaylistDetailCache((current) => {
+        const next = new Map(current);
+        next.set(previous.globalPlaylistDetail.id, previous.globalPlaylistDetail);
+        return next;
+      });
+    }
+  };
+
+  const openCurrentSongAlbum = (song) => {
+    if (!song?.movie) {
+      return;
+    }
+    navigateToMovie({ album: song.movie, albumUrl: song.albumUrl, year: song.year });
+    setShowMobilePlayerPanel(false);
+    setShowMobileVolumeSlider(false);
   };
   const playlistSummaryById = createMemo(() => {
     const map = new Map();
@@ -1526,6 +1556,11 @@ function App() {
       tab = "library";
     }
     setMainTab(tab);
+    if (tab === "playlists") {
+      setShowMobilePlaylistPicker(false);
+      setPlaylistSearchQuery("");
+      setMobilePlaylistSection("global");
+    }
     if (tab === "admin" || tab === "playlists") {
       return;
     }
@@ -3593,7 +3628,14 @@ function App() {
   createEffect(() => {
     if (!showMobilePlayerPanel()) {
       setMobilePlayerDragOffset(0);
+      setShowMobileVolumeSlider(false);
       mobilePlayerTouchStartY = null;
+    }
+  });
+
+  createEffect(() => {
+    if (mainTab() !== "playlists") {
+      setShowMobilePlaylistPicker(false);
     }
   });
 
@@ -4181,7 +4223,15 @@ function App() {
             <Show
               when={mainTab() === "library"}
               fallback={
-                <div class="flex min-h-[42px] w-full flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)] lg:max-w-[560px] lg:justify-end">
+                <div
+                  class={`w-full flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)] lg:max-w-[560px] lg:justify-end ${
+                    mainTab() === "recents"
+                      ? "flex min-h-[42px]"
+                      : mainTab() === "favorites"
+                        ? "hidden sm:flex sm:min-h-[42px]"
+                        : "hidden"
+                  }`}
+                >
                   <Show when={mainTab() === "recents"}>
                     <>
                       <span>{recentSongs().length} tracks</span>
@@ -4216,9 +4266,6 @@ function App() {
                         </button>
                       </div>
                     </>
-                  </Show>
-                  <Show when={mainTab() === "playlists" && localMode()}>
-                    <span>{playlists().length} playlists</span>
                   </Show>
                 </div>
               }
@@ -4749,7 +4796,13 @@ function App() {
                   <div class="grid gap-4 border border-[var(--line)] bg-[var(--panel)] p-4 md:grid-cols-[1.1fr_0.9fr]">
                     <div>
                       <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Now playing</div>
-                      <div class="mt-3 text-xl font-semibold">{song().track}</div>
+                      <button
+                        type="button"
+                        onClick={() => openCurrentSongAlbum(song())}
+                        class="mt-3 text-left text-xl font-semibold transition hover:text-[var(--soft)]"
+                      >
+                        {song().track}
+                      </button>
                       <div class="mt-2 text-sm text-[var(--soft)]">
                         {song().singers || "Unknown singers"}
                       </div>
@@ -4829,8 +4882,9 @@ function App() {
         <Show when={mainTab() === "playlists"}>
           {(() => {
             const userPlaylistIds = createMemo(() => new Set(playlists().map((p) => p.id)));
+            const selectedPlaylistDetail = createMemo(() => globalPlaylistDetail());
             const myPlaylistDetail = createMemo(() => {
-              const detail = globalPlaylistDetail();
+              const detail = selectedPlaylistDetail();
               if (!detail) return null;
               return userPlaylistIds().has(detail.id) ? detail : null;
             });
@@ -4899,68 +4953,165 @@ function App() {
                     </div>
                   </aside>
 
-                  <div class="order-2 flex min-h-0 flex-col overflow-hidden border border-[var(--line)] bg-[var(--panel)] xl:order-2">
+                  <div class="order-2 flex min-h-0 flex-col overflow-y-auto border border-[var(--line)] bg-[var(--panel)] xl:order-2 xl:overflow-hidden">
                     <div class="border-b border-[var(--line-soft)] px-4 py-4 xl:hidden">
-                      <div class="rounded-[24px] border border-[var(--line)] bg-[var(--hover)] px-4 py-4">
-                        <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Playlists</div>
-                        <div class="mt-2 text-lg font-semibold">Manage your saved sets.</div>
-                        <div class="mt-2 text-sm text-[var(--soft)]">
-                          Create playlists, rename them, and jump back into library search when you want to add more songs.
-                        </div>
-                      </div>
-                      <div class="mt-4 flex items-center gap-2">
-                        <input
-                          value={playlistNameInput()}
-                          onInput={(event) => setPlaylistNameInput(sanitizePlaylistName(event.currentTarget.value))}
-                          onKeyDown={(event) => { if (event.key === "Enter") void createPlaylist(); }}
-                          placeholder="New playlist name"
-                          maxLength={PLAYLIST_NAME_MAX_LENGTH}
-                          class="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-transparent px-4 py-3 font-mono text-xs text-[var(--fg)] outline-none placeholder:text-[var(--muted)]"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => void createPlaylist()}
-                          disabled={playlistCreateBusy()}
-                          class={`rounded-full border px-4 py-3 font-mono text-[10px] uppercase tracking-[0.2em] transition ${
-                            playlistCreateBusy() ? "cursor-not-allowed border-[var(--line-soft)] text-[var(--line)]" : "border-[var(--line)] text-[var(--soft)]"
-                          }`}
-                        >
-                          Add
-                        </button>
-                      </div>
-                      <div class="mt-3">
-                        <input
-                          value={playlistSearchQuery()}
-                          onInput={(event) => setPlaylistSearchQuery(event.currentTarget.value)}
-                          placeholder="Search playlists"
-                          class="w-full rounded-full border border-[var(--line)] bg-transparent px-4 py-3 font-mono text-xs text-[var(--fg)] outline-none placeholder:text-[var(--muted)]"
-                        />
-                      </div>
-                      <div class="mt-4 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                        <For each={filteredUserPlaylists()}>
-                          {(playlist) => (
+                      <Show
+                        when={showMobilePlaylistPicker()}
+                        fallback={
+                          <>
+                            <div class="flex items-start justify-between gap-3 rounded-[24px] border border-[var(--line)] bg-[var(--hover)] px-4 py-4">
+                              <div class="min-w-0">
+                                <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Playlist</div>
+                                <Show when={selectedPlaylistDetail()} fallback={<div class="mt-2 text-lg font-semibold">No playlist selected</div>}>
+                                  {(playlist) => (
+                                    <>
+                                      <div class="mt-2 truncate text-lg font-semibold">{playlist().name}</div>
+                                      <div class="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">
+                                        {(playlist().tracks || []).length} tracks
+                                      </div>
+                                    </>
+                                  )}
+                                </Show>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setShowMobilePlaylistPicker(true)}
+                                class="shrink-0 rounded-full border border-[var(--line)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]"
+                              >
+                                Playlists
+                              </button>
+                            </div>
+                          </>
+                        }
+                      >
+                        {() => (
+                          <>
                             <button
                               type="button"
-                              onClick={() => void openGlobalPlaylist(playlist.id)}
-                              class={`min-w-[170px] rounded-[18px] border px-4 py-3 text-left transition ${
-                                myPlaylistDetail()?.id === playlist.id
-                                  ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
-                                  : "border-[var(--line)] bg-[var(--hover)] text-[var(--fg)]"
-                              }`}
+                              onClick={() => {
+                                setShowMobilePlaylistPicker(false);
+                              }}
+                              class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)] transition hover:text-[var(--fg)]"
                             >
-                              <div class="line-clamp-2 text-sm font-semibold">{playlist.name}</div>
-                              <div class="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] opacity-70">{playlist.trackCount} tracks</div>
+                              ← Back
                             </button>
-                          )}
-                        </For>
-                        <Show when={!normalizedPlaylistSearch() && filteredUserPlaylists().length === 0}>
-                          <div class="rounded-[18px] border border-[var(--line)] px-4 py-3 text-sm text-[var(--soft)]">
-                            No playlists yet.
-                          </div>
-                        </Show>
-                      </div>
+                            <div class="mt-3 flex gap-2 overflow-x-auto font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">
+                              <button
+                                type="button"
+                                onClick={() => setMobilePlaylistSection("global")}
+                                class={`shrink-0 rounded-full border px-4 py-2 transition ${mobilePlaylistSection() === "global" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]" : "border-[var(--line)]"}`}
+                              >
+                                Global
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setMobilePlaylistSection("yours")}
+                                class={`shrink-0 rounded-full border px-4 py-2 transition ${mobilePlaylistSection() === "yours" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]" : "border-[var(--line)]"}`}
+                              >
+                                Yours
+                              </button>
+                            </div>
+                            <Show when={mobilePlaylistSection() === "yours"}>
+                              <div class="mt-4 flex items-center gap-2">
+                                <input
+                                  value={playlistNameInput()}
+                                  onInput={(event) => setPlaylistNameInput(sanitizePlaylistName(event.currentTarget.value))}
+                                  onKeyDown={(event) => { if (event.key === "Enter") void createPlaylist(); }}
+                                  placeholder="New playlist name"
+                                  maxLength={PLAYLIST_NAME_MAX_LENGTH}
+                                  class="min-w-0 flex-1 rounded-full border border-[var(--line)] bg-transparent px-4 py-3 font-mono text-xs text-[var(--fg)] outline-none placeholder:text-[var(--muted)]"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => void createPlaylist()}
+                                  disabled={playlistCreateBusy()}
+                                  class={`rounded-full border px-4 py-3 font-mono text-[10px] uppercase tracking-[0.2em] transition ${
+                                    playlistCreateBusy() ? "cursor-not-allowed border-[var(--line-soft)] text-[var(--line)]" : "border-[var(--line)] text-[var(--soft)]"
+                                  }`}
+                                >
+                                  Add
+                                </button>
+                              </div>
+                            </Show>
+                            <div class="mt-3">
+                              <input
+                                value={playlistSearchQuery()}
+                                onInput={(event) => setPlaylistSearchQuery(event.currentTarget.value)}
+                                placeholder="Search playlists"
+                                class="w-full rounded-full border border-[var(--line)] bg-transparent px-4 py-3 font-mono text-xs text-[var(--fg)] outline-none placeholder:text-[var(--muted)]"
+                              />
+                            </div>
+                            <div class="mt-4 space-y-4">
+                              <Show when={mobilePlaylistSection() === "yours" && filteredUserPlaylists().length > 0}>
+                                <div>
+                                  <div class="mb-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--faint)]">Yours</div>
+                                  <div class="space-y-2">
+                                    <For each={filteredUserPlaylists()}>
+                                      {(playlist) => (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setShowMobilePlaylistPicker(false);
+                                            void openGlobalPlaylist(playlist.id);
+                                          }}
+                                          class="flex w-full items-center justify-between gap-3 rounded-[18px] border border-[var(--line)] bg-[var(--hover)] px-4 py-3 text-left text-[var(--fg)] transition"
+                                        >
+                                          <div class="min-w-0">
+                                            <div class="truncate text-sm font-semibold">{playlist.name}</div>
+                                            <div class="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">{playlist.trackCount} tracks</div>
+                                          </div>
+                                          <div class="shrink-0 text-[var(--soft)]">
+                                            <ChevronDownIcon />
+                                          </div>
+                                        </button>
+                                      )}
+                                    </For>
+                                  </div>
+                                </div>
+                              </Show>
+                              <Show when={mobilePlaylistSection() === "global" && filteredGlobalPlaylists().length > 0}>
+                                <div>
+                                  <div class="mb-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--faint)]">Global</div>
+                                  <div class="space-y-2">
+                                    <For each={filteredGlobalPlaylists()}>
+                                      {(playlist) => (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setShowMobilePlaylistPicker(false);
+                                            void openGlobalPlaylist(playlist.id);
+                                          }}
+                                          class="flex w-full items-center justify-between gap-3 rounded-[18px] border border-[var(--line)] bg-[var(--hover)] px-4 py-3 text-left text-[var(--fg)] transition"
+                                        >
+                                          <div class="min-w-0">
+                                            <div class="truncate text-sm font-semibold">{playlist.name}</div>
+                                            <div class="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">{playlist.trackCount} tracks</div>
+                                          </div>
+                                          <div class="shrink-0 text-[var(--soft)]">
+                                            <ChevronDownIcon />
+                                          </div>
+                                        </button>
+                                      )}
+                                    </For>
+                                  </div>
+                                </div>
+                              </Show>
+                              <Show when={!normalizedPlaylistSearch() && ((mobilePlaylistSection() === "yours" && filteredUserPlaylists().length === 0) || (mobilePlaylistSection() === "global" && filteredGlobalPlaylists().length === 0))}>
+                                <div class="rounded-[18px] border border-[var(--line)] px-4 py-3 text-sm text-[var(--soft)]">
+                                  No playlists yet.
+                                </div>
+                              </Show>
+                              <Show when={normalizedPlaylistSearch() && ((mobilePlaylistSection() === "yours" && filteredUserPlaylists().length === 0) || (mobilePlaylistSection() === "global" && filteredGlobalPlaylists().length === 0))}>
+                                <div class="rounded-[18px] border border-[var(--line)] px-4 py-3 text-sm text-[var(--soft)]">
+                                  No playlists match that search.
+                                </div>
+                              </Show>
+                            </div>
+                          </>
+                        )}
+                      </Show>
                     </div>
-                    <Show when={playlistDetailLoading() && !myPlaylistDetail()}>
+                    <Show when={playlistDetailLoading() && !selectedPlaylistDetail() && !showMobilePlaylistPicker()}>
                       <div class="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
                         <div>
                           <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Playlist</div>
@@ -4968,10 +5119,10 @@ function App() {
                         </div>
                       </div>
                     </Show>
-                    <Show when={myPlaylistDetail()}>
+                    <Show when={selectedPlaylistDetail() && !showMobilePlaylistPicker()}>
                       {(playlist) => (
                         <>
-                          <section class="border-b border-[var(--line-soft)] px-4 py-4">
+                          <section class="hidden border-b border-[var(--line-soft)] px-4 py-4 xl:block">
                             <div class="flex items-center justify-between gap-4">
                               <div class="min-w-0">
                                 <div class="mt-1 text-lg font-semibold">{playlist().name}</div>
@@ -4979,66 +5130,118 @@ function App() {
                                   {(playlist().tracks || []).length} tracks
                                 </div>
                               </div>
-                              <div class="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--soft)]">
-                                <input
-                                  value={globalPlaylistNameEdit()}
-                                  onInput={(event) => setGlobalPlaylistNameEdit(sanitizePlaylistName(event.currentTarget.value))}
-                                  onKeyDown={(event) => { if (event.key === "Enter") void renamePlaylistLocal(); }}
-                                  placeholder="Rename"
-                                  maxLength={PLAYLIST_NAME_MAX_LENGTH}
-                                  class="min-w-[120px] border border-[var(--line)] bg-transparent px-2 py-1 font-mono text-xs text-[var(--fg)] outline-none placeholder:text-[var(--muted)]"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => void renamePlaylistLocal()}
-                                  disabled={playlistMutationBusy() === `rename:${playlist().id}`}
-                                  class={`transition ${
-                                    playlistMutationBusy() === `rename:${playlist().id}` ? "cursor-not-allowed text-[var(--line)]" : "hover:text-[var(--fg)]"
-                                  }`}
-                                >
-                                  Rename
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void clearVisiblePlaylist()}
-                                  disabled={playlistMutationBusy() === `clear:${playlist().id}`}
-                                  class={`transition ${
-                                    playlistMutationBusy() === `clear:${playlist().id}` ? "cursor-not-allowed text-[var(--line)]" : "hover:text-[var(--fg)]"
-                                  }`}
-                                >
-                                  Clear
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => void deleteVisiblePlaylist()}
-                                  disabled={playlistMutationBusy() === `delete:${playlist().id}`}
-                                  class={`transition ${
-                                    playlistMutationBusy() === `delete:${playlist().id}` ? "cursor-not-allowed text-[var(--line)]" : "hover:text-[var(--fg)]"
-                                  }`}
-                                >
-                                  Delete
-                                </button>
-                              </div>
+                              <Show when={myPlaylistDetail()}>
+                                <div class="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--soft)]">
+                                  <input
+                                    value={globalPlaylistNameEdit()}
+                                    onInput={(event) => setGlobalPlaylistNameEdit(sanitizePlaylistName(event.currentTarget.value))}
+                                    onKeyDown={(event) => { if (event.key === "Enter") void renamePlaylistLocal(); }}
+                                    placeholder="Rename"
+                                    maxLength={PLAYLIST_NAME_MAX_LENGTH}
+                                    class="min-w-[120px] border border-[var(--line)] bg-transparent px-2 py-1 font-mono text-xs text-[var(--fg)] outline-none placeholder:text-[var(--muted)]"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => void renamePlaylistLocal()}
+                                    disabled={playlistMutationBusy() === `rename:${playlist().id}`}
+                                    class={`transition ${
+                                      playlistMutationBusy() === `rename:${playlist().id}` ? "cursor-not-allowed text-[var(--line)]" : "hover:text-[var(--fg)]"
+                                    }`}
+                                  >
+                                    Rename
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void clearVisiblePlaylist()}
+                                    disabled={playlistMutationBusy() === `clear:${playlist().id}`}
+                                    class={`transition ${
+                                      playlistMutationBusy() === `clear:${playlist().id}` ? "cursor-not-allowed text-[var(--line)]" : "hover:text-[var(--fg)]"
+                                    }`}
+                                  >
+                                    Clear
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void deleteVisiblePlaylist()}
+                                    disabled={playlistMutationBusy() === `delete:${playlist().id}`}
+                                    class={`transition ${
+                                      playlistMutationBusy() === `delete:${playlist().id}` ? "cursor-not-allowed text-[var(--line)]" : "hover:text-[var(--fg)]"
+                                    }`}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </Show>
                             </div>
                           </section>
-                          <div class="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
-                            <div class="max-w-md">
-                              <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Playlist Ready</div>
-                              <div class="mt-3 text-sm text-[var(--soft)]">
-                                Songs stay hidden in this tab. Add tracks from Library search or from another playlist, then come back here to manage the playlist.
+                          <Show
+                            when={sortedActiveSongList().length > 0}
+                            fallback={
+                              <div class="flex min-h-0 flex-1 items-center justify-center px-6 py-8 text-center xl:py-0">
+                                <div class="max-w-md">
+                                  <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Playlist Ready</div>
+                                  <div class="mt-3 text-sm text-[var(--soft)]">
+                                    {(playlist().tracks || []).length > 0 ? "No songs available in the current filter." : "Empty playlist"}
+                                  </div>
+                                </div>
                               </div>
-                              <div class="mt-4 font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--muted)]">
-                                {(playlist().tracks || []).length > 0
-                                  ? `${(playlist().tracks || []).length} tracks in this playlist`
-                                  : "Empty playlist"}
-                              </div>
-                            </div>
-                          </div>
+                            }
+                          >
+                            <ul ref={listRef} class="min-h-0 flex-1 overflow-y-auto px-2">
+                              <For each={sortedActiveSongList()}>
+                                {(song, index) => {
+                                  const active = () => selectedSong()?.id === song.id;
+                                  return (
+                                    <li>
+                                      <button
+                                        ref={(el) => {
+                                          if (el) rowRefs.set(song.id, el);
+                                          else rowRefs.delete(song.id);
+                                        }}
+                                        type="button"
+                                        onClick={() => loadSong(song, true)}
+                                        class={`song-table-row flex w-full flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3 text-left transition ${
+                                          active()
+                                            ? currentTrackId() === song.id
+                                              ? "song-row-active text-[var(--fg)]"
+                                              : "bg-[var(--hover)] text-[var(--fg)]"
+                                            : "bg-transparent text-[var(--fg)] hover:bg-[var(--hover)]"
+                                        }`}
+                                      >
+                                        <span class="song-col-index w-8 shrink-0 pt-0.5 text-right font-mono text-xs text-[var(--soft)] sm:pt-0">
+                                          {currentTrackId() === song.id && isPlaying() && streamStarted() ? <PlayingBars /> : String(index() + 1).padStart(2, "0")}
+                                        </span>
+                                        <div class="song-col-title min-w-0 flex-1 basis-[calc(100%-5.75rem)] sm:basis-auto">
+                                          <div class="truncate text-sm">{song.track}</div>
+                                          <div class="mt-1 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)] sm:hidden">
+                                            <Show when={song.movie}><span>{song.movie}</span></Show>
+                                            <Show when={song.musicDirector}><span>{song.musicDirector}</span></Show>
+                                            <Show when={song.singers}><span>{song.singers}</span></Show>
+                                            <Show when={song.year}><span>{song.year}</span></Show>
+                                          </div>
+                                        </div>
+                                        <DrilldownText value={song.movie} payload={{ album: song.movie, albumUrl: song.albumUrl, year: song.year }} onClick={navigateToMovie} class="song-col-movie hidden font-mono text-[11px] text-[var(--soft)] md:block" />
+                                        <DrilldownText value={song.musicDirector} onClick={navigateToMusicDirector} class="song-col-director hidden font-mono text-[11px] text-[var(--soft)] lg:block" />
+                                        <span class="song-col-singers hidden truncate font-mono text-[11px] text-[var(--soft)] xl:block">{song.singers || "-"}</span>
+                                        <span class="song-col-year hidden font-mono text-[11px] text-[var(--soft)] sm:block">{song.year || "-"}</span>
+                                        <SongRowHeartButton
+                                          show={user()}
+                                          class="song-col-action ml-auto"
+                                          active={favoriteIdSet().has(song.id)}
+                                          onClick={() => void toggleFavorite(song.id)}
+                                        />
+                                      </button>
+                                    </li>
+                                  );
+                                }}
+                              </For>
+                            </ul>
+                          </Show>
                         </>
                       )}
                     </Show>
-                    <Show when={!playlistDetailLoading() && !myPlaylistDetail()}>
-                      <div class="flex min-h-0 flex-1 items-center justify-center px-6 text-center">
+                    <Show when={!playlistDetailLoading() && !selectedPlaylistDetail() && !showMobilePlaylistPicker()}>
+                      <div class="hidden min-h-0 flex-1 items-center justify-center px-6 text-center xl:flex">
                         <div class="text-sm text-[var(--soft)]">
                           {playlists().length > 0 ? "Select a playlist to manage it. Add songs from Library search or from another playlist." : "Create a playlist to get started."}
                         </div>
@@ -5161,7 +5364,13 @@ function App() {
               <div class="order-1 flex min-h-0 flex-col overflow-hidden border border-[var(--line)] bg-[var(--panel)] xl:order-2">
                 <Show when={!playlistDetailLoading() && !playlistDetailError()}>
                   <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-                    <header class="flex flex-wrap items-center gap-3 border-b border-[var(--line-soft)] px-4 py-4 sm:px-6">
+                    <header
+                      class={`flex flex-wrap items-center gap-3 border-b border-[var(--line-soft)] px-4 py-4 sm:px-6 ${
+                        visiblePlaylistDetail() && !movieFilter() && !artistFilter() && !musicDirectorFilter()
+                          ? "hidden xl:flex"
+                          : ""
+                      }`}
+                    >
                       <Show when={libraryNavStack().length > 0}>
                         <button
                           type="button"
@@ -5174,12 +5383,12 @@ function App() {
                       <div class="min-w-0 flex-1">
                         <Show when={visiblePlaylistDetail()}>
                           {(playlist) => (
-                            <>
+                            <div class="hidden xl:block">
                               <div class="truncate text-sm font-semibold">{playlist().name}</div>
                               <div class="mt-1 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">
                                 playlist · {(playlist().tracks || []).length} items
                               </div>
-                            </>
+                            </div>
                           )}
                         </Show>
                         <Show when={!visiblePlaylistDetail() && (movieFilter() || artistFilter() || musicDirectorFilter())}>
@@ -5254,7 +5463,7 @@ function App() {
                             </div>
                           )}
                         </Show>
-                        <Show when={!visiblePlaylistDetail() && (movieFilter() || artistFilter() || musicDirectorFilter())}>
+                        <Show when={!visiblePlaylistDetail() && (movieFilter() || artistFilter() || musicDirectorFilter()) && libraryNavStack().length === 0}>
                           <button
                             type="button"
                             onClick={() => {
@@ -5265,7 +5474,7 @@ function App() {
                             }}
                             class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)] transition hover:text-[var(--fg)]"
                           >
-                            Clear filters
+                            Reset view
                           </button>
                         </Show>
                       </div>
@@ -5275,12 +5484,24 @@ function App() {
                       <div class="border-b border-[var(--line-soft)] px-4 py-4 xl:hidden">
                         <Show when={visiblePlaylistDetail()}>
                           {(playlist) => (
-                            <div class="rounded-[22px] border border-[var(--line)] bg-[var(--hover)] p-4">
-                              <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Playlist</div>
-                              <div class="mt-2 text-lg font-semibold">{playlist().name}</div>
-                              <div class="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">
-                                {(playlist().tracks || []).length} tracks
+                            <div class="flex items-start justify-between gap-3 rounded-[22px] border border-[var(--line)] bg-[var(--hover)] p-4">
+                              <div class="min-w-0">
+                                <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Playlist</div>
+                                <div class="mt-2 truncate text-lg font-semibold">{playlist().name}</div>
+                                <div class="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">
+                                  {(playlist().tracks || []).length} tracks
+                                </div>
                               </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMainBrowseTab("playlists");
+                                  setShowMobilePlaylistPicker(true);
+                                }}
+                                class="shrink-0 rounded-full border border-[var(--line)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]"
+                              >
+                                Playlists
+                              </button>
                             </div>
                           )}
                         </Show>
@@ -5293,7 +5514,7 @@ function App() {
                             </div>
                           </div>
                         </Show>
-                        <Show when={!visiblePlaylistDetail() && libraryPlaylistCards().length > 0}>
+                        <Show when={!visiblePlaylistDetail() && !movieFilter() && !artistFilter() && !musicDirectorFilter() && libraryPlaylistCards().length > 0}>
                           <div class="mt-4">
                             <div class="mb-2 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Playlists</div>
                             <div class="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -5760,95 +5981,43 @@ function App() {
       </section>
 
       <footer class="border-t border-[var(--line)] bg-[var(--bg)] px-3 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-6">
+        <Show when={currentTrackId()}>
         <div class="md:hidden">
-          <div class="rounded-[28px] border border-[var(--line)] bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] px-4 py-4 shadow-[0_-12px_40px_rgba(0,0,0,0.25)]">
-            <button
-              type="button"
-              onClick={() => setShowMobilePlayerPanel(true)}
-              class="flex w-full items-center gap-3 text-left"
-              aria-label="Open now playing controls"
-            >
-              <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] border border-[var(--line)] bg-[rgba(255,255,255,0.04)] font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)]">
-                <Show when={currentSong() && isPlaying() && streamStarted()} fallback={"Play"}>
-                  <PlayingBars />
-                </Show>
-              </div>
-              <div class="min-w-0 flex-1">
-                <Show when={currentSong()} fallback={<p class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--muted)]">No track selected</p>}>
-                  {(song) => (
-                    <>
-                      <p class="truncate text-sm font-semibold">{song().track}</p>
-                      <div class="mt-1 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)]">
-                        <Show when={song().movie}><span>{song().movie}</span></Show>
-                        <Show when={song().singers}><span>{song().singers}</span></Show>
-                      </div>
-                    </>
-                  )}
-                </Show>
-              </div>
-              <Show when={user() && currentSong()}>
-                <span class="shrink-0">
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void toggleFavorite(currentSong().id);
-                    }}
-                    aria-label={favoriteIdSet().has(currentSong()?.id) ? "Remove from favorites" : "Add to favorites"}
-                    class={`flex h-10 w-10 items-center justify-center rounded-full border transition ${
-                      favoriteIdSet().has(currentSong()?.id)
-                        ? "border-[var(--fg)] text-[var(--fg)]"
-                        : "border-[var(--line)] text-[var(--soft)]"
-                    }`}
-                  >
-                    <HeartIcon filled={favoriteIdSet().has(currentSong()?.id)} />
-                  </button>
-                </span>
-              </Show>
-              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)]">
-                <ChevronDownIcon />
-              </div>
-            </button>
-
-            <div class="mt-4 flex items-center gap-2">
-              <span class="w-9 text-right font-mono text-[10px] text-[var(--muted)]">{formatTime(currentTime())}</span>
-              <input
-                type="range"
-                min="0"
-                max={duration() || 0}
-                step="0.1"
-                value={currentTime()}
-                onInput={(event) => {
-                  if (radioPlaybackLocked()) {
-                    return;
-                  }
-                  const next = Number(event.currentTarget.value);
-                  const activeAudio = getActiveAudio();
-                  if (activeAudio) {
-                    activeAudio.currentTime = next;
-                  }
-                  setCurrentTime(next);
-                }}
-                class="flex-1"
-                disabled={radioPlaybackLocked()}
-                style={{ "accent-color": "var(--fg)" }}
-              />
+          <div class="rounded-[22px] border border-[var(--line)] bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] px-3 py-3 shadow-[0_-12px_40px_rgba(0,0,0,0.25)]">
+            <div class="flex w-full items-center gap-3">
               <button
                 type="button"
-                onClick={() => setShowRemainingTime((prev) => !prev)}
-                class="w-11 text-right font-mono text-[10px] text-[var(--muted)]"
+                onClick={() => setShowMobilePlayerPanel(true)}
+                class="flex min-w-0 flex-1 items-center gap-3 text-left"
+                aria-label="Open now playing controls"
               >
-                {showRemainingTime() ? `-${formatTime(Math.max(0, duration() - currentTime()))}` : formatTime(duration())}
+                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] border border-[var(--line)] bg-[rgba(255,255,255,0.04)] font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)]">
+                  <Show when={currentSong() && isPlaying() && streamStarted()} fallback={"Play"}>
+                    <PlayingBars />
+                  </Show>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <Show when={currentSong()} fallback={<p class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--muted)]">No track selected</p>}>
+                    {(song) => (
+                      <>
+                        <p class="truncate text-sm font-semibold">{song().track}</p>
+                        <div class="mt-1 truncate font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)]">
+                          <Show when={song().singers} fallback={<Show when={song().movie}><span>{song().movie}</span></Show>}>
+                            <span>{song().singers}</span>
+                          </Show>
+                        </div>
+                      </>
+                    )}
+                  </Show>
+                </div>
               </button>
-            </div>
-
-            <div class="mt-4 flex items-center justify-center gap-3">
+              <div class="flex shrink-0 items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => selectRelative(-1, true, currentTrackId() || selectedId(), { allowCrossfade: true })}
+                  onClick={() => void selectRelative(-1, true, currentTrackId() || selectedId(), { allowCrossfade: true })}
                   disabled={radioPlaybackLocked()}
                   aria-label="Previous"
-                  class="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] disabled:opacity-40"
+                  class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] disabled:opacity-40"
                 >
                   <PrevIcon />
                 </button>
@@ -5856,35 +6025,54 @@ function App() {
                   type="button"
                   onClick={togglePlayback}
                   aria-label={isPlaying() ? (streamStarted() ? "Pause" : "Loading") : "Play"}
-                  class="flex h-14 w-14 items-center justify-center rounded-full border border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
+                  class="flex h-10 w-10 items-center justify-center rounded-full border border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
                 >
                   {isPlaying() ? (streamStarted() ? <PauseIcon /> : <LoadingSpinnerIcon />) : <PlayIcon />}
                 </button>
                 <button
                   type="button"
-                  onClick={() => selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true })}
+                  onClick={() => void selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true })}
                   disabled={radioPlaybackLocked()}
                   aria-label="Next"
-                  class="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] disabled:opacity-40"
+                  class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] disabled:opacity-40"
                 >
                   <NextIcon />
                 </button>
-            </div>
-
-            <div class="mt-4 flex flex-wrap gap-2">
-              <div class="flex min-h-[44px] items-center rounded-full border border-[var(--line)] px-4 text-sm text-[var(--soft)]">
-                Pull up for full controls
+                <Show when={user() && currentSong()}>
+                  <button
+                    type="button"
+                    onClick={() => void toggleFavorite(currentSong().id)}
+                    aria-label={favoriteIdSet().has(currentSong()?.id) ? "Remove from favorites" : "Add to favorites"}
+                    class={`flex h-9 w-9 items-center justify-center rounded-full border transition ${
+                      favoriteIdSet().has(currentSong()?.id)
+                        ? "border-[var(--fg)] text-[var(--fg)]"
+                        : "border-[var(--line)] text-[var(--soft)]"
+                    }`}
+                  >
+                    <HeartIcon filled={favoriteIdSet().has(currentSong()?.id)} />
+                  </button>
+                </Show>
+                <div class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)]">
+                  <ChevronDownIcon />
+                </div>
               </div>
             </div>
           </div>
         </div>
+        </Show>
 
         <div class="hidden md:block">
         <div class="mb-2 flex justify-center">
           <div class="min-w-0 max-w-2xl text-center">
             <Show when={currentSong()} fallback={<p class="font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">No track selected</p>}>
               {(song) => (
-                <p class="truncate text-[13px] font-semibold">{song().track}</p>
+                <button
+                  type="button"
+                  onClick={() => openCurrentSongAlbum(song())}
+                  class="truncate text-[13px] font-semibold transition hover:text-[var(--soft)]"
+                >
+                  {song().track}
+                </button>
               )}
             </Show>
           </div>
@@ -6000,7 +6188,7 @@ function App() {
           </div>
         </div>
         </div>
-        <Show when={showMobilePlayerPanel()}>
+        <Show when={showMobilePlayerPanel() && currentTrackId()}>
           <div class="fixed inset-0 z-50 flex items-end bg-black/55 md:hidden">
             <button
               type="button"
@@ -6030,15 +6218,33 @@ function App() {
               }}
             >
               <div class="mx-auto h-1.5 w-14 rounded-full bg-[var(--line)]" />
-              <div class="mt-5 flex items-start justify-between gap-4">
+              <div class="mt-5 min-w-0">
+                <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Now playing</div>
                 <div class="min-w-0">
-                  <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Now playing</div>
                   <Show when={currentSong()} fallback={<div class="mt-2 text-base font-semibold">No track selected</div>}>
                     {(song) => (
                       <>
-                        <div class="mt-2 truncate text-2xl font-semibold">{song().track}</div>
-                        <div class="mt-2 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)]">
-                          <Show when={song().movie}><span>{song().movie}</span></Show>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            openCurrentSongAlbum(song());
+                          }}
+                          class="mt-2 block max-w-full truncate text-left text-2xl font-semibold transition hover:text-[var(--soft)]"
+                        >
+                          {song().track}
+                        </button>
+                        <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)]">
+                          <Show when={song().movie}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openCurrentSongAlbum(song());
+                              }}
+                              class="transition hover:text-[var(--fg)]"
+                            >
+                              {song().movie}
+                            </button>
+                          </Show>
                           <Show when={song().singers}><span>{song().singers}</span></Show>
                           <Show when={song().musicDirector}><span>{song().musicDirector}</span></Show>
                         </div>
@@ -6046,13 +6252,6 @@ function App() {
                     )}
                   </Show>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowMobilePlayerPanel(false)}
-                  class="rounded-full border border-[var(--line)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]"
-                >
-                  Close
-                </button>
               </div>
 
               <div class="mt-6 flex items-center gap-3">
@@ -6116,76 +6315,100 @@ function App() {
                 </button>
               </div>
 
-              <div class="mt-6 grid grid-cols-2 gap-3">
+              <div class="mt-6 flex items-center justify-center gap-2">
                 <Show when={user() && currentSong()}>
                   <button
                     type="button"
-                    onClick={() => void toggleFavorite(currentSong().id)}
-                    class={`flex min-h-[48px] items-center justify-center gap-2 rounded-[18px] border px-4 text-sm ${
+                    onClick={() => {
+                      setShowMobileVolumeSlider(false);
+                      void toggleFavorite(currentSong().id);
+                    }}
+                    aria-label={favoriteIdSet().has(currentSong()?.id) ? "Remove favorite" : "Add favorite"}
+                    class={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${
                       favoriteIdSet().has(currentSong()?.id)
                         ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
                         : "border-[var(--line)] text-[var(--soft)]"
                     }`}
                   >
                     <HeartIcon filled={favoriteIdSet().has(currentSong()?.id)} />
-                    <span>Favorite</span>
                   </button>
                   <button
                     type="button"
-                    onClick={() => void saveCurrentToPlaylist()}
-                    class="flex min-h-[48px] items-center justify-center gap-2 rounded-[18px] border border-[var(--line)] px-4 text-sm text-[var(--soft)]"
+                    onClick={() => {
+                      setShowMobileVolumeSlider(false);
+                      void saveCurrentToPlaylist();
+                    }}
+                    aria-label="Add to playlist"
+                    class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)]"
                   >
                     <PlusIcon />
-                    <span>Playlist</span>
                   </button>
                 </Show>
                 <button
                   type="button"
-                  onClick={cyclePlaybackMode}
+                  onClick={() => {
+                    setShowMobileVolumeSlider(false);
+                    cyclePlaybackMode();
+                  }}
                   disabled={radioPlaybackLocked()}
-                  class={`flex min-h-[48px] items-center justify-center gap-2 rounded-[18px] border px-4 text-sm ${
+                  aria-label={`Playback mode: ${playbackModeLabel()}`}
+                  class={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${
                     repeatMode() !== "off" && !radioPlaybackLocked()
                       ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
                       : "border-[var(--line)] text-[var(--soft)]"
                   } disabled:opacity-40`}
                 >
                   {playbackModeIcon()}
-                  <span>{playbackModeLabel()}</span>
                 </button>
                 <button
                   type="button"
-                  onClick={cyclePlaybackSpeed}
-                  class="flex min-h-[48px] items-center justify-center gap-2 rounded-[18px] border border-[var(--line)] px-4 text-sm text-[var(--soft)]"
+                  onClick={() => {
+                    setShowMobileVolumeSlider(false);
+                    cyclePlaybackSpeed();
+                  }}
+                  aria-label={`Playback speed: ${formatPlaybackSpeed(playbackSpeed())}`}
+                  class="inline-flex h-9 min-w-[2.8rem] items-center justify-center rounded-full border border-[var(--line)] px-2 font-mono text-[11px] text-[var(--soft)]"
                 >
-                  <SpeedIcon speed={playbackSpeed()} />
                   <span>{formatPlaybackSpeed(playbackSpeed())}</span>
                 </button>
-              </div>
-
-              <div class="mt-4 rounded-[22px] border border-[var(--line)] bg-[rgba(255,255,255,0.03)] px-4 py-4">
-                <div class="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">
-                  Sound
-                </div>
-                <div class="flex items-center gap-3">
+                <div class="relative">
                   <button
                     type="button"
-                    onClick={() => setMuted((value) => !value)}
-                    class="flex h-11 min-w-[88px] items-center justify-center gap-2 rounded-full border border-[var(--line)] px-3 text-sm text-[var(--soft)]"
+                    onClick={() => setShowMobileVolumeSlider((value) => !value)}
+                    aria-label={muted() ? "Unmute and adjust volume" : "Adjust volume"}
+                    class={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${
+                      showMobileVolumeSlider()
+                        ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
+                        : "border-[var(--line)] text-[var(--soft)]"
+                    }`}
                   >
                     <VolumeIcon muted={muted() || volume() === 0} />
-                    <span>{muted() ? "Muted" : "Mute"}</span>
                   </button>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.01"
-                    value={volume()}
-                    onInput={(event) => setVolume(Number(event.currentTarget.value))}
-                    class="w-full"
-                    style={{ "accent-color": "var(--fg)" }}
-                  />
-                  <span class="w-8 text-right font-mono text-[10px] text-[var(--muted)]">{Math.round(muted() ? 0 : volume() * 100)}</span>
+                  <Show when={showMobileVolumeSlider()}>
+                    <div class="absolute -top-32 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-3 rounded-[20px] border border-[var(--line)] bg-[var(--bg)] px-3 py-3 shadow-2xl">
+                      <input
+                        type="range"
+                        min="0"
+                        max="1"
+                        step="0.01"
+                        value={volume()}
+                        onInput={(event) => setVolume(Number(event.currentTarget.value))}
+                        class="mobile-volume-slider"
+                        style={{ "accent-color": "var(--fg)" }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setMuted((value) => !value)}
+                        class={`inline-flex h-8 w-8 items-center justify-center rounded-full border ${
+                          muted() ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]" : "border-[var(--line)] text-[var(--soft)]"
+                        }`}
+                        aria-label={muted() ? "Unmute" : "Mute"}
+                      >
+                        <VolumeIcon muted={muted() || volume() === 0} />
+                      </button>
+                      <div class="font-mono text-[10px] text-[var(--muted)]">{Math.round(muted() ? 0 : volume() * 100)}</div>
+                    </div>
+                  </Show>
                 </div>
               </div>
             </div>
