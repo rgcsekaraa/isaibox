@@ -19,14 +19,14 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import duckdb
 import requests
 from bs4 import BeautifulSoup
 from fastapi.concurrency import run_in_threadpool
 from fastapi import FastAPI, Request as FastAPIRequest
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 import uvicorn
 
 import db
@@ -231,6 +231,7 @@ DB_SYNC_ENABLED = env_flag("ISAIBOX_DB_SYNC_ENABLED", LOCAL_MODE)
 DB_SYNC_MANIFEST_URL = os.environ.get("ISAIBOX_DB_SYNC_MANIFEST_URL", DEFAULT_DB_SYNC_MANIFEST_URL if LOCAL_MODE else "").strip()
 DB_SYNC_INTERVAL_SECONDS = max(900, int(os.environ.get("ISAIBOX_DB_SYNC_INTERVAL_SECONDS", "1800") or "1800"))
 DB_SYNC_TIMEOUT_SECONDS = max(5, int(os.environ.get("ISAIBOX_DB_SYNC_TIMEOUT_SECONDS", "30") or "30"))
+DIRECT_STREAM_REDIRECT = env_flag("ISAIBOX_DIRECT_STREAM_REDIRECT", False)
 _GEMINI_KEYS_RAW = os.environ.get("GEMINI_API_KEYS", "") or os.environ.get("GEMINI_API_KEY", "")
 GEMINI_API_KEYS = [key.strip() for key in re.split(r"[\n,]+", _GEMINI_KEYS_RAW) if key.strip()]
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
@@ -3048,6 +3049,15 @@ def is_playable_upstream_response(response: requests.Response | None) -> bool:
         return False
     content_type = response.headers.get("Content-Type")
     return response.status_code in (200, 206) and is_audio_content_type(content_type)
+
+
+def safe_external_audio_redirect(url: str | None):
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+    return RedirectResponse(url, status_code=302)
 
 
 def build_upstream_headers(song_id: str | None = None, album_url: str | None = None) -> dict[str, str]:

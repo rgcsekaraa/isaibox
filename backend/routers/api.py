@@ -234,6 +234,11 @@ def stream_song(song_id: str):
 
     row = resolve_song_row_for_playback(song_id) or row
     url = row["url_320kbps"]
+    if DIRECT_STREAM_REDIRECT:
+        redirect = safe_external_audio_redirect(url)
+        if redirect is not None:
+            return redirect
+
     upstream, url = open_upstream_stream(song_id, url, row.get("album_url"))
     if upstream is None or upstream.status_code not in (200, 206) or not is_audio_content_type(upstream.headers.get("Content-Type")):
         app.logger.warning(
