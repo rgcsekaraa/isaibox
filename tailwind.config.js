@@ -4,11 +4,11 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: "#07111f",
-        mist: "#d9e7f5",
-        line: "rgba(217, 231, 245, 0.12)",
-        panel: "rgba(7, 17, 31, 0.72)",
-        accent: "#7dd3fc",
+        ink: "#000000",
+        mist: "#f7f7f4",
+        line: "rgba(255, 255, 255, 0.14)",
+        panel: "#000000",
+        accent: "#ffffff",
         accent2: "#f59e0b"
       },
       boxShadow: {
