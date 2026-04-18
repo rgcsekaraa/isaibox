@@ -205,6 +205,16 @@ const PlusIcon = () => (
   </svg>
 );
 
+const QueueIcon = () => (
+  <svg viewBox="0 0 24 24" class="h-4 w-4 fill-none stroke-current stroke-2">
+    <path d="M4 7h10" stroke-linecap="round" />
+    <path d="M4 12h8" stroke-linecap="round" />
+    <path d="M4 17h6" stroke-linecap="round" />
+    <path d="M16 11v6" stroke-linecap="round" />
+    <path d="M13 14h6" stroke-linecap="round" />
+  </svg>
+);
+
 const PlayIcon = () => (
   <svg viewBox="0 0 24 24" class="h-4 w-4 fill-current">
     <path d="M8 5v14l11-7z" />
@@ -332,6 +342,37 @@ const SongRowHeartButton = (props) => (
       </button>
     </span>
   </Show>
+);
+
+const SongRowQueueButton = (props) => (
+  <span class={`flex items-center justify-end ${props.class || ""}`}>
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        props.onClick?.();
+      }}
+      class={`transition-colors ${props.active ? "text-[var(--fg)]" : "text-[var(--muted)] hover:text-[var(--fg)]"}`}
+      aria-label={props.active ? "Song already in queue" : "Add to queue"}
+      title={props.active ? "Already in queue" : "Add to queue"}
+    >
+      <QueueIcon />
+    </button>
+  </span>
+);
+
+const SongRowActions = (props) => (
+  <span class={`song-col-action ml-auto flex items-center justify-end gap-3 ${props.class || ""}`}>
+    <SongRowQueueButton
+      active={props.queued}
+      onClick={props.onQueue}
+    />
+    <SongRowHeartButton
+      show={props.showFavorite}
+      active={props.favorite}
+      onClick={props.onFavorite}
+    />
+  </span>
 );
 
 const PlayingBars = () => (
@@ -467,6 +508,7 @@ function App() {
   const [mainTab, setMainTab] = createSignal("library");
   const activeTheme = createMemo(() => (themePreference() === "system" ? systemTheme() : themePreference()));
   const [recentIds, setRecentIds] = createSignal([]);
+  const [playQueue, setPlayQueue] = createSignal([]);
   const [radioQueue, setRadioQueue] = createSignal([]);
   const [radioStations, setRadioStations] = createSignal([]);
   const [selectedRadioStationId, setSelectedRadioStationId] = createSignal("");
@@ -546,6 +588,7 @@ function App() {
     library_playlist: DEFAULT_SONG_SORT,
     recents: DEFAULT_SONG_SORT,
     favorites: DEFAULT_SONG_SORT,
+    queue: DEFAULT_SONG_SORT,
     playlists: DEFAULT_SONG_SORT,
   });
 
@@ -1043,6 +1086,8 @@ function App() {
   });
   const songIndex = createMemo(() => new Map(songs().map((song) => [song.id, song])));
   const recentSongs = createMemo(() => recentIds().map((id) => songIndex().get(id)).filter(Boolean));
+  const queuedSongs = createMemo(() => playQueue().map((id) => songIndex().get(id)).filter(Boolean));
+  const queuedSongIds = createMemo(() => new Set(playQueue()));
   const favoriteSongs = createMemo(() => favoriteIds().map((id) => songIndex().get(id)).filter(Boolean));
   const favoriteAlbumSet = createMemo(() => new Set(favoriteAlbums().map((album) => albumIdentity(album))));
   const favoriteMusicDirectorSet = createMemo(() => new Set(favoriteMusicDirectors()));
@@ -1146,6 +1191,9 @@ function App() {
     if (mainTab() === "favorites") {
       return "favorites";
     }
+    if (mainTab() === "queue") {
+      return "queue";
+    }
     if (mainTab() === "playlists") {
       return "playlists";
     }
@@ -1165,6 +1213,9 @@ function App() {
     if (mainTab() === "radio") {
       return radioQueue();
     }
+    if (mainTab() === "queue") {
+      return queuedSongs();
+    }
     if (mainTab() === "admin") {
       return [];
     }
@@ -1177,7 +1228,7 @@ function App() {
     return visibleResults();
   });
   const sortedActiveSongList = createMemo(() => {
-    if (mainTab() === "radio") {
+    if (mainTab() === "radio" || mainTab() === "queue") {
       return activeSongList();
     }
     return sortSongs(activeSongList(), currentSongSort());
@@ -1386,7 +1437,7 @@ function App() {
       ...(payload || {}),
     };
     const nextThemePreference = ["system", "light", "dark"].includes(next.themePreference) ? next.themePreference : defaults.themePreference;
-    const allowedMainTabs = ["library", "recents", "favorites"];
+    const allowedMainTabs = ["library", "recents", "favorites", "queue"];
     if (localMode()) {
       allowedMainTabs.push("playlists");
     }
@@ -1576,7 +1627,10 @@ function App() {
       setPlaylistSearchQuery("");
       setMobilePlaylistSection("global");
     }
-    if (tab === "admin" || tab === "playlists") {
+    if (tab === "admin" || tab === "playlists" || tab === "queue") {
+      if (tab === "queue" && queuedSongs()[0]) {
+        setSelectedId(queuedSongs()[0].id);
+      }
       return;
     }
     if (tab === "radio" && !radioQueue().length && songs().length) {
@@ -3033,6 +3087,72 @@ function App() {
     syncTimelineFromAudio(activeAudio, true);
   };
 
+  const addSongToQueue = (song) => {
+    if (!song?.id) {
+      return;
+    }
+    let added = false;
+    setPlayQueue((current) => {
+      if (current.includes(song.id)) {
+        return current;
+      }
+      added = true;
+      return [...current, song.id];
+    });
+    setAccountMessage(added ? `${song.track || "Song"} added to queue` : `${song.track || "Song"} is already in queue`);
+  };
+
+  const addCurrentSongToQueue = () => {
+    const song = currentSong();
+    if (song) {
+      addSongToQueue(song);
+    }
+  };
+
+  const removeSongFromQueue = (songId) => {
+    setPlayQueue((current) => current.filter((id) => id !== songId));
+  };
+
+  const clearPlaybackQueue = () => {
+    setPlayQueue([]);
+    setAccountMessage("Queue cleared");
+  };
+
+  const takeNextQueuedSong = () => {
+    const ids = playQueue();
+    for (const id of ids) {
+      const song = songIndex().get(id);
+      if (song) {
+        setPlayQueue((current) => current.filter((queuedId) => queuedId !== id));
+        return song;
+      }
+    }
+    if (ids.length) {
+      setPlayQueue([]);
+    }
+    return null;
+  };
+
+  const playQueuedSong = (song, options = {}) => {
+    if (!song?.id) {
+      return;
+    }
+    removeSongFromQueue(song.id);
+    loadSong(song, true, options);
+  };
+
+  const playNextFromQueueOrRelative = (options = {}) => {
+    if (!radioPlaybackLocked()) {
+      const queuedSong = takeNextQueuedSong();
+      if (queuedSong) {
+        loadSong(queuedSong, true, options);
+        return true;
+      }
+    }
+    selectRelative(1, true, currentTrackId() || selectedId(), options);
+    return false;
+  };
+
   const moveSelection = (offset) => {
     const nextSong = pickRelativeSong(offset, selectedId(), { respectRandom: false });
     if (!nextSong) {
@@ -3242,14 +3362,15 @@ function App() {
         }
       }
 
-      if (commandKey && ["1", "2", "3", "4", "5", "6"].includes(event.key)) {
+      if (commandKey && ["1", "2", "3", "4", "5", "6", "7"].includes(event.key)) {
         event.preventDefault();
         if (event.key === "1") activateMainTabShortcut("library");
         if (event.key === "2") activateMainTabShortcut("recents");
         if (event.key === "3") activateMainTabShortcut("favorites");
-        if (event.key === "4") activateMainTabShortcut("playlists");
-        if (event.key === "5" && radioEnabled()) activateMainTabShortcut("radio");
-        if (event.key === "6") activateMainTabShortcut("admin");
+        if (event.key === "4") activateMainTabShortcut("queue");
+        if (event.key === "5") activateMainTabShortcut("playlists");
+        if (event.key === "6" && radioEnabled()) activateMainTabShortcut("radio");
+        if (event.key === "7") activateMainTabShortcut("admin");
         return;
       }
 
@@ -3324,7 +3445,7 @@ function App() {
       if (event.key === "]") {
         event.preventDefault();
         if (!radioPlaybackLocked()) {
-          selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true });
+          playNextFromQueueOrRelative({ allowCrossfade: true });
         }
         return;
       }
@@ -3507,7 +3628,7 @@ function App() {
       });
       mediaSession.setActionHandler("nexttrack", () => {
         if (!radioPlaybackLocked()) {
-          selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: false });
+          playNextFromQueueOrRelative({ allowCrossfade: false });
         }
       });
       mediaSession.setActionHandler("seekbackward", () => adjustSeek(-10));
@@ -4251,6 +4372,9 @@ function App() {
             <button type="button" onClick={() => setMainBrowseTab("recents")} class={`shrink-0 rounded-full border px-3 py-2 transition sm:border-transparent sm:px-1 sm:py-1 ${mainTab() === "recents" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)] sm:bg-transparent sm:text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>
               Recents {recentSongs().length ? `(${recentSongs().length})` : ""}
             </button>
+            <button type="button" onClick={() => setMainBrowseTab("queue")} class={`shrink-0 rounded-full border px-3 py-2 transition sm:border-transparent sm:px-1 sm:py-1 ${mainTab() === "queue" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)] sm:bg-transparent sm:text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>
+              Queue {playQueue().length ? `(${playQueue().length})` : ""}
+            </button>
             <Show when={libraryProfileEnabled()}>
               <button type="button" onClick={() => setMainBrowseTab("favorites")} class={`shrink-0 rounded-full border px-3 py-2 transition sm:border-transparent sm:px-1 sm:py-1 ${mainTab() === "favorites" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)] sm:bg-transparent sm:text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>
                 Favorites
@@ -4783,12 +4907,13 @@ function App() {
                   <Show when={libraryProfileEnabled()}>
                     <div class="flex items-center justify-between gap-4"><span>Favorites</span><span class="font-mono text-[11px] text-[var(--soft)]">Cmd/Ctrl+3</span></div>
                   </Show>
+                  <div class="flex items-center justify-between gap-4"><span>Queue</span><span class="font-mono text-[11px] text-[var(--soft)]">Cmd/Ctrl+4</span></div>
                   <Show when={localMode()}>
-                    <div class="flex items-center justify-between gap-4"><span>Playlists</span><span class="font-mono text-[11px] text-[var(--soft)]">Cmd/Ctrl+4</span></div>
+                    <div class="flex items-center justify-between gap-4"><span>Playlists</span><span class="font-mono text-[11px] text-[var(--soft)]">Cmd/Ctrl+5</span></div>
                   </Show>
-                  <div class="flex items-center justify-between gap-4"><span>Radio</span><span class="font-mono text-[11px] text-[var(--soft)]">Cmd/Ctrl+5 or R</span></div>
+                  <div class="flex items-center justify-between gap-4"><span>Radio</span><span class="font-mono text-[11px] text-[var(--soft)]">Cmd/Ctrl+6 or R</span></div>
                   <Show when={authEnabled() && user()?.is_admin}>
-                    <div class="flex items-center justify-between gap-4"><span>Admin</span><span class="font-mono text-[11px] text-[var(--soft)]">Cmd/Ctrl+6</span></div>
+                    <div class="flex items-center justify-between gap-4"><span>Admin</span><span class="font-mono text-[11px] text-[var(--soft)]">Cmd/Ctrl+7</span></div>
                   </Show>
                 </div>
                 <div class="space-y-3">
@@ -5277,11 +5402,12 @@ function App() {
                                         <DrilldownText value={song.musicDirector} onClick={navigateToMusicDirector} class="song-col-director hidden font-mono text-[11px] text-[var(--soft)] lg:block" />
                                         <span class="song-col-singers hidden truncate font-mono text-[11px] text-[var(--soft)] xl:block">{song.singers || "-"}</span>
                                         <span class="song-col-year hidden font-mono text-[11px] text-[var(--soft)] sm:block">{song.year || "-"}</span>
-                                        <SongRowHeartButton
-                                          show={user()}
-                                          class="song-col-action ml-auto"
-                                          active={favoriteIdSet().has(song.id)}
-                                          onClick={() => void toggleFavorite(song.id)}
+                                        <SongRowActions
+                                          queued={queuedSongIds().has(song.id)}
+                                          showFavorite={user()}
+                                          favorite={favoriteIdSet().has(song.id)}
+                                          onQueue={() => addSongToQueue(song)}
+                                          onFavorite={() => void toggleFavorite(song.id)}
                                         />
                                       </button>
                                     </li>
@@ -5607,9 +5733,7 @@ function App() {
                             <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-director hidden lg:block" />
                             <SortableSongHeader columnKey="singers" label="Singer" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-singers hidden xl:block" />
                             <SortableSongHeader columnKey="year" label="Year" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-year" />
-                            <Show when={user()}>
-                              <span class="song-col-action text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Fav</span>
-                            </Show>
+                            <span class="song-col-action text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Actions</span>
                           </div>
                           <Show when={!loading()} fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">Loading{loadingDots()}</div>}>
                             <Show when={!error()} fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--soft)]">{error()}</div>}>
@@ -5654,11 +5778,12 @@ function App() {
                                     <DrilldownText value={song.musicDirector} onClick={navigateToMusicDirector} class="song-col-director hidden font-mono text-[11px] text-[var(--soft)] lg:block" />
                                     <span class="song-col-singers hidden truncate font-mono text-[11px] text-[var(--soft)] xl:block">{song.singers || "-"}</span>
                                     <span class="song-col-year hidden font-mono text-[11px] text-[var(--soft)] sm:block">{song.year || "-"}</span>
-                                    <SongRowHeartButton
-                                      show={user()}
-                                      class="song-col-action ml-auto"
-                                      active={favoriteIdSet().has(song.id)}
-                                      onClick={() => void toggleFavorite(song.id)}
+                                    <SongRowActions
+                                      queued={queuedSongIds().has(song.id)}
+                                      showFavorite={user()}
+                                      favorite={favoriteIdSet().has(song.id)}
+                                      onQueue={() => addSongToQueue(song)}
+                                      onFavorite={() => void toggleFavorite(song.id)}
                                     />
                                           </button>
                                         </li>
@@ -5810,9 +5935,90 @@ function App() {
                   </div>
                 </div>
               </Show>
+              <Show when={mainTab() === "queue"}>
+                <div class="mobile-section-pad border-b border-[var(--line-soft)] sm:px-6">
+                  <div class="mobile-card flex items-start justify-between gap-4 sm:border-0 sm:bg-transparent sm:p-0">
+                    <div class="min-w-0">
+                      <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Playback queue</div>
+                      <div class="mt-2 text-lg font-semibold">Up next</div>
+                      <div class="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">
+                        {queuedSongs().length} {queuedSongs().length === 1 ? "song" : "songs"}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={clearPlaybackQueue}
+                      disabled={!queuedSongs().length}
+                      class="shrink-0 rounded-full border border-[var(--line)] px-4 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)] transition hover:border-[var(--fg)] hover:text-[var(--fg)] disabled:opacity-40"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                <Show
+                  when={queuedSongs().length > 0}
+                  fallback={
+                    <div class="flex flex-1 items-center justify-center px-6 text-center">
+                      <div class="max-w-sm">
+                        <div class="font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Queue empty</div>
+                        <div class="mt-3 text-sm text-[var(--soft)]">Add songs from Library, Favorites, or Playlists. The next button will play queued songs first.</div>
+                      </div>
+                    </div>
+                  }
+                >
+                  <ul class="min-h-0 flex-1 overflow-y-auto px-2 py-2 sm:px-0 sm:py-0">
+                    <For each={queuedSongs()}>
+                      {(song, index) => {
+                        const active = () => currentTrackId() === song.id;
+                        return (
+                          <li>
+                            <div class={`mobile-list-row flex items-center gap-3 transition ${active() ? "song-row-active text-[var(--fg)]" : "text-[var(--fg)] hover:bg-[var(--hover)]"}`}>
+                              <button
+                                type="button"
+                                onClick={() => playQueuedSong(song, { allowCrossfade: true })}
+                                class="flex min-w-0 flex-1 items-center gap-3 text-left"
+                              >
+                                <span class="w-8 shrink-0 text-right font-mono text-xs text-[var(--soft)]">
+                                  {active() && isPlaying() && streamStarted() ? <PlayingBars /> : String(index() + 1).padStart(2, "0")}
+                                </span>
+                                <span class="min-w-0 flex-1">
+                                  <span class="block truncate text-sm font-semibold">{song.track}</span>
+                                  <span class="mt-1 flex flex-wrap gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)]">
+                                    <Show when={song.movie}><span class="max-w-[12rem] truncate">{song.movie}</span></Show>
+                                    <Show when={song.singers}><span class="max-w-[12rem] truncate">{song.singers}</span></Show>
+                                    <Show when={song.year}><span>{song.year}</span></Show>
+                                  </span>
+                                </span>
+                              </button>
+                              <div class="flex shrink-0 items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => playQueuedSong(song, { allowCrossfade: true })}
+                                  aria-label={`Play ${song.track}`}
+                                  class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] transition hover:border-[var(--fg)] hover:text-[var(--fg)]"
+                                >
+                                  <PlayIcon />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeSongFromQueue(song.id)}
+                                  aria-label={`Remove ${song.track} from queue`}
+                                  class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] font-mono text-sm text-[var(--soft)] transition hover:border-[var(--fg)] hover:text-[var(--fg)]"
+                                >
+                                  x
+                                </button>
+                              </div>
+                            </div>
+                          </li>
+                        );
+                      }}
+                    </For>
+                  </ul>
+                </Show>
+              </Show>
               <Show
-                when={mainTab() !== "favorites" || favoritesTab() === "songs"}
-                fallback={
+                when={mainTab() !== "queue" && (mainTab() !== "favorites" || favoritesTab() === "songs")}
+                fallback={mainTab() === "queue" ? null : (
                   <Show
                     when={favoritesTab() === "albums"}
                     fallback={
@@ -5911,7 +6117,7 @@ function App() {
                       </ul>
                     </Show>
                   </Show>
-                }
+                )}
               >
                 <div class="song-table-header hidden border-b border-[var(--line-soft)] px-6 py-2 sm:grid">
                   <SortableSongHeader columnKey="default" label="#" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-index text-right" />
@@ -5920,9 +6126,7 @@ function App() {
                   <SortableSongHeader columnKey="musicDirector" label="Music Director" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-director hidden lg:block" />
                   <SortableSongHeader columnKey="singers" label="Singer" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-singers hidden xl:block" />
                   <SortableSongHeader columnKey="year" label="Year" sortKey={currentSongSort().key} sortDirection={currentSongSort().direction} onSort={toggleSongSort} class="song-col-year" />
-                  <Show when={user()}>
-                    <span class="song-col-action text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Fav</span>
-                  </Show>
+                  <span class="song-col-action text-right font-mono text-[10px] uppercase tracking-[0.25em] text-[var(--faint)]">Actions</span>
                 </div>
 
                 <Show when={!loading()} fallback={<div class="flex flex-1 items-center justify-center font-mono text-xs uppercase tracking-[0.25em] text-[var(--muted)]">Loading{loadingDots()}</div>}>
@@ -5979,19 +6183,21 @@ function App() {
                                   <Show
                                     when={mainTab() === "favorites"}
                                     fallback={
-                                      <SongRowHeartButton
-                                        show={user()}
-                                        class="song-col-action ml-auto"
-                                        active={favoriteIdSet().has(song.id)}
-                                        onClick={() => void toggleFavorite(song.id)}
+                                      <SongRowActions
+                                        queued={queuedSongIds().has(song.id)}
+                                        showFavorite={user()}
+                                        favorite={favoriteIdSet().has(song.id)}
+                                        onQueue={() => addSongToQueue(song)}
+                                        onFavorite={() => void toggleFavorite(song.id)}
                                       />
                                     }
                                   >
-                                    <SongRowHeartButton
-                                      show={user()}
-                                      class="song-col-action ml-auto"
-                                      active={favoriteIdSet().has(song.id)}
-                                      onClick={() => void toggleFavorite(song.id)}
+                                    <SongRowActions
+                                      queued={queuedSongIds().has(song.id)}
+                                      showFavorite={user()}
+                                      favorite={favoriteIdSet().has(song.id)}
+                                      onQueue={() => addSongToQueue(song)}
+                                      onFavorite={() => void toggleFavorite(song.id)}
                                     />
                                   </Show>
                                 </button>
@@ -6060,7 +6266,7 @@ function App() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => void selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true })}
+                  onClick={() => void playNextFromQueueOrRelative({ allowCrossfade: true })}
                   disabled={radioPlaybackLocked()}
                   aria-label="Next"
                   class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] disabled:opacity-40"
@@ -6175,6 +6381,24 @@ function App() {
                 <TooltipBubble text="Add to playlist" position="bottom-full left-0 mb-2" />
               </span>
             </Show>
+            <Show when={currentSong()}>
+              <span class="group relative inline-flex">
+                <button
+                  type="button"
+                  onClick={addCurrentSongToQueue}
+                  aria-label="Add current song to queue"
+                  class={`flex h-8 items-center gap-2 rounded-full border px-3 transition ${
+                    queuedSongIds().has(currentSong()?.id)
+                      ? "border-[var(--fg)] text-[var(--fg)]"
+                      : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"
+                  }`}
+                >
+                  <QueueIcon />
+                  <span class="font-mono text-[10px] uppercase tracking-[0.18em]">Queue</span>
+                </button>
+                <TooltipBubble text={queuedSongIds().has(currentSong()?.id) ? "Already in queue" : "Add to queue"} position="bottom-full left-0 mb-2" />
+              </span>
+            </Show>
           </div>
           <div class="flex items-center justify-center gap-5">
             <IconButton disabled={radioPlaybackLocked()} onClick={() => selectRelative(-1, true, currentTrackId() || selectedId(), { allowCrossfade: true })} label="Previous">
@@ -6188,7 +6412,7 @@ function App() {
             >
               {isPlaying() ? (streamStarted() ? <PauseIcon /> : <LoadingSpinnerIcon />) : <PlayIcon />}
             </button>
-            <IconButton disabled={radioPlaybackLocked()} onClick={() => selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true })} label="Next">
+            <IconButton disabled={radioPlaybackLocked()} onClick={() => playNextFromQueueOrRelative({ allowCrossfade: true })} label="Next">
               <NextIcon />
             </IconButton>
             <IconButton
@@ -6340,7 +6564,7 @@ function App() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true })}
+                  onClick={() => playNextFromQueueOrRelative({ allowCrossfade: true })}
                   disabled={radioPlaybackLocked()}
                   aria-label="Next"
                   class="flex h-12 w-12 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] disabled:opacity-40"
@@ -6376,6 +6600,23 @@ function App() {
                     class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)]"
                   >
                     <PlusIcon />
+                  </button>
+                </Show>
+                <Show when={currentSong()}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileVolumeSlider(false);
+                      addCurrentSongToQueue();
+                    }}
+                    aria-label={queuedSongIds().has(currentSong()?.id) ? "Already in queue" : "Add to queue"}
+                    class={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${
+                      queuedSongIds().has(currentSong()?.id)
+                        ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
+                        : "border-[var(--line)] text-[var(--soft)]"
+                    }`}
+                  >
+                    <QueueIcon />
                   </button>
                 </Show>
                 <button
@@ -6518,6 +6759,11 @@ function App() {
                   applyRadioStation(selectedRadioStationId() || radioStations()[0]?.id || "", true);
                   return;
                 }
+                const queuedSong = takeNextQueuedSong();
+                if (queuedSong) {
+                  loadSong(queuedSong, true, { allowCrossfade: true });
+                  return;
+                }
                 if (repeatMode() === "album" || repeatMode() === "random") {
                   selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true });
                   return;
@@ -6538,7 +6784,7 @@ function App() {
                 if (autoplayNext()) {
                   setTimeout(() => {
                     if (currentTrackId() === event.currentTarget.dataset.songId) {
-                      selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true });
+                      playNextFromQueueOrRelative({ allowCrossfade: true });
                     }
                   }, 1500);
                 }

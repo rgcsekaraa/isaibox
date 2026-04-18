@@ -2031,7 +2031,7 @@ def save_user_preferences(user_id: str, payload: dict) -> dict:
     )
     if prefs["themePreference"] not in {"system", "light", "dark"}:
         prefs["themePreference"] = "system"
-    allowed_main_tabs = {"library", "recents", "favorites"}
+    allowed_main_tabs = {"library", "recents", "favorites", "queue"}
     if LOCAL_MODE:
         allowed_main_tabs.add("playlists")
     else:
