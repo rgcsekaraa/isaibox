@@ -235,7 +235,7 @@ def stream_song(song_id: str):
     row = resolve_song_row_for_playback(song_id) or row
     url = row["url_320kbps"]
     if DIRECT_STREAM_REDIRECT:
-        redirect = safe_external_audio_redirect(url)
+        redirect = safe_external_audio_redirect(url, row.get("album_url"))
         if redirect is not None:
             return redirect
 
