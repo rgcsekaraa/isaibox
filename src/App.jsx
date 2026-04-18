@@ -4080,6 +4080,16 @@ function App() {
           </div>
         </div>
       </Show>
+      <Show when={loading() && !songs().length}>
+        <div class="absolute inset-0 z-[70] flex items-center justify-center bg-[var(--bg)] px-8 text-center sm:hidden">
+          <div>
+            <div class="font-mono text-[11px] uppercase tracking-[0.32em] text-[var(--brand)]">isaibox</div>
+            <div class="mt-4 font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--soft)]">
+              Loading library{loadingDots()}
+            </div>
+          </div>
+        </div>
+      </Show>
       <header class="flex min-w-0 flex-wrap items-center gap-3 border-b border-[var(--line)] px-4 py-3 sm:px-6 sm:py-4 sm:flex-nowrap sm:justify-between">
         <span class="group relative inline-flex shrink-0 items-center gap-3">
           <BrandIcon />
@@ -4291,18 +4301,6 @@ function App() {
             </div>
 
             <div class="mt-5 space-y-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowMobileMenu(false);
-                  setShowShortcutHelp(true);
-                }}
-                class="flex w-full items-center justify-between rounded-[18px] border border-[var(--line)] px-4 py-4 text-left transition hover:border-[var(--fg)]"
-              >
-                <span>Shortcuts</span>
-                <span class="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)]">Open</span>
-              </button>
-
               <div class="rounded-[18px] border border-[var(--line)] px-4 py-4">
                 <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--faint)]">Theme</div>
                 <div class="mt-3 grid grid-cols-3 gap-2">
@@ -4311,38 +4309,6 @@ function App() {
                   <button type="button" onClick={() => setThemePreferenceChoice("dark")} class={`border px-2 py-3 font-mono text-[10px] uppercase tracking-[0.16em] transition ${themePreference() === "dark" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]" : "border-[var(--line)] text-[var(--soft)]"}`}>Dark</button>
                 </div>
               </div>
-
-              <Show when={localMode()}>
-                <div class="rounded-[18px] border border-[var(--line)] px-4 py-4">
-                  <div class="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--faint)]">Local status</div>
-                  <div class="mt-3 space-y-2 text-sm text-[var(--soft)]">
-                    <Show when={localDbSyncLabel()}>
-                      <div>{localDbSyncLabel()}</div>
-                    </Show>
-                    <Show when={cacheStatus()}>
-                      <div>Cache {cachePercent()}%</div>
-                    </Show>
-                  </div>
-                  <div class="mt-4 flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void checkForLibraryUpdate()}
-                      disabled={dbSyncActionBusy() || dbSyncState()?.status === "downloading"}
-                      class="rounded-full border border-[var(--line)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)] disabled:opacity-40"
-                    >
-                      {localDbSyncActionLabel()}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void trimCache(false)}
-                      disabled={cacheTrimming()}
-                      class="rounded-full border border-[var(--line)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)] disabled:opacity-40"
-                    >
-                      Clear cache
-                    </button>
-                  </div>
-                </div>
-              </Show>
             </div>
           </div>
         </div>
@@ -4411,7 +4377,7 @@ function App() {
                     <Show when={dbSyncState()?.message}>
                       <div class="mt-2 max-w-2xl text-sm text-[var(--soft)]">{dbSyncState().message}</div>
                     </Show>
-                    <Show when={dbSyncActionMessage()}>
+                    <Show when={dbSyncActionMessage() && dbSyncActionMessage() !== dbSyncState()?.message}>
                       <div class={`mt-2 max-w-2xl text-sm ${localDbSyncTone()}`}>{dbSyncActionMessage()}</div>
                     </Show>
                   </div>
