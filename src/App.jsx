@@ -5772,7 +5772,7 @@ function App() {
                           </>
                         </Show>
                         <Show when={!visiblePlaylistDetail() && !movieFilter() && !artistFilter() && !musicDirectorFilter()}>
-                          <div class="truncate text-sm font-semibold uppercase tracking-widest text-[var(--faint)]">
+                          <div class="hidden truncate text-sm font-semibold uppercase tracking-widest text-[var(--faint)] xl:block">
                             {searchTab() === "albums" ? `Albums · ${visibleAlbums().length}` : searchTab() === "music-directors" ? `Music Directors · ${visibleMusicDirectors().length}` : `Songs · ${visibleResults().length}`}
                           </div>
                         </Show>
@@ -5818,7 +5818,7 @@ function App() {
                       </div>
                     </header>
 
-                    <Show when={mainTab() === "library"}>
+                    <Show when={mainTab() === "library" && visiblePlaylistDetail()}>
                       <div class="mobile-section-pad border-b border-[var(--line-soft)] xl:hidden">
                         <Show when={visiblePlaylistDetail()}>
                           {(playlist) => (
