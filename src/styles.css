@@ -101,15 +101,6 @@ input[type="range"] {
   display: none;
 }
 
-.mobile-volume-slider {
-  width: 5.75rem;
-  height: 1.25rem;
-  margin: 2rem 0;
-  transform: rotate(-90deg);
-  transform-origin: center;
-  touch-action: pan-x;
-}
-
 .song-row-active {
   box-shadow: inset 0 0 0 1px var(--fg);
   background: rgba(255, 255, 255, 0.1);

@@ -564,7 +564,6 @@ function App() {
   const [showProfileMenu, setShowProfileMenu] = createSignal(false);
   const [showMobileMenu, setShowMobileMenu] = createSignal(false);
   const [showMobilePlayerPanel, setShowMobilePlayerPanel] = createSignal(false);
-  const [showMobileVolumeSlider, setShowMobileVolumeSlider] = createSignal(false);
   const [showMobilePlaylistPicker, setShowMobilePlaylistPicker] = createSignal(false);
   const [mobilePlaylistSection, setMobilePlaylistSection] = createSignal("global");
   const [playlistBrowseSection, setPlaylistBrowseSection] = createSignal("global");
@@ -6144,14 +6143,6 @@ function App() {
                               <div class="flex shrink-0 items-center gap-2">
                                 <button
                                   type="button"
-                                  onClick={() => playQueuedSong(song, { allowCrossfade: true })}
-                                  aria-label={`Play ${song.track}`}
-                                  class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)] transition hover:border-[var(--fg)] hover:text-[var(--fg)]"
-                                >
-                                  <PlayIcon />
-                                </button>
-                                <button
-                                  type="button"
                                   onClick={() => removeSongFromQueue(song.queueEntryId || song.id)}
                                   aria-label={`Remove ${song.track} from queue`}
                                   class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] font-mono text-sm text-[var(--soft)] transition hover:border-[var(--fg)] hover:text-[var(--fg)]"
@@ -6378,7 +6369,7 @@ function App() {
                 aria-label="Open now playing controls"
               >
                 <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] border border-[var(--line)] bg-[rgba(255,255,255,0.04)] font-mono text-[10px] uppercase tracking-[0.16em] text-[var(--soft)]">
-                  <Show when={currentSong() && isPlaying() && streamStarted()} fallback={"Play"}>
+                  <Show when={currentSong() && isPlaying() && streamStarted()} fallback={<span class="h-2 w-2 rounded-full bg-[var(--soft)]" />}>
                     <PlayingBars />
                   </Show>
                 </div>
@@ -6797,45 +6788,6 @@ function App() {
                 >
                   <span>{formatPlaybackSpeed(playbackSpeed())}</span>
                 </button>
-                <div class="relative">
-                  <button
-                    type="button"
-                    onClick={() => setShowMobileVolumeSlider((value) => !value)}
-                    aria-label={muted() ? "Unmute and adjust volume" : "Adjust volume"}
-                    class={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${
-                      showMobileVolumeSlider()
-                        ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
-                        : "border-[var(--line)] text-[var(--soft)]"
-                    }`}
-                  >
-                    <VolumeIcon muted={muted() || volume() === 0} />
-                  </button>
-                  <Show when={showMobileVolumeSlider()}>
-                    <div class="absolute -top-32 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-3 rounded-[20px] border border-[var(--line)] bg-[var(--bg)] px-3 py-3 shadow-2xl">
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.01"
-                        value={volume()}
-                        onInput={(event) => setVolume(Number(event.currentTarget.value))}
-                        class="mobile-volume-slider"
-                        style={{ "accent-color": "var(--fg)" }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setMuted((value) => !value)}
-                        class={`inline-flex h-8 w-8 items-center justify-center rounded-full border ${
-                          muted() ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]" : "border-[var(--line)] text-[var(--soft)]"
-                        }`}
-                        aria-label={muted() ? "Unmute" : "Mute"}
-                      >
-                        <VolumeIcon muted={muted() || volume() === 0} />
-                      </button>
-                      <div class="font-mono text-[10px] text-[var(--muted)]">{Math.round(muted() ? 0 : volume() * 100)}</div>
-                    </div>
-                  </Show>
-                </div>
               </div>
             </div>
           </div>
