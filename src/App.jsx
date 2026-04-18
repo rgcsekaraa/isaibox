@@ -4123,45 +4123,6 @@ function App() {
                   Cache {cachePercent()}%
                 </span>
               </Show>
-              <Show when={localDbSyncLabel()}>
-                <span
-                  class="max-w-[180px] truncate font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--soft)] opacity-60"
-                  title={dbSyncState()?.message || localDbSyncLabel()}
-                >
-                  {localDbSyncLabel()}
-                </span>
-              </Show>
-              <button
-                type="button"
-                onClick={() => void checkForLibraryUpdate()}
-                disabled={dbSyncActionBusy() || dbSyncState()?.status === "downloading"}
-                class={`font-mono text-[10px] uppercase tracking-[0.18em] transition ${
-                  dbSyncActionBusy() || dbSyncState()?.status === "downloading"
-                    ? "cursor-not-allowed text-[var(--line)]"
-                    : "text-[var(--soft)] hover:text-[var(--fg)]"
-                }`}
-                title={dbSyncState()?.message || "Check for library updates"}
-              >
-                {localDbSyncActionLabel()}
-              </button>
-              <Show when={dbSyncActionMessage()}>
-                <span
-                  class={`max-w-[220px] truncate font-mono text-[10px] uppercase tracking-[0.18em] ${localDbSyncTone()}`}
-                  title={dbSyncActionMessage()}
-                >
-                  {dbSyncActionMessage()}
-                </span>
-              </Show>
-              <Show when={dbSyncState()?.status === "error" && dbSyncState()?.githubIssuesUrl}>
-                <a
-                  href={dbSyncState().githubIssuesUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  class="text-xs text-[var(--soft)] underline decoration-[var(--line)] underline-offset-4 transition hover:text-[var(--fg)]"
-                >
-                  Raise issue
-                </a>
-              </Show>
             </div>
           </Show>
           <Show when={authEnabled()}>
@@ -4423,6 +4384,43 @@ function App() {
             </div>
 
             <Show when={localMode()}>
+              <div class="border border-[var(--line)] p-4">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <div class="text-sm font-semibold">Library updates</div>
+                    <div class={`mt-1 font-mono text-[10px] uppercase tracking-[0.18em] ${localDbSyncTone()}`}>
+                      {localDbSyncLabel() || "Library updates unavailable"}
+                    </div>
+                    <Show when={dbSyncState()?.message}>
+                      <div class="mt-2 max-w-2xl text-sm text-[var(--soft)]">{dbSyncState().message}</div>
+                    </Show>
+                    <Show when={dbSyncActionMessage()}>
+                      <div class={`mt-2 max-w-2xl text-sm ${localDbSyncTone()}`}>{dbSyncActionMessage()}</div>
+                    </Show>
+                  </div>
+                  <div class="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void checkForLibraryUpdate()}
+                      disabled={dbSyncActionBusy() || dbSyncState()?.status === "downloading"}
+                      class="border border-[var(--line)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--soft)] transition hover:border-[var(--fg)] hover:text-[var(--fg)] disabled:opacity-50"
+                    >
+                      {localDbSyncActionLabel()}
+                    </button>
+                    <Show when={dbSyncState()?.status === "error" && dbSyncState()?.githubIssuesUrl}>
+                      <a
+                        href={dbSyncState().githubIssuesUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        class="border border-[var(--line)] px-3 py-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--soft)] transition hover:border-[var(--fg)] hover:text-[var(--fg)]"
+                      >
+                        Raise issue
+                      </a>
+                    </Show>
+                  </div>
+                </div>
+              </div>
+
               <div class="border border-[var(--line)] p-4">
                 <div class="flex items-center justify-between gap-4">
                   <div>
