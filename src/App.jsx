@@ -353,8 +353,8 @@ const SongRowQueueButton = (props) => (
         props.onClick?.();
       }}
       class={`transition-colors ${props.active ? "text-[var(--fg)]" : "text-[var(--muted)] hover:text-[var(--fg)]"}`}
-      aria-label={props.active ? "Song already in queue" : "Add to queue"}
-      title={props.active ? "Already in queue" : "Add to queue"}
+      aria-label={props.active ? "Add another to queue" : "Add to queue"}
+      title={props.active ? "Add another to queue" : "Add to queue"}
     >
       <QueueIcon />
     </button>
@@ -1089,8 +1089,21 @@ function App() {
   });
   const songIndex = createMemo(() => new Map(songs().map((song) => [song.id, song])));
   const recentSongs = createMemo(() => recentIds().map((id) => songIndex().get(id)).filter(Boolean));
-  const queuedSongs = createMemo(() => playQueue().map((id) => songIndex().get(id)).filter(Boolean));
-  const queuedSongIds = createMemo(() => new Set(playQueue()));
+  const queueEntrySongId = (entry) => typeof entry === "string" ? entry : entry?.songId;
+  const queueEntryId = (entry) => typeof entry === "string" ? entry : entry?.entryId;
+  const makeQueueEntry = (songId) => ({
+    entryId: `${songId}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+    songId,
+  });
+  const queueSongIds = createMemo(() => playQueue().map(queueEntrySongId).filter(Boolean));
+  const queuedSongs = createMemo(() => playQueue()
+    .map((entry, index) => {
+      const songId = queueEntrySongId(entry);
+      const song = songIndex().get(songId);
+      return song ? { ...song, queueEntryId: queueEntryId(entry) || `${songId}:${index}` } : null;
+    })
+    .filter(Boolean));
+  const queuedSongIds = createMemo(() => new Set(queueSongIds()));
   const favoriteSongs = createMemo(() => favoriteIds().map((id) => songIndex().get(id)).filter(Boolean));
   const favoriteAlbumSet = createMemo(() => new Set(favoriteAlbums().map((album) => albumIdentity(album))));
   const favoriteMusicDirectorSet = createMemo(() => new Set(favoriteMusicDirectors()));
@@ -3148,15 +3161,8 @@ function App() {
     if (!song?.id) {
       return;
     }
-    let added = false;
-    setPlayQueue((current) => {
-      if (current.includes(song.id)) {
-        return current;
-      }
-      added = true;
-      return [...current, song.id];
-    });
-    setAccountMessage(added ? `${song.track || "Song"} added to queue` : `${song.track || "Song"} is already in queue`);
+    setPlayQueue((current) => [...current, makeQueueEntry(song.id)]);
+    setAccountMessage(`${song.track || "Song"} added to queue`);
   };
 
   const addCurrentSongToQueue = () => {
@@ -3166,8 +3172,15 @@ function App() {
     }
   };
 
-  const removeSongFromQueue = (songId) => {
-    setPlayQueue((current) => current.filter((id) => id !== songId));
+  const removeSongFromQueue = (identifier) => {
+    setPlayQueue((current) => {
+      const exactIndex = current.findIndex((entry) => queueEntryId(entry) === identifier);
+      const index = exactIndex >= 0 ? exactIndex : current.findIndex((entry) => queueEntrySongId(entry) === identifier);
+      if (index < 0) {
+        return current;
+      }
+      return [...current.slice(0, index), ...current.slice(index + 1)];
+    });
   };
 
   const clearPlaybackQueue = () => {
@@ -3176,15 +3189,17 @@ function App() {
   };
 
   const takeNextQueuedSong = () => {
-    const ids = playQueue();
-    for (const id of ids) {
-      const song = songIndex().get(id);
+    const entries = playQueue();
+    const contextIds = entries.map(queueEntrySongId).filter(Boolean);
+    for (const entry of entries) {
+      const songId = queueEntrySongId(entry);
+      const song = songIndex().get(songId);
       if (song) {
-        setPlayQueue((current) => current.filter((queuedId) => queuedId !== id));
-        return { song, contextIds: ids };
+        removeSongFromQueue(queueEntryId(entry) || songId);
+        return { song, contextIds };
       }
     }
-    if (ids.length) {
+    if (entries.length) {
       setPlayQueue([]);
     }
     return null;
@@ -3194,8 +3209,9 @@ function App() {
     if (!song?.id) {
       return;
     }
-    const contextIds = playQueue().includes(song.id) ? playQueue() : [song.id, ...playQueue()];
-    removeSongFromQueue(song.id);
+    const queuedIds = playQueue().map(queueEntrySongId).filter(Boolean);
+    const contextIds = queuedIds.includes(song.id) ? queuedIds : [song.id, ...queuedIds];
+    removeSongFromQueue(song.queueEntryId || song.id);
     loadSong(song, true, {
       ...options,
       playbackContextSource: "queue",
@@ -6141,7 +6157,7 @@ function App() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => removeSongFromQueue(song.id)}
+                                  onClick={() => removeSongFromQueue(song.queueEntryId || song.id)}
                                   aria-label={`Remove ${song.track} from queue`}
                                   class="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] font-mono text-sm text-[var(--soft)] transition hover:border-[var(--fg)] hover:text-[var(--fg)]"
                                 >
@@ -6527,16 +6543,12 @@ function App() {
                   type="button"
                   onClick={addCurrentSongToQueue}
                   aria-label="Add current song to queue"
-                  class={`flex h-8 items-center gap-2 rounded-full border px-3 transition ${
-                    queuedSongIds().has(currentSong()?.id)
-                      ? "border-[var(--fg)] text-[var(--fg)]"
-                      : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"
-                  }`}
+                  class="flex h-8 items-center gap-2 rounded-full border border-[var(--line)] px-3 text-[var(--soft)] transition hover:border-[var(--fg)] hover:text-[var(--fg)]"
                 >
                   <QueueIcon />
                   <span class="font-mono text-[10px] uppercase tracking-[0.18em]">Queue</span>
                 </button>
-                <TooltipBubble text={queuedSongIds().has(currentSong()?.id) ? "Already in queue" : "Add to queue"} position="bottom-full left-0 mb-2" />
+                <TooltipBubble text="Add to queue" position="bottom-full left-0 mb-2" />
               </span>
             </Show>
           </div>
@@ -6749,12 +6761,8 @@ function App() {
                       setShowMobileVolumeSlider(false);
                       addCurrentSongToQueue();
                     }}
-                    aria-label={queuedSongIds().has(currentSong()?.id) ? "Already in queue" : "Add to queue"}
-                    class={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${
-                      queuedSongIds().has(currentSong()?.id)
-                        ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
-                        : "border-[var(--line)] text-[var(--soft)]"
-                    }`}
+                    aria-label="Add to queue"
+                    class="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[var(--line)] text-[var(--soft)]"
                   >
                     <QueueIcon />
                   </button>
