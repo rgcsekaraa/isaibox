@@ -575,6 +575,7 @@ function App() {
   let themeMediaQuery;
   let syncSystemTheme;
   let crossfadeToken = 0;
+  let playbackRequestToken = 0;
   let playlistDetailRequestToken = 0;
   let playlistDetailAbortController = null;
   let activeDeckIndex = 0;
@@ -1645,15 +1646,28 @@ function App() {
   const getActiveAudio = () => getAudio(activeDeckIndex);
   const getInactiveAudio = () => getAudio(activeDeckIndex === 0 ? 1 : 0);
   const isSongLoadedInAnyDeck = (songId) => audioRefs.some((audio) => audio?.dataset.songId === songId);
+  const nextPlaybackRequestToken = () => {
+    playbackRequestToken += 1;
+    return playbackRequestToken;
+  };
+  const isCurrentPlaybackRequest = (token, songId) => token === playbackRequestToken && currentTrackId() === songId;
+  const resetAudioDeck = (audio) => {
+    if (!audio) {
+      return;
+    }
+    audio.pause();
+    audio.currentTime = 0;
+    audio.dataset.songId = "";
+    audio.removeAttribute("src");
+    audio.load();
+    audio.volume = 0;
+  };
 
   const stopCrossfade = () => {
     crossfadeToken += 1;
     cancelAnimationFrame(crossfadeFrame);
     if (fadingAudio) {
-      fadingAudio.pause();
-      fadingAudio.currentTime = 0;
-      fadingAudio.removeAttribute("src");
-      fadingAudio.load();
+      resetAudioDeck(fadingAudio);
       fadingAudio = null;
     }
   };
@@ -1697,14 +1711,10 @@ function App() {
     if (!inactive) {
       return;
     }
-    inactive.pause();
-    inactive.currentTime = 0;
-    inactive.removeAttribute("src");
-    inactive.load();
-    inactive.volume = 0;
+    resetAudioDeck(inactive);
   };
 
-  const playPrimaryDeck = (audio, song, relativeUrl) => {
+  const playPrimaryDeck = (audio, song, relativeUrl, requestToken = playbackRequestToken) => {
     if (!audio || !song || !relativeUrl) {
       return Promise.reject(new Error("Primary deck unavailable"));
     }
@@ -1718,6 +1728,12 @@ function App() {
     audio.load();
     syncTimelineFromAudio(audio, true);
     return audio.play().then(() => {
+      if (!isCurrentPlaybackRequest(requestToken, song.id)) {
+        if (audio.dataset.songId === song.id) {
+          resetAudioDeck(audio);
+        }
+        return;
+      }
       promoteDeck(activeDeckIndex);
       audio.volume = muted() ? 0 : volume();
       setIsPlaying(true);
@@ -1759,10 +1775,7 @@ function App() {
         return;
       }
       if (fadingAudio === fromAudio) {
-        fromAudio.pause();
-        fromAudio.currentTime = 0;
-        fromAudio.removeAttribute("src");
-        fromAudio.load();
+        resetAudioDeck(fromAudio);
         fadingAudio = null;
       }
       syncDeckVolumes();
@@ -2853,6 +2866,7 @@ function App() {
     if (!song || !activeAudio || !inactiveAudio) {
       return;
     }
+    const requestToken = nextPlaybackRequestToken();
 
     const previousTrackId = currentTrackId();
     const isSameSong = previousTrackId === song.id;
@@ -2882,9 +2896,11 @@ function App() {
       }
       if (!canCrossfade) {
         if (autoplay) {
-          void playPrimaryDeck(activeAudio, song, nextRelativeUrl).catch(() => {
-            setIsPlaying(false);
-            setStreamStarted(false);
+          void playPrimaryDeck(activeAudio, song, nextRelativeUrl, requestToken).catch(() => {
+            if (isCurrentPlaybackRequest(requestToken, song.id)) {
+              setIsPlaying(false);
+              setStreamStarted(false);
+            }
           });
           return;
         }
@@ -2910,6 +2926,12 @@ function App() {
         inactiveAudio.muted = muted();
         void inactiveAudio.play()
           .then(() => {
+            if (!isCurrentPlaybackRequest(requestToken, song.id)) {
+              if (inactiveAudio.dataset.songId === song.id) {
+                resetAudioDeck(inactiveAudio);
+              }
+              return;
+            }
             const nextDeckIndex = activeDeckIndex === 0 ? 1 : 0;
             if (canCrossfade) {
               beginCrossfade(activeAudio, inactiveAudio, nextDeckIndex);
@@ -2926,16 +2948,24 @@ function App() {
           })
           .catch(() => {
             inactiveAudio.pause();
+            if (!isCurrentPlaybackRequest(requestToken, song.id)) {
+              if (inactiveAudio.dataset.songId === song.id) {
+                resetAudioDeck(inactiveAudio);
+              }
+              return;
+            }
             if (canCrossfade) {
               setIsPlaying(!activeAudio.paused);
               setStreamStarted(!activeAudio.paused);
               syncTimelineFromAudio(activeAudio);
               return;
             }
-            void playPrimaryDeck(activeAudio, song, nextRelativeUrl)
+            void playPrimaryDeck(activeAudio, song, nextRelativeUrl, requestToken)
               .catch(() => {
-                setIsPlaying(false);
-                setStreamStarted(false);
+                if (isCurrentPlaybackRequest(requestToken, song.id)) {
+                  setIsPlaying(false);
+                  setStreamStarted(false);
+                }
               });
           });
       } else if (!isSameSong) {
@@ -2950,7 +2980,15 @@ function App() {
       if (activeAudio.readyState < 2) {
         activeAudio.load();
       }
-      void activeAudio.play().catch(() => {});
+      void activeAudio.play()
+        .then(() => {
+          if (!isCurrentPlaybackRequest(requestToken, song.id)) {
+            if (activeAudio.dataset.songId === song.id) {
+              resetAudioDeck(activeAudio);
+            }
+          }
+        })
+        .catch(() => {});
     } else if (!isSameSong && activeAudio.preload !== "auto") {
       activeAudio.preload = "auto";
     }
@@ -3088,6 +3126,7 @@ function App() {
       }
       void activeAudio.play().catch(() => {});
     } else {
+      nextPlaybackRequestToken();
       stopCrossfade();
       activeAudio.pause();
     }
@@ -3457,12 +3496,12 @@ function App() {
       });
       mediaSession.setActionHandler("previoustrack", () => {
         if (!radioPlaybackLocked()) {
-          selectRelative(-1, true, currentTrackId() || selectedId(), { allowCrossfade: true });
+          selectRelative(-1, true, currentTrackId() || selectedId(), { allowCrossfade: false });
         }
       });
       mediaSession.setActionHandler("nexttrack", () => {
         if (!radioPlaybackLocked()) {
-          selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: true });
+          selectRelative(1, true, currentTrackId() || selectedId(), { allowCrossfade: false });
         }
       });
       mediaSession.setActionHandler("seekbackward", () => adjustSeek(-10));
@@ -3727,6 +3766,7 @@ function App() {
     if (!appOffline()) {
       return;
     }
+    nextPlaybackRequestToken();
     stopCrossfade();
     audioRefs.forEach((audio) => audio?.pause());
     setIsPlaying(false);
@@ -3749,6 +3789,7 @@ function App() {
     removeOnlineListener?.();
     removeOfflineListener?.();
     worker?.terminate();
+    nextPlaybackRequestToken();
     audioRefs.forEach((audio) => audio?.pause());
     if (themeMediaQuery && syncSystemTheme) {
       if (typeof themeMediaQuery.removeEventListener === "function") {
