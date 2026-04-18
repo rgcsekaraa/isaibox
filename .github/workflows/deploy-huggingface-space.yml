@@ -31,6 +31,49 @@ jobs:
             --exclude 'app/data/*.download' \
             --exclude 'app/data/*.previous' \
             packages/isaibox-local/ /tmp/isaibox-space/
+          python - <<'PY'
+          import hashlib
+          import json
+          import pathlib
+          import sys
+          import urllib.request
+
+          root = pathlib.Path("/tmp/isaibox-space")
+          manifest_path = root / "app/data/library-manifest.json"
+          output_path = root / "app/data/masstamilan.duckdb"
+          tmp_path = output_path.with_suffix(".duckdb.download")
+
+          manifest = json.loads(manifest_path.read_text())
+          download_url = manifest.get("download_url")
+          expected_sha = str(manifest.get("sha256") or "").strip().lower()
+          expected_size = int(manifest.get("size") or 0)
+          if not download_url:
+              sys.exit("library-manifest.json is missing download_url")
+
+          output_path.parent.mkdir(parents=True, exist_ok=True)
+          if tmp_path.exists():
+              tmp_path.unlink()
+
+          hasher = hashlib.sha256()
+          with urllib.request.urlopen(download_url, timeout=180) as response:
+              with tmp_path.open("wb") as handle:
+                  while True:
+                      chunk = response.read(1024 * 1024)
+                      if not chunk:
+                          break
+                      handle.write(chunk)
+                      hasher.update(chunk)
+
+          actual_size = tmp_path.stat().st_size
+          actual_sha = hasher.hexdigest().lower()
+          if expected_size and actual_size != expected_size:
+              sys.exit(f"DuckDB size mismatch: expected {expected_size}, got {actual_size}")
+          if expected_sha and actual_sha != expected_sha:
+              sys.exit(f"DuckDB sha mismatch: expected {expected_sha}, got {actual_sha}")
+
+          tmp_path.replace(output_path)
+          print(f"Included DuckDB release asset: {actual_size} bytes")
+          PY
           mv /tmp/isaibox-space/Dockerfile.space /tmp/isaibox-space/Dockerfile
           mv /tmp/isaibox-space/README.space.md /tmp/isaibox-space/README.md
 

@@ -313,7 +313,27 @@ def refresh_runtime_caches_for_db_change() -> None:
         radio_station_cache.clear()
 
 
+def ensure_library_db_available() -> None:
+    db_path = Path(db.DUCKDB_PATH)
+    if db_path.exists() and db_path.stat().st_size > 0:
+        return
+
+    if DB_SYNC_ENABLED and DB_SYNC_MANIFEST_URL:
+        sync_state = sync_duckdb_from_remote(force=True)
+        if db_path.exists() and db_path.stat().st_size > 0:
+            return
+        message = (
+            sync_state.get("message")
+            or sync_state.get("error")
+            or "Library database is not available"
+        )
+        raise RuntimeError(message)
+
+    raise RuntimeError(f"Library database is not available at {db_path}")
+
+
 def get_read_conn():
+    ensure_library_db_available()
     refresh_runtime_caches_for_db_change()
     # DuckDB cannot safely mix read-only and read-write handles to the same
     # live DB file in this process. Use the normal connection mode for reads so
