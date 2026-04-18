@@ -4482,7 +4482,7 @@ function App() {
         </section>
       </Show>
 
-      <section class="border-b border-[var(--line)] px-4 py-3 sm:px-6">
+      <section class="shrink-0 border-b border-[var(--line)] px-4 py-3 sm:px-6">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div class="flex gap-2 overflow-x-auto pb-1 font-mono text-[10px] uppercase tracking-[0.22em] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button type="button" onClick={() => setMainBrowseTab("library")} class={`shrink-0 rounded-full border px-3 py-2 transition sm:border-transparent sm:px-1 sm:py-1 ${mainTab() === "library" ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)] sm:bg-transparent sm:text-[var(--fg)]" : "border-[var(--line)] text-[var(--soft)] hover:border-[var(--fg)] hover:text-[var(--fg)]"}`}>
@@ -6355,7 +6355,7 @@ function App() {
         </Show>
       </section>
 
-      <footer class="relative z-30 border-t border-[var(--line)] bg-[var(--bg)] px-3 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-6">
+      <footer class="relative z-30 shrink-0 border-t border-[var(--line)] bg-[var(--bg)] px-3 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-6">
         <Show when={currentTrackId()}>
         <div class="md:hidden">
           <div class="rounded-[22px] border border-[var(--line)] bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] px-3 py-3 shadow-[0_-12px_40px_rgba(0,0,0,0.25)]">
