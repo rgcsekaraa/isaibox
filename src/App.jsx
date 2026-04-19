@@ -530,6 +530,7 @@ function App() {
   const [favoriteMusicDirectors, setFavoriteMusicDirectors] = createSignal([]);
   const [playlists, setPlaylists] = createSignal([]);
   const [globalPlaylists, setGlobalPlaylists] = createSignal([]);
+  const [playlistsReady, setPlaylistsReady] = createSignal(false);
   const [playlistNameInput, setPlaylistNameInput] = createSignal("");
   const [globalPlaylistNameInput, setGlobalPlaylistNameInput] = createSignal("");
   const [spotifyImportUrl, setSpotifyImportUrl] = createSignal("");
@@ -985,6 +986,16 @@ function App() {
 
   const visibleResults = createMemo(() => {
     const normalizedQuery = normalizeText(query());
+    if (
+      isCompactLayout() &&
+      mainTab() === "library" &&
+      !normalizedQuery &&
+      !movieFilter() &&
+      !artistFilter() &&
+      !musicDirectorFilter()
+    ) {
+      return [];
+    }
     const sourceSongs = movieFilter() || artistFilter() || musicDirectorFilter()
       ? songs()
       : (normalizedQuery ? (results().songs || []) : songs());
@@ -2002,6 +2013,7 @@ function App() {
 
   const refreshAccountState = async () => {
     try {
+      setPlaylistsReady(false);
       setPreferenceStore("pending");
       setPreferencesReady(false);
       const [sessionResponse, playlistsResponse] = await Promise.all([
@@ -2039,6 +2051,7 @@ function App() {
         } else {
           setGlobalPlaylists([]);
         }
+        setPlaylistsReady(true);
         setFavoriteIds([]);
         setFavoriteAlbums([]);
         setFavoriteMusicDirectors([]);
@@ -2155,6 +2168,7 @@ function App() {
         setSelectedPlaylistTarget("");
         setSelectedGlobalPlaylistTarget("");
       }
+      setPlaylistsReady(true);
     } catch {
       setUser(null);
       setFavoriteIds([]);
@@ -2176,6 +2190,7 @@ function App() {
         setPreferenceStore("db");
         setPreferencesReady(true);
       }
+      setPlaylistsReady(true);
     }
   };
 
@@ -5417,7 +5432,7 @@ function App() {
                         </For>
                         <Show when={filteredGlobalPlaylists().length === 0}>
                           <div class="px-1 py-3 text-sm text-[var(--soft)]">
-                            {normalizedPlaylistSearch() ? "No global playlists match." : "Global playlists are still loading."}
+                            {!playlistsReady() ? "Loading playlists..." : normalizedPlaylistSearch() ? "No global playlists match." : "No global playlists available."}
                           </div>
                         </Show>
                       </Show>
@@ -5441,7 +5456,7 @@ function App() {
                         </For>
                         <Show when={filteredUserPlaylists().length === 0}>
                           <div class="px-1 py-3 text-sm text-[var(--soft)]">
-                            {normalizedPlaylistSearch() ? "No personal playlists match." : "Create a personal playlist when needed."}
+                            {!playlistsReady() ? "Loading playlists..." : normalizedPlaylistSearch() ? "No personal playlists match." : "Create a personal playlist when needed."}
                           </div>
                         </Show>
                       </Show>
@@ -5457,7 +5472,7 @@ function App() {
                             <div class="mobile-card flex items-start justify-between gap-3">
                               <div class="min-w-0">
                                 <div class="font-mono text-[10px] uppercase tracking-[0.22em] text-[var(--faint)]">Playlist</div>
-                                <Show when={selectedPlaylistDetail()} fallback={<div class="mt-2 text-lg font-semibold">No playlist selected</div>}>
+                                <Show when={selectedPlaylistDetail()} fallback={<div class="mt-2 text-lg font-semibold">{playlistsReady() ? "No playlist selected" : "Loading playlists..."}</div>}>
                                   {(playlist) => (
                                     <>
                                       <div class="mt-2 truncate text-lg font-semibold">{playlist().name}</div>
@@ -5591,12 +5606,17 @@ function App() {
                                   </div>
                                 </div>
                               </Show>
-                              <Show when={!normalizedPlaylistSearch() && ((mobilePlaylistSection() === "yours" && filteredUserPlaylists().length === 0) || (mobilePlaylistSection() === "global" && filteredGlobalPlaylists().length === 0))}>
+                              <Show when={!normalizedPlaylistSearch() && playlistsReady() && ((mobilePlaylistSection() === "yours" && filteredUserPlaylists().length === 0) || (mobilePlaylistSection() === "global" && filteredGlobalPlaylists().length === 0))}>
                                 <div class="mobile-card text-sm text-[var(--soft)]">
                                   No playlists yet.
                                 </div>
                               </Show>
-                              <Show when={normalizedPlaylistSearch() && ((mobilePlaylistSection() === "yours" && filteredUserPlaylists().length === 0) || (mobilePlaylistSection() === "global" && filteredGlobalPlaylists().length === 0))}>
+                              <Show when={!playlistsReady()}>
+                                <div class="mobile-card text-sm text-[var(--soft)]">
+                                  Loading playlists...
+                                </div>
+                              </Show>
+                              <Show when={normalizedPlaylistSearch() && playlistsReady() && ((mobilePlaylistSection() === "yours" && filteredUserPlaylists().length === 0) || (mobilePlaylistSection() === "global" && filteredGlobalPlaylists().length === 0))}>
                                 <div class="mobile-card text-sm text-[var(--soft)]">
                                   No playlists match that search.
                                 </div>
