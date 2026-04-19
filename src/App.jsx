@@ -968,6 +968,21 @@ function App() {
     }
   };
 
+  const mergeSongsIntoLibrary = (nextSongs) => {
+    if (!Array.isArray(nextSongs) || !nextSongs.length) {
+      return;
+    }
+    setSongs((current) => {
+      const merged = new Map(current.map((song) => [song.id, song]));
+      for (const song of nextSongs) {
+        if (song?.id) {
+          merged.set(song.id, { ...(merged.get(song.id) || {}), ...song });
+        }
+      }
+      return Array.from(merged.values());
+    });
+  };
+
   const visibleResults = createMemo(() => {
     const normalizedQuery = normalizeText(query());
     const sourceSongs = movieFilter() || artistFilter() || musicDirectorFilter()
@@ -1352,7 +1367,34 @@ function App() {
     ]);
   };
 
-  const navigateToMovie = (movie) => {
+  const fetchAlbumSongs = async (payload) => {
+    const params = new URLSearchParams();
+    const albumUrl = String(payload.albumUrl || "").trim();
+    const album = String(payload.album || payload.movie || payload.albumName || "").trim();
+    const year = String(payload.year || "").trim();
+    if (albumUrl) {
+      params.set("albumUrl", albumUrl);
+    }
+    if (album) {
+      params.set("album", album);
+    }
+    if (year) {
+      params.set("year", year);
+    }
+    if (!params.toString()) {
+      return [];
+    }
+    const response = await fetch(`/api/album?${params.toString()}`, { cache: "no-store" });
+    if (!response.ok) {
+      return [];
+    }
+    const albumPayload = await response.json().catch(() => ({}));
+    const albumSongs = Array.isArray(albumPayload.songs) ? albumPayload.songs : [];
+    mergeSongsIntoLibrary(albumSongs);
+    return albumSongs;
+  };
+
+  const navigateToMovie = async (movie) => {
     const payload = typeof movie === "object" && movie !== null
       ? movie
       : { album: String(movie || "").trim(), albumUrl: "", year: "" };
@@ -1364,14 +1406,15 @@ function App() {
       return;
     }
     pushLibraryNavState();
+    const albumSongs = await fetchAlbumSongs(payload);
     setMainTab("library");
     setQuery("");
     setSearchTab("songs");
-    setMovieFilter(nextMovie);
+    setMovieFilter(albumSongs[0] ? albumIdentity(albumSongs[0]) : nextMovie);
     setAlbumFilterMeta({
-      album: String(payload.album || payload.movie || "").trim(),
-      albumUrl: String(payload.albumUrl || "").trim(),
-      year: String(payload.year || "").trim(),
+      album: String(albumSongs[0]?.movie || payload.album || payload.movie || "").trim(),
+      albumUrl: String(albumSongs[0]?.albumUrl || payload.albumUrl || "").trim(),
+      year: String(albumSongs[0]?.year || payload.year || "").trim(),
     });
     setArtistFilter("");
     setMusicDirectorFilter("");
@@ -2717,6 +2760,7 @@ function App() {
       )
     );
     if (cacheLooksFresh) {
+      mergeSongsIntoLibrary(cachedPlaylist.tracks || []);
       setGlobalPlaylistDetail(cachedPlaylist);
       setGlobalPlaylistNameEdit(cachedPlaylist.name || "");
       setPlaylistDetailLoading(false);
@@ -2725,6 +2769,7 @@ function App() {
     }
 
     if (cachedPlaylist) {
+      mergeSongsIntoLibrary(cachedPlaylist.tracks || []);
       setGlobalPlaylistDetail(cachedPlaylist);
       setGlobalPlaylistNameEdit(cachedPlaylist.name || "");
     }
@@ -2766,6 +2811,7 @@ function App() {
         setPlaylistDetailError("Playlist payload was invalid");
         return;
       }
+      mergeSongsIntoLibrary(nextPlaylist.tracks || []);
       setPlaylistDetailCache((current) => {
         const next = new Map(current);
         next.set(nextPlaylist.id, nextPlaylist);
@@ -2999,6 +3045,12 @@ function App() {
     if (repeatMode() === "album") return "Album loop";
     if (repeatMode() === "random") return "Random";
     return "Normal";
+  });
+  const playbackModeShortLabel = createMemo(() => {
+    if (repeatMode() === "one") return "One";
+    if (repeatMode() === "album") return "Album";
+    if (repeatMode() === "random") return "Random";
+    return "Off";
   });
 
   const playbackSpeedLabel = createMemo(() => `Playback speed: ${formatPlaybackSpeed(playbackSpeed())}`);
@@ -3435,6 +3487,7 @@ function App() {
           if (requestToken !== mobileSearchRequestToken) {
             return;
           }
+          mergeSongsIntoLibrary(payload.songs || []);
           setResults({
             songs: payload.songs || [],
             albums: payload.albums || [],
@@ -6836,13 +6889,14 @@ function App() {
                   }}
                   disabled={radioPlaybackLocked()}
                   aria-label={`Playback mode: ${playbackModeLabel()}`}
-                  class={`inline-flex h-9 w-9 items-center justify-center rounded-full border ${
+                  class={`inline-flex h-9 min-w-[5rem] items-center justify-center gap-1.5 rounded-full border px-3 ${
                     repeatMode() !== "off" && !radioPlaybackLocked()
                       ? "border-[var(--fg)] bg-[var(--fg)] text-[var(--bg)]"
                       : "border-[var(--line)] text-[var(--soft)]"
                   } disabled:opacity-40`}
                 >
                   {playbackModeIcon()}
+                  <span class="font-mono text-[10px] uppercase tracking-[0.12em]">{playbackModeShortLabel()}</span>
                 </button>
                 <button
                   type="button"

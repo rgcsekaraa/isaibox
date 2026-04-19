@@ -198,6 +198,50 @@ def search_library():
     })
 
 
+@app.get("/api/album")
+def album_tracks():
+    album_url = (request.args.get("albumUrl") or "").strip()
+    album_name = (request.args.get("album") or request.args.get("movie") or "").strip()
+    year = (request.args.get("year") or "").strip()
+
+    filters = ["url_320kbps IS NOT NULL", "url_320kbps != ''"]
+    params = []
+    if album_url:
+        filters.append("album_url = ?")
+        params.append(album_url)
+    elif album_name:
+        filters.append("lower(coalesce(movie_name, '')) = ?")
+        params.append(album_name.lower())
+        if year:
+            filters.append("coalesce(year, '') = ?")
+            params.append(year)
+    else:
+        return json_response({"songs": []})
+
+    with get_read_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT
+                song_id,
+                movie_name,
+                track_name,
+                singers,
+                music_director,
+                year,
+                track_number,
+                url_320kbps,
+                updated_at,
+                album_url
+            FROM songs
+            WHERE {" AND ".join(filters)}
+            ORDER BY track_number, track_name
+            """,
+            params,
+        ).fetchall()
+
+    return json_response({"songs": serialize_song_rows(rows)})
+
+
 @app.post("/api/warmup")
 def warmup():
     payload = request.get_json(silent=True) or {}
