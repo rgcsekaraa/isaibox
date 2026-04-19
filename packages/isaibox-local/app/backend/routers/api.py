@@ -57,9 +57,16 @@ def stats():
 
 @app.get("/api/library")
 def library():
+    limit_raw = request.args.get("limit", "")
+    try:
+        limit = max(0, min(1000, int(limit_raw))) if limit_raw else 0
+    except (TypeError, ValueError):
+        limit = 0
+    limit_clause = "LIMIT ?" if limit else ""
+    params = [limit] if limit else []
     with get_read_conn() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT
                 song_id,
                 movie_name,
@@ -74,26 +81,121 @@ def library():
             FROM songs
             WHERE url_320kbps IS NOT NULL AND url_320kbps != ''
             ORDER BY TRY_CAST(year AS INTEGER) DESC NULLS LAST, movie_name, track_number
-            """
+            {limit_clause}
+            """,
+            params,
         ).fetchall()
 
-    songs = [
-        {
-            "id": row[0],
-            "movie": row[1] or "",
-            "track": row[2] or "",
-            "singers": row[3] or "",
-            "musicDirector": row[4] or "",
-            "year": row[5] or "",
-            "trackNumber": row[6] or 0,
-            "audioUrl": f"/api/stream/{row[0]}",
-            "updatedAt": row[8].isoformat() if row[8] else "",
-            "albumUrl": row[9] or "",
-        }
+    return json_response({"songs": serialize_song_rows(rows)})
+
+
+def serialize_song_rows(rows):
+    return [
+        serialize_song_row(row)
         for row in rows
     ]
 
-    return json_response({"songs": songs})
+
+def serialize_song_row(row):
+    return {
+        "id": row[0],
+        "movie": row[1] or "",
+        "track": row[2] or "",
+        "singers": row[3] or "",
+        "musicDirector": row[4] or "",
+        "year": row[5] or "",
+        "trackNumber": row[6] or 0,
+        "audioUrl": f"/api/stream/{row[0]}",
+        "updatedAt": row[8].isoformat() if row[8] else "",
+        "albumUrl": row[9] or "",
+    }
+
+
+def build_library_groups(songs):
+    album_groups = {}
+    artist_groups = {}
+    for song in songs[:600]:
+        album_name = (song.get("movie") or "").strip()
+        if album_name:
+            album = album_groups.setdefault(album_name, {
+                "album": album_name,
+                "albumUrl": song.get("albumUrl") or "",
+                "musicDirector": song.get("musicDirector") or "",
+                "year": song.get("year") or "",
+                "count": 0,
+            })
+            album["count"] += 1
+        for singer in re.split(r",|&|/| feat\. | featuring ", song.get("singers") or "", flags=re.IGNORECASE):
+            singer = singer.strip()
+            if not singer:
+                continue
+            artist = artist_groups.setdefault(singer, {"artist": singer, "count": 0})
+            artist["count"] += 1
+    return {
+        "albums": sorted(album_groups.values(), key=lambda item: (-item["count"], item["album"]))[:24],
+        "artists": sorted(artist_groups.values(), key=lambda item: (-item["count"], item["artist"]))[:24],
+    }
+
+
+@app.get("/api/search")
+def search_library():
+    query = (request.args.get("q") or "").strip().lower()
+    limit_raw = request.args.get("limit", 240)
+    try:
+        limit = max(1, min(500, int(limit_raw)))
+    except (TypeError, ValueError):
+        limit = 240
+
+    params = []
+    where_query = ""
+    if query:
+        needle = f"%{query}%"
+        where_query = """
+          AND (
+            lower(coalesce(track_name, '')) LIKE ?
+            OR lower(coalesce(movie_name, '')) LIKE ?
+            OR lower(coalesce(singers, '')) LIKE ?
+            OR lower(coalesce(music_director, '')) LIKE ?
+            OR lower(coalesce(year, '')) LIKE ?
+          )
+        """
+        params.extend([needle, needle, needle, needle, needle])
+    params.append(limit)
+
+    with get_read_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT
+                song_id,
+                movie_name,
+                track_name,
+                singers,
+                music_director,
+                year,
+                track_number,
+                url_320kbps,
+                updated_at,
+                album_url
+            FROM songs
+            WHERE url_320kbps IS NOT NULL
+              AND url_320kbps != ''
+              {where_query}
+            ORDER BY TRY_CAST(year AS INTEGER) DESC NULLS LAST, movie_name, track_number
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+
+    songs = [
+        serialize_song_row(row)
+        for row in rows
+    ]
+    groups = build_library_groups(songs)
+    return json_response({
+        "songs": songs[:200],
+        "albums": groups["albums"],
+        "artists": groups["artists"],
+    })
 
 
 @app.post("/api/warmup")

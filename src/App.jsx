@@ -623,6 +623,7 @@ function App() {
   let crossfadeToken = 0;
   let playbackRequestToken = 0;
   let playlistDetailRequestToken = 0;
+  let mobileSearchRequestToken = 0;
   let playlistDetailAbortController = null;
   let activeDeckIndex = 0;
   let fadingAudio = null;
@@ -714,9 +715,10 @@ function App() {
   });
 
   const refreshLibrarySnapshot = async () => {
+    const libraryUrl = isCompactLayout() ? "/api/library?limit=500" : "/api/library";
     const [statsResponse, songsResponse] = await Promise.all([
       fetch("/api/stats", { cache: "no-store" }),
-      fetch("/api/library", { cache: "no-store" }),
+      fetch(libraryUrl, { cache: "no-store" }),
     ]);
     if (!statsResponse.ok || !songsResponse.ok) {
       throw new Error("Unable to refresh library");
@@ -3407,7 +3409,36 @@ function App() {
 
   const sendSearch = (value) => {
     if (isCompactLayout()) {
-      setResults(buildInlineSearchPayload(value));
+      const trimmed = String(value || "").trim();
+      if (!trimmed) {
+        setResults(buildInlineSearchPayload(""));
+        return;
+      }
+      const requestToken = mobileSearchRequestToken + 1;
+      mobileSearchRequestToken = requestToken;
+      const params = new URLSearchParams({ q: trimmed, limit: "240" });
+      void fetch(`/api/search?${params.toString()}`, { cache: "no-store" })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Search failed");
+          }
+          return response.json();
+        })
+        .then((payload) => {
+          if (requestToken !== mobileSearchRequestToken) {
+            return;
+          }
+          setResults({
+            songs: payload.songs || [],
+            albums: payload.albums || [],
+            artists: payload.artists || [],
+          });
+        })
+        .catch(() => {
+          if (requestToken === mobileSearchRequestToken) {
+            setResults(buildInlineSearchPayload(trimmed));
+          }
+        });
       return;
     }
     if (!worker) {
@@ -3679,7 +3710,7 @@ function App() {
       const [configResponse, statsResponse, songsResponse] = await Promise.all([
         fetch("/api/config"),
         fetch("/api/stats"),
-        fetch("/api/library"),
+        fetch(isCompactLayout() ? "/api/library?limit=500" : "/api/library"),
       ]);
 
       if (!configResponse.ok || !statsResponse.ok || !songsResponse.ok) {
