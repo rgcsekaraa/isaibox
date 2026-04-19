@@ -1281,6 +1281,51 @@ function App() {
   const selectedIndex = createMemo(() => sortedActiveSongList().findIndex((song) => song.id === selectedId()));
   const favoriteIdSet = createMemo(() => new Set(favoriteIds()));
   const loadingDots = createMemo(() => ".".repeat((loadingFrame() % 3) + 1));
+  const buildInlineSearchPayload = (value) => {
+    const normalizedQuery = normalizeText(value);
+    const matchedSongs = normalizedQuery
+      ? songs()
+          .filter((song) => [
+            song.track,
+            song.movie,
+            song.musicDirector,
+            song.singers,
+            song.year,
+          ].some((field) => matchesNormalizedField(field, normalizedQuery)))
+          .slice(0, 240)
+      : songs().slice(0, 240);
+
+    const albumGroups = new Map();
+    for (const song of matchedSongs.slice(0, 600)) {
+      const albumName = String(song.movie || "").trim();
+      if (!albumName) continue;
+      const existing = albumGroups.get(albumName) || {
+        album: albumName,
+        albumUrl: song.albumUrl || "",
+        albumKey: albumIdentity(song),
+        musicDirector: song.musicDirector || "",
+        year: song.year || "",
+        count: 0,
+      };
+      existing.count += 1;
+      albumGroups.set(albumName, existing);
+    }
+
+    const artistGroups = new Map();
+    for (const song of matchedSongs.slice(0, 600)) {
+      for (const singer of (song.singers || "").split(/,|&|\/| feat\. | featuring /i).map((item) => item.trim()).filter(Boolean)) {
+        const existing = artistGroups.get(singer) || { artist: singer, count: 0 };
+        existing.count += 1;
+        artistGroups.set(singer, existing);
+      }
+    }
+
+    return {
+      songs: matchedSongs.slice(0, 200),
+      albums: Array.from(albumGroups.values()).sort((left, right) => right.count - left.count || left.album.localeCompare(right.album)).slice(0, 24),
+      artists: Array.from(artistGroups.values()).sort((left, right) => right.count - left.count || left.artist.localeCompare(right.artist)).slice(0, 24),
+    };
+  };
   const pushLibraryNavState = () => {
     const playlistDetail = globalPlaylistDetail();
     setLibraryNavStack((current) => [
@@ -3361,6 +3406,10 @@ function App() {
   };
 
   const sendSearch = (value) => {
+    if (isCompactLayout()) {
+      setResults(buildInlineSearchPayload(value));
+      return;
+    }
     if (!worker) {
       return;
     }
@@ -3385,27 +3434,34 @@ function App() {
       themeMediaQuery.addListener(syncSystemTheme);
     }
 
-    worker = new Worker(new URL("./search.worker.js", import.meta.url), { type: "module" });
-
-    worker.onmessage = (event) => {
-      if (event.data.type !== "results") {
+    const initializeSearchWorker = () => {
+      if (worker || isCompactLayout()) {
         return;
       }
-      if (event.data.requestId && event.data.requestId !== pendingQueryId()) {
-        return;
-      }
-      setResults(event.data.payload);
-      if (query().trim()) {
-        if (movieFilter() && !event.data.payload.songs.some((song) => albumIdentity(song) === movieFilter())) {
-          setMovieFilter("");
-          setAlbumFilterMeta(null);
+      worker = new Worker(new URL("./search.worker.js", import.meta.url), { type: "module" });
+      worker.onmessage = (event) => {
+        if (event.data.type !== "results") {
+          return;
         }
-        if (artistFilter() && !event.data.payload.songs.some((song) => normalizeText(song.singers).includes(normalizeText(artistFilter())))) {
-          setArtistFilter("");
+        if (event.data.requestId && event.data.requestId !== pendingQueryId()) {
+          return;
         }
-        if (musicDirectorFilter() && !event.data.payload.songs.some((song) => normalizeText(song.musicDirector) === normalizeText(musicDirectorFilter()))) {
-          setMusicDirectorFilter("");
+        setResults(event.data.payload);
+        if (query().trim()) {
+          if (movieFilter() && !event.data.payload.songs.some((song) => albumIdentity(song) === movieFilter())) {
+            setMovieFilter("");
+            setAlbumFilterMeta(null);
+          }
+          if (artistFilter() && !event.data.payload.songs.some((song) => normalizeText(song.singers).includes(normalizeText(artistFilter())))) {
+            setArtistFilter("");
+          }
+          if (musicDirectorFilter() && !event.data.payload.songs.some((song) => normalizeText(song.musicDirector) === normalizeText(musicDirectorFilter()))) {
+            setMusicDirectorFilter("");
+          }
         }
+      };
+      if (songs().length) {
+        worker.postMessage({ type: "index", payload: songs() });
       }
     };
 
@@ -3602,6 +3658,7 @@ function App() {
     window.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("resize", onResize);
     onResize();
+    initializeSearchWorker();
     const onBrowserOnline = () => {
       void verifyAppOnline();
     };
@@ -3647,10 +3704,13 @@ function App() {
       setResults({ songs: initialSongs.slice(0, 200), albums: [], artists: [] });
       setSelectedId(initialSongs[0]?.id || "");
       setCurrentTrackId(initialSongs[0]?.id || "");
-      worker.postMessage({ type: "index", payload: initialSongs });
-      prefetchSongIds(initialSongs.slice(0, 12).map((song) => song.id));
+      if (!isCompactLayout()) {
+        initializeSearchWorker();
+        worker?.postMessage({ type: "index", payload: initialSongs });
+        prefetchSongIds(initialSongs.slice(0, 12).map((song) => song.id));
+      }
 
-      if (initialSongs[0] && getActiveAudio()) {
+      if (!isCompactLayout() && initialSongs[0] && getActiveAudio()) {
         const version = encodeURIComponent(initialSongs[0].updatedAt || initialSongs[0].id);
         getActiveAudio().dataset.songId = initialSongs[0].id;
         getActiveAudio().src = `${initialSongs[0].audioUrl}?v=${version}`;
