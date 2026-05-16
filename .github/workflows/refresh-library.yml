@@ -162,15 +162,29 @@ jobs:
         shell: bash
         env:
           PUBLISH_REF: ${{ github.event.inputs.publish_ref || 'main' }}
+          MANIFEST_PATH: packages/isaibox-local/app/data/library-manifest.json
         run: |
           for attempt in 1 2 3 4 5; do
             if git push origin "HEAD:${PUBLISH_REF}"; then
               echo "Pushed on attempt ${attempt}."
               exit 0
             fi
-            echo "Push rejected on attempt ${attempt}; rebasing onto origin/${PUBLISH_REF}."
+            echo "Push rejected on attempt ${attempt}; reconciling with origin/${PUBLISH_REF}."
             git fetch origin "${PUBLISH_REF}"
-            git rebase "origin/${PUBLISH_REF}"
+            # Try a clean rebase keeping our manifest version on conflict.
+            if ! git rebase -X theirs "origin/${PUBLISH_REF}"; then
+              echo "Rebase failed; falling back to reset + reapply of ${MANIFEST_PATH}."
+              git rebase --abort 2>/dev/null || true
+              cp "${MANIFEST_PATH}" /tmp/library-manifest.keep.json
+              git reset --hard "origin/${PUBLISH_REF}"
+              cp /tmp/library-manifest.keep.json "${MANIFEST_PATH}"
+              if git diff --quiet -- "${MANIFEST_PATH}"; then
+                echo "Remote already has our manifest; nothing to push."
+                exit 0
+              fi
+              git add "${MANIFEST_PATH}"
+              git commit -m "chore(data): refresh DuckDB library"
+            fi
             sleep 5
           done
           echo "Failed to push after 5 attempts." >&2

@@ -41,6 +41,7 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 LOCAL_DB_MANIFEST_PATH = ROOT / "data" / "library-manifest.json"
 DB_SYNC_STATE_PATH = ROOT / "data" / "db-sync-state.json"
 GITHUB_ISSUES_URL = "https://github.com/rgcsekaraa/isaibox/issues"
+GLOBAL_PLAYLIST_WRITE_LOCK = threading.Lock()
 
 
 def load_local_env() -> None:
@@ -1079,7 +1080,7 @@ def create_or_update_global_playlist(
     source: str,
     source_url: str,
 ) -> dict:
-    with db.get_conn() as conn:
+    with GLOBAL_PLAYLIST_WRITE_LOCK, db.get_conn() as conn:
         cleaned_song_ids = playlist_eligible_song_ids(conn, song_ids)
         if not cleaned_song_ids:
             raise ValueError("No eligible songs available for playlist")
