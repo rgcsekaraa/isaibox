@@ -7,6 +7,7 @@ const SORT_OPTIONS = [
   { value: "title", label: "Title" },
   { value: "year", label: "Year" },
 ];
+const SKELETON_ROWS = Array.from({ length: 10 });
 
 function LoadingState(props) {
   return (
@@ -122,19 +123,18 @@ export function LibraryPage(props) {
             <Show when={isAlbum()}>
               <div class="pl-kicker">Album</div>
             </Show>
-            <h1 class="pl-title">{playlist().name}</h1>
+            <div class="pl-title-line">
+              <h1 class="pl-title">{playlist().name}</h1>
+              <Show when={isAlbum() && ctx.activeAlbumTracks().length > 0}>
+                <button class="btn-secondary album-play-btn" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks())}>
+                  <Icon name="play" size={13} /><span>Play</span>
+                </button>
+              </Show>
+            </div>
             <Show when={isSearch()}>
               <div class="pl-search-note">Showing matches for "{ctx.songSearch()}"</div>
             </Show>
           </div>
-          <Show when={isAlbum()}>
-            <div class="pl-header-actions">
-              <button class="btn-secondary" onClick={() => ctx.closeAlbum()}>Back</button>
-              <button class="btn-primary" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks())}>
-                <Icon name="play" size={13} /><span>Play Album</span>
-              </button>
-            </div>
-          </Show>
           <div class="pl-tools">
             <Show when={hasScopedTracks()}>
               <div class="track-scope-search">
@@ -169,6 +169,23 @@ export function LibraryPage(props) {
           <div class="t-actions" />
         </div>
         <div class="track-body">
+          <Show when={(ctx.loading() || ctx.playlistLoading()) && ctx.filteredTracks().length === 0}>
+            <div class="track-skeleton-list" aria-hidden="true">
+              <For each={SKELETON_ROWS}>
+                {() => (
+                  <div class={`track-row skeleton ${ctx.density()}`}>
+                    <div class="t-num skel" />
+                    <div class="t-title"><span class="skel skel-title" /></div>
+                    <div class="t-movie"><span class="skel skel-cell" /></div>
+                    <div class="t-director"><span class="skel skel-cell wide" /></div>
+                    <div class="t-singer"><span class="skel skel-cell wide" /></div>
+                    <div class="t-year"><span class="skel skel-year" /></div>
+                    <div class="t-actions" />
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
           <For each={ctx.filteredTracks()}>
             {(t) => (
               <TrackRow

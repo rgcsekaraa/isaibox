@@ -112,6 +112,7 @@ export function App() {
   // Player state
   const [currentN, setCurrentN] = createSignal(0);
   const [isPlaying, setIsPlaying] = createSignal(false);
+  const [audioLoading, setAudioLoading] = createSignal(false);
   const [position, setPosition] = createSignal(0);
   const [duration, setDuration] = createSignal(0);
   const [shuffle, setShuffle] = createSignal(false);
@@ -741,12 +742,18 @@ export function App() {
     const track = currentTrack();
     if (!audioEl || !track?.audioUrl) return;
     if (audioEl.src !== new URL(track.audioUrl, window.location.href).href) {
+      setAudioLoading(isPlaying());
       audioEl.src = track.audioUrl;
       audioEl.load();
     }
     if (isPlaying()) {
-      audioEl.play().catch(() => setIsPlaying(false));
+      setAudioLoading(true);
+      audioEl.play().then(() => setAudioLoading(false)).catch(() => {
+        setAudioLoading(false);
+        setIsPlaying(false);
+      });
     } else {
+      setAudioLoading(false);
       audioEl.pause();
     }
   });
@@ -774,7 +781,7 @@ export function App() {
     sort, setSort,
     filterMode, setFilterMode,
     density,
-    currentN, isPlaying,
+    currentN, isPlaying, audioLoading,
     shuffle, setShuffle,
     repeat,
     speed, cycleSpeed,
@@ -840,6 +847,7 @@ export function App() {
                   playlistSections={playlistSections()}
                   playlistSearch={playlistSearch()}
                   setPlaylistSearch={setPlaylistSearch}
+                  loading={loading()}
                   onCreatePlaylist={openCreatePlaylist}
                 />
               </Show>
@@ -852,11 +860,41 @@ export function App() {
               </section>
               <QueuePanel ctx={ctx} />
             </main>
-            <Show when={currentTrack()}>
+            <Show
+              when={currentTrack()}
+              fallback={
+                <footer class="dock dock-loading" aria-label="Loading player">
+                  <div class="dock-grid">
+                    <div class="dock-left">
+                      <div class="dock-meta">
+                        <div class="skel dock-skel-title" />
+                        <div class="skel dock-skel-sub" />
+                      </div>
+                    </div>
+                    <div class="dock-center">
+                      <div class="dock-transport">
+                        <span class="skel dock-skel-btn" />
+                        <span class="skel dock-skel-play" />
+                        <span class="skel dock-skel-btn" />
+                      </div>
+                      <div class="dock-scrub-row">
+                        <span class="dock-time mono">0:00</span>
+                        <div class="skel dock-skel-scrub" />
+                        <span class="dock-time mono">0:00</span>
+                      </div>
+                    </div>
+                    <div class="dock-right">
+                      <Icon name="spinner" size={16} />
+                    </div>
+                  </div>
+                </footer>
+              }
+            >
               {(track) => (
                 <NowPlayingDock
                   track={track()}
                   isPlaying={isPlaying()}
+                  audioLoading={audioLoading()}
                   setIsPlaying={setIsPlaying}
                   position={position()}
                   duration={duration()}
@@ -932,6 +970,7 @@ export function App() {
             <MiniPlayer
               track={track()}
               isPlaying={isPlaying()}
+              audioLoading={audioLoading()}
               setIsPlaying={setIsPlaying}
               position={position()}
               duration={duration()}
@@ -950,6 +989,7 @@ export function App() {
               <FullPlayer
                 track={track()}
                 isPlaying={isPlaying()}
+                audioLoading={audioLoading()}
                 setIsPlaying={setIsPlaying}
                 position={position()}
                 duration={duration()}
@@ -975,7 +1015,19 @@ export function App() {
       </Show>
       <audio
         ref={audioEl}
+        preload="metadata"
+        onLoadStart={() => {
+          if (isPlaying()) setAudioLoading(true);
+        }}
         onLoadedMetadata={() => setDuration(Number.isFinite(audioEl.duration) ? audioEl.duration : 0)}
+        onCanPlay={() => setAudioLoading(false)}
+        onPlaying={() => setAudioLoading(false)}
+        onWaiting={() => {
+          if (isPlaying()) setAudioLoading(true);
+        }}
+        onStalled={() => {
+          if (isPlaying()) setAudioLoading(true);
+        }}
         onTimeUpdate={() => setPosition(audioEl.currentTime || 0)}
         onEnded={() => {
           if (repeat() === "one") {
@@ -986,7 +1038,8 @@ export function App() {
           }
         }}
         onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
+        onPause={() => { setIsPlaying(false); setAudioLoading(false); }}
+        onError={() => { setAudioLoading(false); setIsPlaying(false); }}
       />
       <Show when={message()}>
         <div class="app-toast">{message()}</div>

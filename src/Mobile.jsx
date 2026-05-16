@@ -72,6 +72,7 @@ const TAB_ITEMS = [
   { id: "Recents", label: "Recents", icon: "clock" },
   { id: "Favorites", label: "Likes", icon: "heart" },
 ];
+const MOBILE_SKELETON_ITEMS = Array.from({ length: 7 });
 
 export function MobileBottomTabs(props) {
   return (
@@ -159,7 +160,19 @@ export function MobileLibraryPage(props) {
           );
         }}
       </For>
-      <Show when={ctx.loading()}>
+      <Show when={ctx.loading() && sections().every((section) => section.items.length === 0)}>
+        <div class="m-skeleton-list" aria-hidden="true">
+          <For each={MOBILE_SKELETON_ITEMS}>
+            {() => (
+              <div class="m-pl-item skeleton">
+                <div class="m-pl-meta">
+                  <div class="skel m-skel-title" />
+                  <div class="skel m-skel-sub" />
+                </div>
+              </div>
+            )}
+          </For>
+        </div>
         <MobileLoadingState text="Loading library..." />
       </Show>
       <Show when={!ctx.loading() && ctx.playlistSearch() && sections().every((section) => filter(section.items).length === 0)}>
@@ -221,8 +234,8 @@ export function MobilePlaylistDetail(props) {
           </button>
         </div>
         <Show when={isAlbum() && filteredTracks().length > 0}>
-          <button class="btn-primary m-play-album" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks())}>
-            <Icon name="play" size={13} /><span>Play Album</span>
+          <button class="btn-secondary m-play-album" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks())}>
+            <Icon name="play" size={13} /><span>Play</span>
           </button>
         </Show>
         <div class="m-detail-controlbar">
@@ -294,6 +307,24 @@ export function MobilePlaylistDetail(props) {
             </div>
           )}
         </For>
+        <Show when={(ctx.loading() || ctx.playlistLoading()) && filteredTracks().length === 0}>
+          <div class="m-track-skeleton-list" aria-hidden="true">
+            <For each={MOBILE_SKELETON_ITEMS}>
+              {() => (
+                <div class="m-track-row skeleton">
+                  <div class="m-tr-meta">
+                    <div class="skel m-skel-title" />
+                    <div class="skel m-skel-sub wide" />
+                  </div>
+                  <div class="m-tr-actions">
+                    <span class="skel m-skel-icon" />
+                    <span class="skel m-skel-icon" />
+                  </div>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
         <Show when={filteredTracks().length === 0}>
           <Show
             when={ctx.loading() || ctx.playlistLoading()}

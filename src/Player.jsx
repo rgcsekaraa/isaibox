@@ -97,8 +97,10 @@ export function NowPlayingDock(props) {
               <Icon name="shuffle" size={15} />
             </button>
             <button class="tr-btn" onClick={() => props.onPrev()}><Icon name="prev" size={17} /></button>
-            <button class="tr-play" onClick={() => props.setIsPlaying(!props.isPlaying)}>
-              <Icon name={props.isPlaying ? "pause" : "play"} size={16} />
+            <button class="tr-play" classList={{ loading: props.audioLoading }} onClick={() => props.setIsPlaying(!props.isPlaying)}>
+              <Show when={props.audioLoading} fallback={<Icon name={props.isPlaying ? "pause" : "play"} size={16} />}>
+                <Icon name="spinner" size={17} />
+              </Show>
             </button>
             <button class="tr-btn" onClick={() => props.onNext()}><Icon name="next" size={17} /></button>
             <button class="tr-btn" classList={{ active: props.repeat !== "off" }} onClick={() => props.cycleRepeat()}>
@@ -198,8 +200,10 @@ export function MiniPlayer(props) {
           <div class="mini-sub">{props.track.singer}</div>
         </div>
         <div class="mini-actions" onClick={(e) => e.stopPropagation()}>
-          <button class="mini-btn" onClick={() => props.setIsPlaying(!props.isPlaying)}>
-            <Icon name={props.isPlaying ? "pause" : "play"} size={18} />
+          <button class="mini-btn" classList={{ loading: props.audioLoading }} onClick={() => props.setIsPlaying(!props.isPlaying)}>
+            <Show when={props.audioLoading} fallback={<Icon name={props.isPlaying ? "pause" : "play"} size={18} />}>
+              <Icon name="spinner" size={18} />
+            </Show>
           </button>
           <button class="mini-btn" onClick={() => props.onNext()}>
             <Icon name="next" size={18} />
@@ -259,8 +263,10 @@ export function FullPlayer(props) {
             <button class="fp-tr-btn" onClick={() => props.onPrev()}>
               <Icon name="prev" size={26} />
             </button>
-            <button class="fp-tr-play" onClick={() => props.setIsPlaying(!props.isPlaying)}>
-              <Icon name={props.isPlaying ? "pause" : "play"} size={22} />
+            <button class="fp-tr-play" classList={{ loading: props.audioLoading }} onClick={() => props.setIsPlaying(!props.isPlaying)}>
+              <Show when={props.audioLoading} fallback={<Icon name={props.isPlaying ? "pause" : "play"} size={22} />}>
+                <Icon name="spinner" size={23} />
+              </Show>
             </button>
             <button class="fp-tr-btn" onClick={() => props.onNext()}>
               <Icon name="next" size={26} />
