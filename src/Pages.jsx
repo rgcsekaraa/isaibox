@@ -308,6 +308,7 @@ export function QueuePanel(props) {
             </div>
 
             <div class="queue-section">
+              <div class="section-label">Now Playing</div>
               <Show
                 when={current()}
                 fallback={<div class="empty">No track loaded</div>}
@@ -327,6 +328,7 @@ export function QueuePanel(props) {
             </div>
 
             <div class="queue-section">
+              <div class="section-label">Up Next · {upcoming().length}</div>
               <Show when={upcoming().length === 0}>
                 <div class="empty">Queue is empty. Add tracks with the + icon.</div>
               </Show>
