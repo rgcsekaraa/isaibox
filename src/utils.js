@@ -78,6 +78,17 @@ const orderedTokenScore = (queryTokens, text) => {
   return penalty;
 };
 
+const fieldScore = (field, fieldCompact, queryCompact, queryTokens, base) => {
+  if (!field || !queryCompact) return null;
+  if (fieldCompact === queryCompact) return base;
+  if (fieldCompact.startsWith(queryCompact)) return base + 6 + fieldCompact.length - queryCompact.length;
+  const compactIndex = fieldCompact.indexOf(queryCompact);
+  if (compactIndex !== -1) return base + 18 + compactIndex;
+  const tokenScore = orderedTokenScore(queryTokens, field);
+  if (tokenScore !== null) return base + 34 + tokenScore;
+  return null;
+};
+
 export const prepareTrackSearch = (track) => {
   const title = normalizeSearchText(track.title);
   const album = normalizeSearchText(track.movie);
@@ -89,8 +100,11 @@ export const prepareTrackSearch = (track) => {
     title,
     titleCompact: title.replace(/\s+/g, ""),
     album,
+    albumCompact: album.replace(/\s+/g, ""),
     singer,
+    singerCompact: singer.replace(/\s+/g, ""),
     director,
+    directorCompact: director.replace(/\s+/g, ""),
     year,
     combined,
     combinedCompact: combined.replace(/\s+/g, ""),
@@ -114,12 +128,13 @@ export const scoreTrackSearch = (track, query) => {
   const search = track.search || track._search || prepareTrackSearch(track);
   const { queryCompact, queryTokens } = preparedQuery;
 
-  if (search.titleCompact === queryCompact) return 0;
-  if (search.titleCompact.startsWith(queryCompact)) return 5 + search.titleCompact.length - queryCompact.length;
-  if (search.titleCompact.includes(queryCompact)) return 15 + search.titleCompact.indexOf(queryCompact);
-
-  const titleTokenScore = orderedTokenScore(queryTokens, search.title);
-  if (titleTokenScore !== null) return 30 + titleTokenScore;
+  const directScores = [
+    fieldScore(search.title, search.titleCompact, queryCompact, queryTokens, 0),
+    fieldScore(search.album, search.albumCompact, queryCompact, queryTokens, 22),
+    fieldScore(search.director, search.directorCompact, queryCompact, queryTokens, 26),
+    fieldScore(search.singer, search.singerCompact, queryCompact, queryTokens, 32),
+  ].filter((score) => score !== null);
+  if (directScores.length) return Math.min(...directScores);
 
   if (search.combinedCompact.includes(queryCompact)) return 70 + search.combinedCompact.indexOf(queryCompact);
 

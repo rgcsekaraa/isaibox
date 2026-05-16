@@ -294,7 +294,6 @@ export function QueuePanel(props) {
     <aside class="queue-panel" classList={{ collapsed: ctx.queueCollapsed() }}>
       <Show when={!ctx.queueCollapsed()}>
             <div class="page-header">
-              <div class="page-kicker">Now playing & up next</div>
               <div class="page-title-row queue-title-row">
                 <h1 class="page-title">Queue</h1>
                 <div class="queue-header-actions">
@@ -309,7 +308,6 @@ export function QueuePanel(props) {
             </div>
 
             <div class="queue-section">
-              <div class="section-label">Now Playing</div>
               <Show
                 when={current()}
                 fallback={<div class="empty">No track loaded</div>}
@@ -329,7 +327,6 @@ export function QueuePanel(props) {
             </div>
 
             <div class="queue-section">
-              <div class="section-label">Up Next · {upcoming().length}</div>
               <Show when={upcoming().length === 0}>
                 <div class="empty">Queue is empty. Add tracks with the + icon.</div>
               </Show>

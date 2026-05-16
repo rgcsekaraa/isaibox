@@ -7,58 +7,88 @@ export function Scrubber(props) {
   let trackEl;
   const [dragging, setDragging] = createSignal(false);
   const [hoverPct, setHoverPct] = createSignal(null);
-  let listening = false;
+  let activePointerId = null;
 
-  const pct = () => (props.max > 0 ? (props.value / props.max) * 100 : 0);
+  const max = () => {
+    const value = Number(props.max);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  };
+
+  const pct = () => {
+    const limit = max();
+    if (!limit) return 0;
+    return Math.max(0, Math.min(100, (Number(props.value || 0) / limit) * 100));
+  };
 
   const setFromX = (clientX) => {
     if (!trackEl) return;
+    const limit = max();
+    if (!limit) return;
     const rect = trackEl.getBoundingClientRect();
+    if (!rect.width) return;
     const x = Math.max(0, Math.min(rect.width, clientX - rect.left));
-    props.onChange((x / rect.width) * props.max);
+    props.onChange((x / rect.width) * limit);
   };
 
-  const removeDragListeners = () => {
-    if (!listening) return;
-    window.removeEventListener("mousemove", onMove);
-    window.removeEventListener("mouseup", onUp);
-    window.removeEventListener("touchmove", onMove);
-    window.removeEventListener("touchend", onUp);
-    window.removeEventListener("touchcancel", onUp);
-    listening = false;
+  const setHoverFromX = (clientX) => {
+    if (!trackEl || dragging()) return;
+    const rect = trackEl.getBoundingClientRect();
+    if (!rect.width) return;
+    const percent = ((clientX - rect.left) / rect.width) * 100;
+    setHoverPct(Math.max(0, Math.min(100, percent)));
   };
 
-  const onMove = (e) => {
-    if (!dragging()) return;
-    setFromX(e.touches ? e.touches[0].clientX : e.clientX);
-  };
-  const onUp = () => {
+  const onPointerDown = (event) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    activePointerId = event.pointerId;
     setDragging(false);
-    removeDragListeners();
+    setDragging(true);
+    trackEl?.setPointerCapture?.(event.pointerId);
+    setFromX(event.clientX);
   };
 
-  const ensureDragListeners = () => {
-    if (listening) return;
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    window.addEventListener("touchmove", onMove, { passive: true });
-    window.addEventListener("touchend", onUp);
-    window.addEventListener("touchcancel", onUp);
-    listening = true;
+  const onPointerMove = (event) => {
+    if (dragging()) {
+      if (activePointerId !== null && event.pointerId !== activePointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setFromX(event.clientX);
+      return;
+    }
+    setHoverFromX(event.clientX);
   };
-  onCleanup(removeDragListeners);
+
+  const finishDrag = (event) => {
+    if (activePointerId !== null && event?.pointerId !== activePointerId) return;
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if (activePointerId !== null) {
+      trackEl?.releasePointerCapture?.(activePointerId);
+    }
+    activePointerId = null;
+    setDragging(false);
+    setHoverPct(null);
+  };
+
+  onCleanup(() => {
+    if (activePointerId !== null) {
+      trackEl?.releasePointerCapture?.(activePointerId);
+    }
+  });
 
   return (
     <div
       class={`scrubber ${props.size || "default"}`}
       ref={trackEl}
-      onMouseDown={(e) => { setDragging(true); ensureDragListeners(); setFromX(e.clientX); }}
-      onTouchStart={(e) => { setDragging(true); ensureDragListeners(); setFromX(e.touches[0].clientX); }}
-      onMouseMove={(e) => {
-        const rect = trackEl.getBoundingClientRect();
-        setHoverPct(((e.clientX - rect.left) / rect.width) * 100);
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={finishDrag}
+      onPointerCancel={finishDrag}
+      onPointerLeave={() => {
+        if (!dragging()) setHoverPct(null);
       }}
-      onMouseLeave={() => setHoverPct(null)}
     >
       <div class="scrubber-track">
         <div class="scrubber-fill" style={{ width: `${pct()}%` }} />
