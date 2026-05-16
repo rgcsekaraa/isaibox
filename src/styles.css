@@ -669,8 +669,24 @@ button:disabled,
 .skel {
   display: block;
   border-radius: 3px;
-  background: var(--bg-elev-2);
+  background:
+    linear-gradient(
+      90deg,
+      var(--bg-elev-2) 0%,
+      color-mix(in oklab, var(--bg-elev-2) 72%, var(--fg) 28%) 50%,
+      var(--bg-elev-2) 100%
+    );
+  background-size: 220% 100%;
   opacity: 0.74;
+  animation-name: skeleton-shimmer !important;
+  animation-duration: 1.35s !important;
+  animation-delay: 0s !important;
+  animation-timing-function: linear !important;
+  animation-iteration-count: infinite !important;
+}
+@keyframes skeleton-shimmer {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
 }
 .track-row.skeleton {
   pointer-events: none;
