@@ -142,7 +142,7 @@ export function App() {
 
   // Player state
   const [currentN, setCurrentN] = createSignal(0);
-  const [isPlaying, setIsPlaying] = createSignal(false);
+  const [isPlaying, setIsPlayingState] = createSignal(false);
   const [audioLoading, setAudioLoading] = createSignal(false);
   const [position, setPosition] = createSignal(0);
   const [duration, setDuration] = createSignal(0);
@@ -165,6 +165,21 @@ export function App() {
   const [config, setConfig] = createSignal(null);
   const [user, setUser] = createSignal(null);
   const [message, setMessage] = createSignal("");
+  let playbackIntent = false;
+  let playbackRequestId = 0;
+
+  const setIsPlaying = (nextValue) => {
+    setIsPlayingState((current) => {
+      const next = typeof nextValue === "function" ? nextValue(current) : nextValue;
+      playbackIntent = !!next;
+      playbackRequestId += 1;
+      if (!playbackIntent) {
+        setAudioLoading(false);
+        audioEl?.pause?.();
+      }
+      return playbackIntent;
+    });
+  };
 
   createEffect(() => {
     const text = message();
@@ -778,8 +793,16 @@ export function App() {
       audioEl.load();
     }
     if (isPlaying()) {
+      const requestId = playbackRequestId;
       setAudioLoading(true);
-      audioEl.play().then(() => setAudioLoading(false)).catch(() => {
+      audioEl.play().then(() => {
+        if (requestId !== playbackRequestId || !playbackIntent) {
+          audioEl.pause();
+          return;
+        }
+        setAudioLoading(false);
+      }).catch(() => {
+        if (requestId !== playbackRequestId) return;
         setAudioLoading(false);
         setIsPlaying(false);
       });
@@ -1055,7 +1078,6 @@ export function App() {
         }}
         onLoadedMetadata={() => setDuration(Number.isFinite(audioEl.duration) ? audioEl.duration : 0)}
         onCanPlay={() => setAudioLoading(false)}
-        onPlaying={() => setAudioLoading(false)}
         onWaiting={() => {
           if (isPlaying()) setAudioLoading(true);
         }}
@@ -1071,7 +1093,20 @@ export function App() {
             handleNext(true);
           }
         }}
-        onPlay={() => setIsPlaying(true)}
+        onPlay={() => {
+          if (!playbackIntent) {
+            audioEl.pause();
+            return;
+          }
+          setIsPlayingState(true);
+        }}
+        onPlaying={() => {
+          if (!playbackIntent) {
+            audioEl.pause();
+            return;
+          }
+          setAudioLoading(false);
+        }}
         onPause={() => { setIsPlaying(false); setAudioLoading(false); }}
         onError={() => { setAudioLoading(false); setIsPlaying(false); }}
       />
