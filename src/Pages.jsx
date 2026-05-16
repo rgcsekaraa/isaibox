@@ -196,6 +196,9 @@ export function LibraryPage(props) {
                 : "No tracks available"}
             </div>
           </Show>
+          <Show when={!ctx.loading() && ctx.playlistLoading() && ctx.filteredTracks().length === 0}>
+            <LoadingState text="Loading playlist..." />
+          </Show>
         </div>
       </div>
     </div>

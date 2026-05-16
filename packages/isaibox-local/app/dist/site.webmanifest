@@ -2,8 +2,12 @@
   "name": "isaibox",
   "short_name": "isaibox",
   "description": "Fast Tamil music station with backend-streamed playback, search, queue control, favorites, recents, and playlists.",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "fullscreen", "browser"],
+  "orientation": "portrait",
   "background_color": "#0a0a0b",
   "theme_color": "#0a0a0b",
   "icons": [

@@ -92,17 +92,12 @@ const APP_LOADING_STEPS = [
 
 function AppLoadingScreen() {
   const [step, setStep] = createSignal(0);
-  const [progress, setProgress] = createSignal(12);
 
   onMount(() => {
-    const stepTimer = setInterval(() => setStep((value) => (value + 1) % APP_LOADING_STEPS.length), 950);
-    const progressTimer = setInterval(() => {
-      setProgress((value) => Math.min(94, value + Math.max(1, Math.round((96 - value) * 0.08))));
-    }, 260);
-    onCleanup(() => {
-      clearInterval(stepTimer);
-      clearInterval(progressTimer);
-    });
+    const timers = APP_LOADING_STEPS
+      .slice(1)
+      .map((_, index) => setTimeout(() => setStep(index + 1), (index + 1) * 900));
+    onCleanup(() => timers.forEach(clearTimeout));
   });
 
   return (
@@ -114,10 +109,7 @@ function AppLoadingScreen() {
         <div class="app-loading-brand">isaibox</div>
         <div class="app-loading-text">{APP_LOADING_STEPS[step()]}</div>
       </div>
-      <div class="app-loading-progress">
-        <div class="app-loading-bar" style={{ width: `${progress()}%` }} />
-      </div>
-      <div class="app-loading-percent mono">{progress()}%</div>
+      <Icon name="spinner" size={18} />
     </div>
   );
 }

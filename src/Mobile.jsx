@@ -295,10 +295,10 @@ export function MobilePlaylistDetail(props) {
         </For>
         <Show when={filteredTracks().length === 0}>
           <Show
-            when={ctx.loading() || ctx.playlistLoading()}
+            when={!ctx.loading() && ctx.playlistLoading()}
             fallback={<div class="empty">{ctx.trackSearch() ? `No tracks match "${ctx.trackSearch()}"` : "No tracks available"}</div>}
           >
-            <MobileLoadingState text={ctx.loading() ? "Loading library..." : "Loading playlist..."} />
+            <MobileLoadingState text="Loading playlist..." />
           </Show>
         </Show>
       </div>
