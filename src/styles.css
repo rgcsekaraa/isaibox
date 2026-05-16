@@ -599,8 +599,15 @@ button:disabled,
   flex-shrink: 0;
 }
 .t-movie, .t-director, .t-singer { color: var(--fg-mute); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.t-movie.clickable {
+  display: flex;
+  align-items: center;
+}
 .album-link {
-  display: block;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 28px;
   max-width: 100%;
   overflow: hidden;
   color: var(--fg);

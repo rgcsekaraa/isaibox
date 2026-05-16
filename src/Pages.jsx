@@ -26,6 +26,7 @@ function AlbumLink(props) {
         type="button"
         class={`album-link ${props.class || ""}`}
         title={`Open album ${album()}`}
+        aria-label={`Open album ${album()}`}
         onClick={(event) => {
           event.stopPropagation();
           props.onOpen?.(album());
@@ -72,7 +73,7 @@ function TrackRow(props) {
         <Show when={props.isCurrent}><span class="t-now">Now Playing</span></Show>
       </div>
       <Show when={props.showMovie !== false}>
-        <div class="t-movie">
+        <div class="t-movie clickable">
           <AlbumLink album={props.track.movie} onOpen={props.onOpenAlbum} />
         </div>
       </Show>
@@ -401,7 +402,7 @@ export function RecentsPage(props) {
                   <span class="t-title-text">{t.title}</span>
                   <Show when={ctx.currentN() === t.n}><span class="t-now">Now Playing</span></Show>
                 </div>
-                <div class="t-movie"><AlbumLink album={t.movie} onOpen={ctx.openAlbum} /></div>
+                <div class="t-movie clickable"><AlbumLink album={t.movie} onOpen={ctx.openAlbum} /></div>
                 <div class="t-singer">{t.singer}</div>
                 <div class="t-year mono">{t.when}</div>
                 <div class="t-actions">
@@ -494,7 +495,7 @@ export function FavoritesPage(props) {
                     <span class="t-title-text">{t.title}</span>
                     <Show when={ctx.currentN() === t.n}><span class="t-now">Now Playing</span></Show>
                   </div>
-                  <div class="t-movie"><AlbumLink album={t.movie} onOpen={ctx.openAlbum} /></div>
+                  <div class="t-movie clickable"><AlbumLink album={t.movie} onOpen={ctx.openAlbum} /></div>
                   <div class="t-director">{t.director}</div>
                   <div class="t-singer">{t.singer}</div>
                   <div class="t-year">{t.year}</div>
