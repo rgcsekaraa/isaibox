@@ -153,6 +153,7 @@ export function App() {
   const [muted, setMuted] = createSignal(false);
   const [favs, setFavs] = createSignal(new Set());
   const [queue, setQueue] = createSignal([]);
+  const [playbackScope, setPlaybackScope] = createSignal([]);
   const [recents, setRecents] = createSignal([]);
   const [tracks, setTracks] = createSignal([]);
   const [playlistSections, setPlaylistSections] = createSignal({ global: [], personal: [] });
@@ -435,6 +436,12 @@ export function App() {
   });
 
   const playTrack = (n) => {
+    const visibleTracks = filteredTracks();
+    if (visibleTracks.some((track) => track.n === n)) {
+      setPlaybackScope(visibleTracks.map((track) => track.n));
+    } else if (!playbackScope().includes(n)) {
+      setPlaybackScope([n]);
+    }
     if (n === currentN()) {
       setIsPlaying((p) => !p);
     } else {
@@ -478,15 +485,26 @@ export function App() {
 
   const playPlaylist = (tracks) => {
     if (!tracks.length) return;
-    setCurrentN(tracks[0].n);
+    const trackIds = tracks.map((track) => track.n).filter(Boolean);
+    const firstTrack = shuffle() && tracks.length > 1
+      ? tracks[Math.floor(Math.random() * tracks.length)]
+      : tracks[0];
+    setPlaybackScope(trackIds);
+    setCurrentN(firstTrack.n);
     setPosition(0);
     setDuration(0);
     setIsPlaying(true);
-    setQueue(tracks.slice(1, 20).map((t) => t.n));
-    addToRecents(tracks[0].n);
+    setQueue([]);
+    addToRecents(firstTrack.n);
   };
 
-  const playbackList = () => filteredTracks().length ? filteredTracks() : tracks();
+  const playbackList = () => {
+    const scope = playbackScope();
+    const byN = trackMap();
+    const scopedTracks = scope.map((n) => byN[n]).filter(Boolean);
+    if (scopedTracks.length) return scopedTracks;
+    return filteredTracks().length ? filteredTracks() : tracks();
+  };
   const switchToTrack = (n, shouldPlay = isPlaying()) => {
     if (!n) return;
     setCurrentN(n);
