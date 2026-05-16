@@ -202,21 +202,14 @@ export function LibraryPage(props) {
               />
             )}
           </For>
-          <Show when={ctx.filteredTracks().length === 0}>
-            <Show
-              when={ctx.loading() || ctx.playlistLoading()}
-              fallback={
-                <div class="empty">
-                  {ctx.songSearch()
-                    ? `No songs match "${ctx.songSearch()}"`
-                    : ctx.trackSearch()
-                    ? `No tracks match "${ctx.trackSearch()}"`
-                    : "No tracks available"}
-                </div>
-              }
-            >
-              <LoadingState text={ctx.loading() ? "Loading library..." : "Loading playlist..."} />
-            </Show>
+          <Show when={!ctx.loading() && !ctx.playlistLoading() && ctx.filteredTracks().length === 0}>
+            <div class="empty">
+              {ctx.songSearch()
+                ? `No songs match "${ctx.songSearch()}"`
+                : ctx.trackSearch()
+                ? `No tracks match "${ctx.trackSearch()}"`
+                : "No tracks available"}
+            </div>
           </Show>
         </div>
       </div>

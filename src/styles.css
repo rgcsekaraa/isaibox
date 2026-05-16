@@ -471,7 +471,16 @@ button:disabled,
 /* ── Track list ── */
 .tracklist { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px 24px 36px; overflow: hidden; }
 .tracklist.nopad { padding: 4px 24px 36px; }
+.app.is-desktop .tracklist {
+  margin: 18px 24px 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--bg) 88%, var(--bg-soft));
+}
+.app.is-desktop .tracklist.nopad { padding: 0; }
 .track-body { flex: 1; overflow-y: auto; padding-right: 4px; }
+.app.is-desktop .track-body { padding: 0 4px 8px 0; }
 .track-body::-webkit-scrollbar { width: 8px; }
 .track-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 2px; }
 .track-body::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.14); }
@@ -522,10 +531,7 @@ button:disabled,
     72px
     72px;
 }
-.main.with-library-sidebar:not(.queue-collapsed) .tracklist {
-  padding-left: 16px;
-  padding-right: 16px;
-}
+.main.with-library-sidebar:not(.queue-collapsed) .tracklist { margin: 18px 16px 32px; }
 .main.with-library-sidebar:not(.queue-collapsed) .track-scope-search {
   width: 190px;
   min-width: 160px;
@@ -558,10 +564,13 @@ button:disabled,
   border-bottom: 1px solid var(--line);
   border-radius: 0;
   position: sticky; top: 0;
-  background: var(--bg);
+  background: var(--bg-soft);
   z-index: 1;
 }
-.track-row.head:hover { background: var(--bg); }
+.track-row.head:hover { background: var(--bg-soft); }
+.app.is-desktop .track-row.head {
+  box-shadow: 0 1px 0 var(--line);
+}
 .track-row:not(.head):hover { background: var(--bg-elev); }
 .track-row:not(.head):hover .t-play { opacity: 1; }
 .track-row:not(.head):hover .t-n { opacity: 0; }
