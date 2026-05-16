@@ -109,6 +109,64 @@ button:disabled,
   height: 100dvh;
   overflow: hidden;
 }
+.app-loading-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: var(--bg);
+  color: var(--fg);
+}
+.app-loading-mark {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--fg);
+  color: var(--bg);
+}
+.app-loading-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  text-align: center;
+}
+.app-loading-brand {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.app-loading-text {
+  min-height: 24px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.app-loading-progress {
+  width: min(360px, calc(100vw - 56px));
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-elev);
+}
+.app-loading-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--fg);
+}
+.app-loading-percent {
+  color: var(--fg-faint);
+  font-size: 11px;
+}
 
 /* ═══════════════════════════════════════════════════════════════
    DESKTOP
@@ -666,44 +724,6 @@ button:disabled,
 .mini-btn svg,
 .fp-tr-play svg,
 .dock-loading svg { flex: 0 0 auto; }
-.skel {
-  display: block;
-  border-radius: 3px;
-  background:
-    linear-gradient(
-      90deg,
-      var(--bg-elev-2) 0%,
-      color-mix(in oklab, var(--bg-elev-2) 72%, var(--fg) 28%) 50%,
-      var(--bg-elev-2) 100%
-    );
-  background-size: 220% 100%;
-  opacity: 0.74;
-  animation-name: skeleton-shimmer !important;
-  animation-duration: 1.35s !important;
-  animation-delay: 0s !important;
-  animation-timing-function: linear !important;
-  animation-iteration-count: infinite !important;
-}
-@keyframes skeleton-shimmer {
-  from { background-position: 120% 0; }
-  to { background-position: -120% 0; }
-}
-.track-row.skeleton {
-  pointer-events: none;
-  color: transparent;
-}
-.track-row.skeleton:hover { background: transparent; }
-.track-row.skeleton .t-num.skel { width: 20px; height: 12px; justify-self: end; }
-.skel-title { width: min(320px, 70%); height: 14px; }
-.skel-cell { width: min(180px, 80%); height: 12px; }
-.skel-cell.wide { width: min(220px, 88%); }
-.skel-year { display: inline-block; width: 42px; height: 12px; }
-.playlist-item.skeleton {
-  pointer-events: none;
-  color: transparent;
-}
-.sidebar-skel-name { width: 72%; height: 12px; }
-.sidebar-skel-count { width: 22px; height: 10px; }
 .empty.large {
   display: flex; flex-direction: column; align-items: center; gap: 12px;
   padding: 80px 40px;
@@ -1099,11 +1119,12 @@ button:disabled,
 
 .dock-right { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
 .dock-loading .dock-grid { height: var(--dock-h); }
-.dock-skel-title { width: 220px; max-width: 28vw; height: 14px; }
-.dock-skel-sub { width: 160px; max-width: 22vw; height: 11px; margin-top: 5px; }
-.dock-skel-btn { width: 32px; height: 32px; border-radius: 50%; }
-.dock-skel-play { width: 36px; height: 36px; border-radius: 50%; }
-.dock-skel-scrub { flex: 1; height: 3px; }
+.dock-empty-scrub {
+  flex: 1;
+  height: 3px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.07);
+}
 .speed { font-size: 11px; }
 .vol { display: flex; align-items: center; gap: 8px; padding-left: 4px; }
 .vol-track { width: 96px; height: 14px; display: flex; align-items: center; cursor: pointer; position: relative; }
@@ -1303,31 +1324,6 @@ button:disabled,
   color: var(--fg-mute);
   font-size: 13px;
 }
-.m-skeleton-list,
-.m-track-skeleton-list {
-  display: flex;
-  flex-direction: column;
-}
-.m-skeleton-list { padding: 2px 14px 0; }
-.m-track-skeleton-list { padding: 0 0 4px; }
-.m-pl-item.skeleton,
-.m-track-row.skeleton {
-  pointer-events: none;
-}
-.m-pl-item.skeleton { min-height: 58px; }
-.m-skel-title { width: min(260px, 66vw); height: 14px; }
-.m-skel-sub {
-  width: min(170px, 46vw);
-  height: 11px;
-  margin-top: 8px;
-}
-.m-skel-sub.wide { width: min(260px, 68vw); }
-.m-skel-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-}
-
 .m-pl-item {
   display: grid;
   grid-template-columns: 1fr auto;

@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For } from "solid-js";
 import { Icon } from "./Icon.jsx";
 
 const TABS = ["Library", "Recents", "Favorites"];
@@ -133,7 +133,6 @@ export function ShortcutsDrawer(props) {
 }
 
 export function Sidebar(props) {
-  const SKELETON_ITEMS = Array.from({ length: 8 });
   const playlistQuery = () => String(props.playlistSearch || "").trim().toLowerCase();
   const sections = () => [
     { label: "Global", items: props.playlistSections?.global || [], addable: false },
@@ -188,19 +187,6 @@ export function Sidebar(props) {
                   </li>
                 )}
               </For>
-              <Show when={props.loading && section.items.length === 0}>
-                <For each={SKELETON_ITEMS}>
-                  {() => (
-                    <li>
-                      <div class="playlist-item skeleton">
-                        <span class="pl-bar" />
-                        <span class="skel sidebar-skel-name" />
-                        <span class="skel sidebar-skel-count" />
-                      </div>
-                    </li>
-                  )}
-                </For>
-              </Show>
             </ul>
           </div>
         )}

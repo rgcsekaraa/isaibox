@@ -83,6 +83,45 @@ function GoogleSignInButton(props) {
   return <div ref={buttonRef} class="google-signin-slot" />;
 }
 
+const APP_LOADING_STEPS = [
+  "isaibox loading...",
+  "isaibox setting environment...",
+  "isaibox getting ready...",
+  "isaibox almost done...",
+];
+
+function AppLoadingScreen() {
+  const [step, setStep] = createSignal(0);
+  const [progress, setProgress] = createSignal(12);
+
+  onMount(() => {
+    const stepTimer = setInterval(() => setStep((value) => (value + 1) % APP_LOADING_STEPS.length), 950);
+    const progressTimer = setInterval(() => {
+      setProgress((value) => Math.min(94, value + Math.max(1, Math.round((96 - value) * 0.08))));
+    }, 260);
+    onCleanup(() => {
+      clearInterval(stepTimer);
+      clearInterval(progressTimer);
+    });
+  });
+
+  return (
+    <div class="app-loading-screen" role="status" aria-live="polite">
+      <div class="app-loading-mark">
+        <Icon name="logo" size={26} />
+      </div>
+      <div class="app-loading-copy">
+        <div class="app-loading-brand">isaibox</div>
+        <div class="app-loading-text">{APP_LOADING_STEPS[step()]}</div>
+      </div>
+      <div class="app-loading-progress">
+        <div class="app-loading-bar" style={{ width: `${progress()}%` }} />
+      </div>
+      <div class="app-loading-percent mono">{progress()}%</div>
+    </div>
+  );
+}
+
 export function App() {
   const isMobile = useMediaQuery("(max-width: 1023px)");
   let audioEl;
@@ -817,6 +856,9 @@ export function App() {
       attr:data-density={density()}
       attr:data-theme={theme()}
     >
+      <Show when={loading() && tracks().length === 0}>
+        <AppLoadingScreen />
+      </Show>
       <Show
         when={isMobile()}
         fallback={
@@ -867,19 +909,19 @@ export function App() {
                   <div class="dock-grid">
                     <div class="dock-left">
                       <div class="dock-meta">
-                        <div class="skel dock-skel-title" />
-                        <div class="skel dock-skel-sub" />
+                        <div class="dock-song">{loading() ? "isaibox loading..." : (loadError() || "No tracks available")}</div>
+                        <div class="dock-sub">isaibox</div>
                       </div>
                     </div>
                     <div class="dock-center">
                       <div class="dock-transport">
-                        <span class="skel dock-skel-btn" />
-                        <span class="skel dock-skel-play" />
-                        <span class="skel dock-skel-btn" />
+                        <button class="tr-btn" disabled><Icon name="prev" size={17} /></button>
+                        <button class="tr-play loading" disabled><Icon name="spinner" size={17} /></button>
+                        <button class="tr-btn" disabled><Icon name="next" size={17} /></button>
                       </div>
                       <div class="dock-scrub-row">
                         <span class="dock-time mono">0:00</span>
-                        <div class="skel dock-skel-scrub" />
+                        <div class="dock-empty-scrub" />
                         <span class="dock-time mono">0:00</span>
                       </div>
                     </div>

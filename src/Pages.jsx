@@ -7,7 +7,6 @@ const SORT_OPTIONS = [
   { value: "title", label: "Title" },
   { value: "year", label: "Year" },
 ];
-const SKELETON_ROWS = Array.from({ length: 10 });
 
 function LoadingState(props) {
   return (
@@ -40,7 +39,7 @@ function AlbumLink(props) {
 
 // ─── Shared track row (desktop) ──────────────────────────────────
 function TrackRow(props) {
-  const isActivelyPlaying = () => props.isCurrent && props.isPlaying;
+  const isLoadingCurrent = () => props.isCurrent && props.audioLoading;
   return (
     <div
       class={`track-row ${props.class || ""}`}
@@ -55,7 +54,7 @@ function TrackRow(props) {
       <Show when={!props.noNum}>
         <div class="t-num">
           <Show
-            when={isActivelyPlaying()}
+            when={props.isCurrent && (props.audioLoading || props.isPlaying)}
             fallback={
               <>
                 <span class="t-n">{props.index ?? props.track.n}</span>
@@ -63,7 +62,9 @@ function TrackRow(props) {
               </>
             }
           >
-            <span class="t-wave"><Icon name="wave" size={14} /></span>
+            <Show when={isLoadingCurrent()} fallback={<span class="t-wave"><Icon name="wave" size={14} /></span>}>
+              <span class="t-wave loading"><Icon name="spinner" size={14} /></span>
+            </Show>
           </Show>
         </div>
       </Show>
@@ -170,29 +171,13 @@ export function LibraryPage(props) {
           <div class="t-actions" />
         </div>
         <div class="track-body">
-          <Show when={(ctx.loading() || ctx.playlistLoading()) && ctx.filteredTracks().length === 0}>
-            <div class="track-skeleton-list" aria-hidden="true">
-              <For each={SKELETON_ROWS}>
-                {() => (
-                  <div class={`track-row skeleton ${ctx.density()}`}>
-                    <div class="t-num skel" />
-                    <div class="t-title"><span class="skel skel-title" /></div>
-                    <div class="t-movie"><span class="skel skel-cell" /></div>
-                    <div class="t-director"><span class="skel skel-cell wide" /></div>
-                    <div class="t-singer"><span class="skel skel-cell wide" /></div>
-                    <div class="t-year"><span class="skel skel-year" /></div>
-                    <div class="t-actions" />
-                  </div>
-                )}
-              </For>
-            </div>
-          </Show>
           <For each={ctx.filteredTracks()}>
             {(t) => (
               <TrackRow
                 track={t}
                 isCurrent={ctx.currentN() === t.n}
                 isPlaying={ctx.isPlaying()}
+                audioLoading={ctx.audioLoading()}
                 density={ctx.density()}
                 onPlay={() => ctx.playTrack(t.n)}
                 onFav={() => ctx.toggleFav(t.n)}
@@ -310,7 +295,7 @@ export function QueuePanel(props) {
                 {(track) => (
                   <button class="queue-card current" onClick={() => ctx.playTrack(track().n)}>
                     <span class="queue-card-index">
-                      <Icon name={ctx.isPlaying() ? "wave" : "pause"} size={14} />
+                      <Icon name={ctx.audioLoading() ? "spinner" : ctx.isPlaying() ? "wave" : "pause"} size={14} />
                     </span>
                     <span class="queue-card-meta">
                       <span class="queue-card-title">{track().title}</span>
