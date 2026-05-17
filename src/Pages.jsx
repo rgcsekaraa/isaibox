@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { createEffect, For, Show } from "solid-js";
 import { Icon } from "./Icon.jsx";
 import { MenuSelect } from "./MenuSelect.jsx";
 
@@ -530,21 +530,27 @@ export function QueuePanel(props) {
 }
 
 function parseSyncedLyrics(value = "") {
-  return String(value || "")
-    .split("\n")
-    .map((line) => {
-      const match = line.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]\s*(.*)$/);
-      if (!match) return null;
-      const minutes = Number(match[1]) || 0;
-      const seconds = Number(match[2]) || 0;
-      const fraction = Number(`0.${match[3] || "0"}`) || 0;
-      return { time: minutes * 60 + seconds + fraction, text: match[4] || "" };
-    })
-    .filter((line) => line && line.text.trim());
+  const lines = [];
+  for (const rawLine of String(value || "").split("\n")) {
+    const stamps = [...rawLine.matchAll(/\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g)];
+    if (!stamps.length) continue;
+    const text = rawLine.replace(/(?:\[\d{1,2}:\d{2}(?:\.\d{1,3})?\])+/g, "").trim();
+    if (!text) continue;
+    for (const stamp of stamps) {
+      const minutes = Number(stamp[1]) || 0;
+      const seconds = Number(stamp[2]) || 0;
+      const fractionText = (stamp[3] || "0").padEnd(3, "0").slice(0, 3);
+      const fraction = (Number(fractionText) || 0) / 1000;
+      lines.push({ time: minutes * 60 + seconds + fraction, text });
+    }
+  }
+  return lines.sort((a, b) => a.time - b.time);
 }
 
 export function LyricsPanel(props) {
   const { ctx } = props;
+  let bodyEl;
+  let lastScrolledLine = -1;
   const lyrics = () => ctx.lyricsState?.() || { status: "idle" };
   const syncedLines = () => parseSyncedLyrics(lyrics().syncedLyrics);
   const activeLineIndex = () => {
@@ -558,6 +564,17 @@ export function LyricsPanel(props) {
   };
   const plainLines = () => String(lyrics().plainLyrics || "").split("\n").filter((line) => line.trim());
   const hasLyrics = () => lyrics().status === "available" && (syncedLines().length > 0 || plainLines().length > 0);
+
+  createEffect(() => {
+    const index = activeLineIndex();
+    if (index < 0 || !bodyEl) return;
+    if (index === lastScrolledLine) return;
+    lastScrolledLine = index;
+    requestAnimationFrame(() => {
+      const active = bodyEl?.querySelector(`[data-lyrics-line="${index}"]`);
+      active?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    });
+  });
 
   return (
     <aside class={`lyrics-panel ${props.mobile ? "mobile" : "queue-panel"}`}>
@@ -593,7 +610,7 @@ export function LyricsPanel(props) {
             </div>
           }
         >
-          <div class="lyrics-body">
+          <div class="lyrics-body" ref={bodyEl}>
             <Show
               when={syncedLines().length > 0}
               fallback={
@@ -604,7 +621,11 @@ export function LyricsPanel(props) {
             >
               <For each={syncedLines()}>
                 {(line, index) => (
-                  <p class="lyrics-line" classList={{ active: index() === activeLineIndex(), past: index() < activeLineIndex() }}>
+                  <p
+                    class="lyrics-line"
+                    data-lyrics-line={index()}
+                    classList={{ active: index() === activeLineIndex(), past: index() < activeLineIndex() }}
+                  >
                     {line.text}
                   </p>
                 )}

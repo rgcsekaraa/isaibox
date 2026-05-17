@@ -177,6 +177,7 @@ export function NowPlayingDock(props) {
           <button
             class="icon-btn small"
             classList={{ active: props.lyricsState?.available, loading: props.lyricsState?.loading }}
+            disabled={!props.lyricsState?.available}
             title={props.lyricsState?.available ? "Show lyrics" : props.lyricsState?.loading ? "Loading lyrics" : "Lyrics"}
             onClick={() => props.onToggleLyrics?.()}
           >
@@ -361,7 +362,12 @@ export function FullPlayer(props) {
               <Icon name="share" size={16} />
               <span>Share</span>
             </button>
-            <button class="fp-action" classList={{ active: props.lyricsState?.available }} onClick={() => props.onToggleLyrics?.()}>
+            <button
+              class="fp-action"
+              classList={{ active: props.lyricsState?.available, loading: props.lyricsState?.loading }}
+              disabled={!props.lyricsState?.available}
+              onClick={() => props.onToggleLyrics?.()}
+            >
               <Show when={props.lyricsState?.loading} fallback={<Icon name="lyrics" size={16} />}>
                 <Icon name="spinner" size={16} />
               </Show>

@@ -108,6 +108,9 @@ button:disabled,
 .btn-primary:disabled {
   cursor: not-allowed;
 }
+button:disabled {
+  opacity: 0.42;
+}
 
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
@@ -1328,6 +1331,9 @@ button:disabled,
 }
 .fp-action.active {
   color: var(--accent);
+}
+.fp-action:disabled {
+  color: var(--fg-faint);
 }
 
 /* ── Now playing dock ── */

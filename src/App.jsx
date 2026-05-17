@@ -438,6 +438,15 @@ export function App() {
   };
 
   const refreshLyrics = () => loadLyrics({ force: true });
+  const toggleLyricsPanel = () => {
+    if (!lyricsState().available) return;
+    setLyricsOpen((value) => !value);
+    setQueueCollapsed(false);
+  };
+  const openLyricsPanel = () => {
+    if (!lyricsState().available) return;
+    setLyricsOpen(true);
+  };
 
   createEffect(() => {
     const track = activeAudioTrack();
@@ -454,6 +463,10 @@ export function App() {
     if (lyricsFetchKey.startsWith(`${track.id}:`) && currentLyrics.available) return;
     lyricsFetchKey = key;
     loadLyrics({ force: roundedDuration > 0 && currentLyrics.songId === track.id && !currentLyrics.available });
+  });
+
+  createEffect(() => {
+    if (lyricsOpen() && !lyricsState().available) setLyricsOpen(false);
   });
 
   const filteredTracks = createMemo(() => {
@@ -1380,7 +1393,7 @@ export function App() {
                   onSaveToPlaylist={() => addToActivePlaylist(track().n)}
                   onShare={() => shareTrack(track())}
                   lyricsState={lyricsState()}
-                  onToggleLyrics={() => { setLyricsOpen((value) => !value); setQueueCollapsed(false); }}
+                  onToggleLyrics={toggleLyricsPanel}
                   onOpenAlbum={() => openAlbum(track().movie)}
                   queueCollapsed={queueCollapsed()}
                   onToggleQueue={() => setQueueCollapsed((value) => !value)}
@@ -1477,7 +1490,7 @@ export function App() {
                 onSaveToPlaylist={() => addToActivePlaylist(track().n)}
                 onShare={() => shareTrack(track())}
                 lyricsState={lyricsState()}
-                onToggleLyrics={() => setLyricsOpen(true)}
+                onToggleLyrics={openLyricsPanel}
                 onOpenAlbum={() => openAlbum(track().movie)}
                 onCollapse={() => setPlayerExpanded(false)}
               />
