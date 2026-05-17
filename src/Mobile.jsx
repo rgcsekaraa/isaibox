@@ -8,6 +8,13 @@ const SORT_OPTIONS = [
   { value: "year", label: "Year" },
 ];
 
+const SEARCH_TABS = [
+  { id: "albums", label: "Albums" },
+  { id: "songs", label: "Songs" },
+  { id: "directors", label: "Directors" },
+  { id: "singers", label: "Singers" },
+];
+
 function MobileLoadingState(props) {
   return (
     <div class="m-loading-state">
@@ -171,6 +178,13 @@ export function MobilePlaylistDetail(props) {
 
   const isAlbum = () => !!ctx.activeAlbum();
   const isSearch = () => !!ctx.songSearch().trim();
+  const searchCounts = () => ctx.searchResultCounts();
+  const activeSearchTab = () => {
+    const current = ctx.searchResultTab();
+    const counts = searchCounts();
+    if (counts[current] > 0) return current;
+    return SEARCH_TABS.find((tab) => counts[tab.id] > 0)?.id || current;
+  };
   const hasScopedTracks = () => !isSearch() && (isAlbum() || !!ctx.activePlaylistMeta());
   const scopedPlaceholder = () => isAlbum() ? "Filter this album..." : "Filter this playlist...";
   const playlist = () =>
@@ -220,28 +234,86 @@ export function MobilePlaylistDetail(props) {
             <Icon name="play" size={13} /><span>Play</span>
           </button>
         </Show>
-        <div class="m-detail-controlbar">
-          <Show when={hasScopedTracks()}>
-            <div class="m-track-search">
-              <Icon name="search" size={14} />
-              <input
-                placeholder={scopedPlaceholder()}
-                value={ctx.trackSearch()}
-                onInput={(event) => ctx.setTrackSearch(event.currentTarget.value)}
-              />
-              <Show when={ctx.trackSearch()}>
-                <button class="m-icon-btn small" onClick={() => ctx.setTrackSearch("")}>
-                  <Icon name="x" size={13} />
-                </button>
-              </Show>
+        <Show when={!isSearch() || activeSearchTab() === "songs"}>
+          <div class="m-detail-controlbar">
+            <Show when={hasScopedTracks()}>
+              <div class="m-track-search">
+                <Icon name="search" size={14} />
+                <input
+                  placeholder={scopedPlaceholder()}
+                  value={ctx.trackSearch()}
+                  onInput={(event) => ctx.setTrackSearch(event.currentTarget.value)}
+                />
+                <Show when={ctx.trackSearch()}>
+                  <button class="m-icon-btn small" onClick={() => ctx.setTrackSearch("")}>
+                    <Icon name="x" size={13} />
+                  </button>
+                </Show>
+              </div>
+            </Show>
+            <div class="m-sort-control m-sort-inline">
+              <MenuSelect class="sort-menu" label="Sort" value={ctx.sort()} onChange={ctx.setSort} options={SORT_OPTIONS} />
             </div>
-          </Show>
-          <div class="m-sort-control m-sort-inline">
-            <MenuSelect class="sort-menu" label="Sort" value={ctx.sort()} onChange={ctx.setSort} options={SORT_OPTIONS} />
           </div>
-        </div>
+        </Show>
       </div>
-      <div class="m-track-body">
+      <Show when={isSearch()}>
+        <div class="m-search-tabs" role="tablist" aria-label="Search result type">
+          <For each={SEARCH_TABS}>
+            {(tab) => (
+              <button
+                role="tab"
+                class="m-search-tab"
+                classList={{ active: activeSearchTab() === tab.id }}
+                onClick={() => ctx.setSearchResultTab(tab.id)}
+              >
+                <span>{tab.label}</span>
+                <span>{searchCounts()[tab.id] || 0}</span>
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
+      <Show when={isSearch() && activeSearchTab() === "albums"}>
+        <section class="m-search-albums">
+          <Show when={ctx.searchAlbumResults().length > 0} fallback={<div class="empty">No albums match this search.</div>}>
+            <For each={ctx.searchAlbumResults()}>
+              {(album) => (
+                <div class="m-search-album-row">
+                  <button class="m-search-album-main" onClick={() => ctx.openAlbum(album.name)}>
+                    <span class="m-search-album-title">{album.name}</span>
+                    <span class="m-search-album-sub">
+                      <Show when={album.matchLabel && album.matchValue}>
+                        {album.matchLabel}: {album.matchValue}
+                      </Show>
+                      <span>{album.count} tracks{album.year ? ` · ${album.year}` : ""}</span>
+                    </span>
+                  </button>
+                  <button class="m-icon" onClick={() => ctx.playPlaylist(album.tracks)}>
+                    <Icon name="play" size={14} />
+                  </button>
+                </div>
+              )}
+            </For>
+          </Show>
+        </section>
+      </Show>
+      <Show when={isSearch() && (activeSearchTab() === "directors" || activeSearchTab() === "singers")}>
+        <section class="m-search-people">
+          <For each={activeSearchTab() === "directors" ? ctx.searchDirectorResults() : ctx.searchSingerResults()}>
+            {(item) => (
+              <div class="m-search-person-row">
+                <button class="m-search-person-main" onClick={() => ctx.openSearchPersonAlbums(item.name)}>
+                  <span class="m-search-person-title">{item.name}</span>
+                  <span class="m-search-person-sub">{item.albumCount} albums · {item.trackCount} songs</span>
+                </button>
+              </div>
+            )}
+          </For>
+        </section>
+      </Show>
+      <Show when={!isSearch() || activeSearchTab() === "songs"}>
+        <div class="m-track-body">
         <For each={filteredTracks()}>
           {(t) => (
             <div
@@ -303,6 +375,7 @@ export function MobilePlaylistDetail(props) {
           </Show>
         </Show>
       </div>
+      </Show>
     </div>
   );
 }

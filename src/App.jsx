@@ -1,5 +1,5 @@
 import { createSignal, createMemo, createEffect, onCleanup, onMount, Show, Match, Switch } from "solid-js";
-import { fmtTime, getTrackSearchMatch, parseDur, prepareSearchQuery, prepareTrackSearch, useMediaQuery } from "./utils.js";
+import { fmtTime, getTrackFieldMatches, getTrackSearchMatch, parseDur, prepareSearchQuery, prepareTrackSearch, useMediaQuery } from "./utils.js";
 import { TopBar, Sidebar, ShortcutsDrawer } from "./Desktop.jsx";
 import { MobileHeader, MobileBottomTabs, MobileLibraryPage, MobilePlaylistDetail } from "./Mobile.jsx";
 import { LibraryPage, QueuePanel, RecentsPage, FavoritesPage } from "./Pages.jsx";
@@ -123,6 +123,7 @@ export function App() {
   const [activePlaylist, setActivePlaylist] = createSignal("rahman");
   const [activeAlbum, setActiveAlbum] = createSignal("");
   const [songSearch, setSongSearch] = createSignal("");
+  const [searchResultTab, setSearchResultTab] = createSignal("albums");
   const [playlistSearch, setPlaylistSearch] = createSignal("");
   const [trackSearch, setTrackSearch] = createSignal("");
   const [sort, setSort] = createSignal("n");
@@ -288,6 +289,97 @@ export function App() {
     });
     return arr;
   });
+
+  const searchAlbumResults = createMemo(() => {
+    const query = songSearch().trim();
+    if (!query) return [];
+    const preparedQuery = prepareSearchQuery(query);
+    const searchMap = trackSearchMap();
+    const allTracksByAlbum = new Map();
+    const matchedAlbums = new Map();
+
+    for (const track of tracks()) {
+      const album = String(track.movie || "").trim();
+      if (!album) continue;
+      if (!allTracksByAlbum.has(album)) allTracksByAlbum.set(album, []);
+      allTracksByAlbum.get(album).push({ ...track, fav: favs().has(track.n), _search: searchMap[track.id] });
+    }
+
+    for (const track of tracks()) {
+      const album = String(track.movie || "").trim();
+      if (!album) continue;
+      const enrichedTrack = { ...track, fav: favs().has(track.n), _search: searchMap[track.id] };
+      const match = getTrackFieldMatches(enrichedTrack, preparedQuery).find((entry) => entry.label !== "Song");
+      if (!match) continue;
+
+      const existing = matchedAlbums.get(album);
+      const albumTracks = allTracksByAlbum.get(album) || [enrichedTrack];
+      const representative = albumTracks[0] || enrichedTrack;
+      const nextAlbum = {
+        name: album,
+        director: representative.director || enrichedTrack.director || "",
+        year: representative.year || enrichedTrack.year || "",
+        count: albumTracks.length,
+        tracks: albumTracks,
+        matchLabel: match.label,
+        matchValue: match.value,
+        score: match.score,
+      };
+
+      if (!existing || match.score < existing.score) {
+        matchedAlbums.set(album, nextAlbum);
+      }
+    }
+
+    return [...matchedAlbums.values()]
+      .sort((a, b) => a.score - b.score || String(b.year || "").localeCompare(String(a.year || "")) || a.name.localeCompare(b.name))
+      .slice(0, 24);
+  });
+
+  const searchPeopleResultsFor = (label) => {
+    const query = songSearch().trim();
+    if (!query) return [];
+    const preparedQuery = prepareSearchQuery(query);
+    const searchMap = trackSearchMap();
+    const groups = new Map();
+
+    for (const track of tracks()) {
+      const enrichedTrack = { ...track, fav: favs().has(track.n), _search: searchMap[track.id] };
+      const match = getTrackFieldMatches(enrichedTrack, preparedQuery).find((entry) => entry.label === label);
+      const name = String(match?.value || "").trim();
+      if (!name) continue;
+
+      const current = groups.get(name) || {
+        name,
+        score: match.score,
+        albums: new Set(),
+        trackCount: 0,
+      };
+      current.score = Math.min(current.score, match.score);
+      current.trackCount += 1;
+      if (track.movie) current.albums.add(track.movie);
+      groups.set(name, current);
+    }
+
+    return [...groups.values()]
+      .map((group) => ({
+        ...group,
+        albumCount: group.albums.size,
+        albums: [...group.albums],
+      }))
+      .sort((a, b) => a.score - b.score || b.albumCount - a.albumCount || a.name.localeCompare(b.name))
+      .slice(0, 24);
+  };
+
+  const searchDirectorResults = createMemo(() => searchPeopleResultsFor("Music director"));
+  const searchSingerResults = createMemo(() => searchPeopleResultsFor("Singer"));
+
+  const searchResultCounts = createMemo(() => ({
+    albums: searchAlbumResults().length,
+    songs: filteredTracks().length,
+    directors: searchDirectorResults().length,
+    singers: searchSingerResults().length,
+  }));
 
   const addToRecents = (n) => {
     setRecents((r) => [{ n, when: "just now" }, ...r.filter((x) => x.n !== n)].slice(0, 30));
@@ -713,6 +805,7 @@ export function App() {
     const hadSearch = !!songSearch().trim();
     setSongSearch(value);
     if (String(value || "").trim()) {
+      if (!hadSearch) setSearchResultTab("albums");
       setTrackSearch("");
       setTab("Library");
       setActiveAlbum("");
@@ -721,6 +814,17 @@ export function App() {
       setTrackSearch("");
       setMobileView("list");
     }
+  };
+
+  const openSearchPersonAlbums = (name) => {
+    const value = String(name || "").trim();
+    if (!value) return;
+    setSongSearch(value);
+    setSearchResultTab("albums");
+    setTab("Library");
+    setActiveAlbum("");
+    setTrackSearch("");
+    setMobileView("playlist");
   };
 
   const removeFromQueue = (idx) => setQueue((q) => q.filter((_, i) => i !== idx));
@@ -901,6 +1005,7 @@ export function App() {
     activePlaylist, setActivePlaylist: selectPlaylist,
     activeAlbum,
     songSearch, setSongSearch: updateSongSearch,
+    searchResultTab, setSearchResultTab,
     playlistSearch, setPlaylistSearch,
     trackSearch, setTrackSearch,
     sort, setSort,
@@ -928,8 +1033,12 @@ export function App() {
     setQueueCollapsed,
     mobileView, setMobileView,
     filteredTracks,
+    searchAlbumResults,
+    searchDirectorResults,
+    searchSingerResults,
+    searchResultCounts,
     // actions
-    playTrack, playPlaylist, toggleFav, addToQueue, addToActivePlaylist, removeFromQueue, clearQueue, openAlbum, closeAlbum,
+    playTrack, playPlaylist, toggleFav, addToQueue, addToActivePlaylist, removeFromQueue, clearQueue, openAlbum, closeAlbum, openSearchPersonAlbums,
   };
 
   return (

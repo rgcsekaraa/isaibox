@@ -128,13 +128,13 @@ export const scoreTrackSearch = (track, query) => {
   return getTrackSearchMatch(track, preparedQuery)?.score ?? null;
 };
 
-export const getTrackSearchMatch = (track, query) => {
+export const getTrackFieldMatches = (track, query) => {
   const preparedQuery = typeof query === "string" ? prepareSearchQuery(query) : query;
-  if (!preparedQuery.normalizedQuery) return { score: 0, label: "Song", value: track.title || "" };
+  if (!preparedQuery.normalizedQuery) return [{ score: 0, label: "Song", value: track.title || "" }];
 
   const search = track.search || track._search || prepareTrackSearch(track);
   const { queryCompact, queryTokens } = preparedQuery;
-  const fieldMatches = [
+  return [
     {
       label: "Song",
       value: track.title || "",
@@ -158,6 +158,15 @@ export const getTrackSearchMatch = (track, query) => {
   ]
     .filter((match) => match.score !== null)
     .sort((a, b) => a.score - b.score);
+};
+
+export const getTrackSearchMatch = (track, query) => {
+  const preparedQuery = typeof query === "string" ? prepareSearchQuery(query) : query;
+  if (!preparedQuery.normalizedQuery) return { score: 0, label: "Song", value: track.title || "" };
+
+  const search = track.search || track._search || prepareTrackSearch(track);
+  const { queryCompact, queryTokens } = preparedQuery;
+  const fieldMatches = getTrackFieldMatches(track, preparedQuery);
 
   if (fieldMatches.length) return fieldMatches[0];
 

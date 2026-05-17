@@ -8,6 +8,13 @@ const SORT_OPTIONS = [
   { value: "year", label: "Year" },
 ];
 
+const SEARCH_TABS = [
+  { id: "albums", label: "Albums" },
+  { id: "songs", label: "Songs" },
+  { id: "directors", label: "Music Directors" },
+  { id: "singers", label: "Singers" },
+];
+
 function LoadingState(props) {
   return (
     <div class={`loading-state ${props.large ? "large" : ""}`}>
@@ -34,6 +41,84 @@ function AlbumLink(props) {
         {album()}
       </button>
     </Show>
+  );
+}
+
+function SearchTabs(props) {
+  const count = (id) => props.counts?.[id] || 0;
+  return (
+    <div class="search-tabs" role="tablist" aria-label="Search result type">
+      <For each={SEARCH_TABS}>
+        {(tab) => (
+          <button
+            role="tab"
+            class="search-tab"
+            classList={{ active: props.active === tab.id }}
+            onClick={() => props.onChange?.(tab.id)}
+          >
+            <span>{tab.label}</span>
+            <span class="mono">{count(tab.id)}</span>
+          </button>
+        )}
+      </For>
+    </div>
+  );
+}
+
+function SearchAlbumResults(props) {
+  const albums = () => props.albums || [];
+  return (
+    <section class="search-albums">
+      <Show when={albums().length > 0} fallback={<div class="empty">No albums match this search.</div>}>
+        <div class="search-albums-head">
+          <span>Albums</span>
+          <span class="mono">{albums().length}</span>
+        </div>
+        <div class="search-album-grid">
+          <For each={albums()}>
+            {(album) => (
+              <div class="search-album-item">
+                <button class="search-album-main" onClick={() => props.onOpen?.(album.name)}>
+                  <span class="search-album-title">{album.name}</span>
+                  <span class="search-album-sub">
+                    <Show when={album.matchLabel && album.matchValue}>
+                      <span>{album.matchLabel}: {album.matchValue}</span>
+                    </Show>
+                    <span>{album.count} tracks{album.year ? ` · ${album.year}` : ""}</span>
+                  </span>
+                </button>
+                <button class="search-album-play" title={`Play ${album.name}`} onClick={() => props.onPlay?.(album.tracks)}>
+                  <Icon name="play" size={12} />
+                </button>
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+    </section>
+  );
+}
+
+function SearchPeopleResults(props) {
+  const items = () => props.items || [];
+  return (
+    <section class="search-people">
+      <Show when={items().length > 0} fallback={<div class="empty">No {props.emptyLabel || "matches"} found.</div>}>
+        <For each={items()}>
+          {(item) => (
+            <div class="search-person-item">
+              <button class="search-person-main" onClick={() => props.onOpenAlbums?.(item.name)}>
+                <span class="search-person-title">{item.name}</span>
+                <span class="search-person-sub">{item.albumCount} albums · {item.trackCount} songs</span>
+              </button>
+              <button class="search-person-action" onClick={() => props.onOpenAlbums?.(item.name)}>
+                Albums
+              </button>
+            </div>
+          )}
+        </For>
+      </Show>
+    </section>
   );
 }
 
@@ -105,6 +190,13 @@ export function LibraryPage(props) {
   const { ctx } = props;
   const isAlbum = () => !!ctx.activeAlbum();
   const isSearch = () => !!ctx.songSearch().trim();
+  const searchCounts = () => ctx.searchResultCounts();
+  const activeSearchTab = () => {
+    const current = ctx.searchResultTab();
+    const counts = searchCounts();
+    if (counts[current] > 0) return current;
+    return SEARCH_TABS.find((tab) => counts[tab.id] > 0)?.id || current;
+  };
   const hasScopedTracks = () => !isSearch() && (isAlbum() || !!ctx.activePlaylistMeta());
   const scopedPlaceholder = () => isAlbum() ? "Filter this album..." : "Filter this playlist...";
   const playlist = () =>
@@ -136,7 +228,7 @@ export function LibraryPage(props) {
               </Show>
             </div>
             <Show when={isSearch()}>
-              <div class="pl-search-note">Searching song names, albums, music directors, and singers for "{ctx.songSearch()}"</div>
+              <div class="pl-search-note">Choose whether this search should show albums, songs, music directors, or singers.</div>
             </Show>
           </div>
           <div class="pl-tools">
@@ -155,14 +247,20 @@ export function LibraryPage(props) {
                 </Show>
               </div>
             </Show>
-            <div class="sort-control">
-              <span class="sort-label">Sort</span>
-              <MenuSelect class="sort-menu" label="Sort" value={ctx.sort()} onChange={ctx.setSort} options={SORT_OPTIONS} />
-            </div>
+            <Show when={!isSearch() || activeSearchTab() === "songs"}>
+              <div class="sort-control">
+                <span class="sort-label">Sort</span>
+                <MenuSelect class="sort-menu" label="Sort" value={ctx.sort()} onChange={ctx.setSort} options={SORT_OPTIONS} />
+              </div>
+            </Show>
           </div>
         </div>
       </div>
-      <div class="tracklist" classList={{ "search-results": isSearch() }}>
+      <Show when={isSearch()}>
+        <SearchTabs active={activeSearchTab()} counts={searchCounts()} onChange={ctx.setSearchResultTab} />
+      </Show>
+      <Show when={!isSearch() || activeSearchTab() === "songs"}>
+        <div class="tracklist" classList={{ "search-results": isSearch() }}>
         <div class={`track-row head ${ctx.density()}`}>
           <div class="t-num">#</div>
           <div class="t-title">Title</div>
@@ -204,6 +302,28 @@ export function LibraryPage(props) {
           </Show>
         </div>
       </div>
+      </Show>
+      <Show when={isSearch() && activeSearchTab() === "albums"}>
+        <SearchAlbumResults
+          albums={ctx.searchAlbumResults()}
+          onOpen={ctx.openAlbum}
+          onPlay={ctx.playPlaylist}
+        />
+      </Show>
+      <Show when={isSearch() && activeSearchTab() === "directors"}>
+        <SearchPeopleResults
+          items={ctx.searchDirectorResults()}
+          emptyLabel="music directors"
+          onOpenAlbums={ctx.openSearchPersonAlbums}
+        />
+      </Show>
+      <Show when={isSearch() && activeSearchTab() === "singers"}>
+        <SearchPeopleResults
+          items={ctx.searchSingerResults()}
+          emptyLabel="singers"
+          onOpenAlbums={ctx.openSearchPersonAlbums}
+        />
+      </Show>
     </div>
   );
 }
