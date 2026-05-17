@@ -9,8 +9,8 @@ const SORT_OPTIONS = [
 ];
 
 const SEARCH_TABS = [
-  { id: "albums", label: "Albums" },
   { id: "songs", label: "Songs" },
+  { id: "albums", label: "Albums" },
   { id: "directors", label: "Music Directors" },
   { id: "singers", label: "Singers" },
 ];

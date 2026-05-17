@@ -123,7 +123,7 @@ export function App() {
   const [activePlaylist, setActivePlaylist] = createSignal("rahman");
   const [activeAlbum, setActiveAlbum] = createSignal("");
   const [songSearch, setSongSearch] = createSignal("");
-  const [searchResultTab, setSearchResultTab] = createSignal("albums");
+  const [searchResultTab, setSearchResultTab] = createSignal("songs");
   const [playlistSearch, setPlaylistSearch] = createSignal("");
   const [trackSearch, setTrackSearch] = createSignal("");
   const [sort, setSort] = createSignal("n");
@@ -833,7 +833,7 @@ export function App() {
     const hadSearch = !!songSearch().trim();
     setSongSearch(value);
     if (String(value || "").trim()) {
-      if (!hadSearch) setSearchResultTab("albums");
+      if (!hadSearch) setSearchResultTab("songs");
       setTrackSearch("");
       setTab("Library");
       setActiveAlbum("");
