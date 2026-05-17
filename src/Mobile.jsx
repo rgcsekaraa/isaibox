@@ -213,9 +213,7 @@ export function MobilePlaylistDetail(props) {
             </Show>
             <h2 class="m-detail-title">{playlist().name}</h2>
           </div>
-          <button class="m-detail-menu" onClick={() => ctx.addToActivePlaylist(ctx.currentN())}>
-            <Icon name="dots" size={18} />
-          </button>
+          <span class="m-detail-spacer" aria-hidden="true" />
         </div>
         <Show when={isAlbum() && filteredTracks().length > 0}>
           <button class="btn-secondary m-play-album" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks())}>

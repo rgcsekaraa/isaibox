@@ -361,7 +361,7 @@ export function App() {
         const sharedTrack = sharedTrackId ? nextTracks.find((track) => track.id === sharedTrackId) : null;
         setCurrentN((sharedTrack || nextTracks[0]).n);
         setRecents([]);
-        setQueue(nextTracks.slice(1, 7).map((track) => track.n));
+        setQueue([]);
       }
       if (playlistsResponse?.ok) {
         const payload = await playlistsResponse.json();
@@ -706,12 +706,16 @@ export function App() {
   };
 
   const updateSongSearch = (value) => {
+    const hadSearch = !!songSearch().trim();
     setSongSearch(value);
     if (String(value || "").trim()) {
       setTrackSearch("");
       setTab("Library");
       setActiveAlbum("");
       setMobileView("playlist");
+    } else if (hadSearch && isMobile()) {
+      setTrackSearch("");
+      setMobileView("list");
     }
   };
 
