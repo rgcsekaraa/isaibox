@@ -1,6 +1,7 @@
-import { For, Show } from "solid-js";
+import { For, Show, Switch, Match, createSignal, createEffect } from "solid-js";
 import { Icon } from "./Icon.jsx";
 import { MenuSelect } from "./MenuSelect.jsx";
+import { fetchAlbumArt } from "./albumArt.js";
 
 const SORT_OPTIONS = [
   { value: "n", label: "Track #" },
@@ -136,12 +137,12 @@ function SearchPeopleResults(props) {
           <For each={items()}>
             {(item) => (
               <div class="search-person-item">
-                <button class="search-person-main" onClick={() => props.onOpenAlbums?.(item.name)}>
+                <button class="search-person-main" onClick={() => props.onOpenArtist?.(item.name, props.role)}>
                   <span class="search-person-title">{item.name}</span>
                   <span class="search-person-sub">{item.albumCount} albums · {item.trackCount} songs</span>
                 </button>
-                <button class="search-person-action" onClick={() => props.onOpenAlbums?.(item.name)}>
-                  Albums
+                <button class="search-person-action" onClick={() => props.onOpenArtist?.(item.name, props.role)}>
+                  View
                 </button>
               </div>
             )}
@@ -196,8 +197,20 @@ function TrackRow(props) {
           <AlbumLink album={props.track.movie} onOpen={props.onOpenAlbum} />
         </div>
       </Show>
-      <Show when={props.showDirector !== false}><div class="t-director">{props.track.director}</div></Show>
-      <Show when={props.showSinger !== false}><div class="t-singer" title={props.track.singer}>{props.track.singer}</div></Show>
+      <Show when={props.showDirector !== false}>
+        <div class="t-director">
+          <Show when={props.onOpenArtist && props.track.director} fallback={<span>{props.track.director || "—"}</span>}>
+            <button class="artist-link" onClick={(e) => { e.stopPropagation(); props.onOpenArtist(props.track.director, "director"); }}>{props.track.director}</button>
+          </Show>
+        </div>
+      </Show>
+      <Show when={props.showSinger !== false}>
+        <div class="t-singer" title={props.track.singer}>
+          <Show when={props.onOpenArtist && props.track.singer} fallback={<span>{props.track.singer || "—"}</span>}>
+            <button class="artist-link" onClick={(e) => { e.stopPropagation(); props.onOpenArtist(props.track.singer, "singer"); }}>{props.track.singer}</button>
+          </Show>
+        </div>
+      </Show>
       <Show when={props.showYear !== false}><div class="t-year">{props.yearOverride ?? props.track.year}</div></Show>
       <div class="t-actions">
         {props.rightSlot || (
@@ -213,6 +226,95 @@ function TrackRow(props) {
         )}
       </div>
     </div>
+  );
+}
+
+// ─── Album art placeholder ───────────────────────────────────────
+const ART_COLORS = [
+  "#e84855","#3d405b","#81b29a","#f2cc8f","#118ab2",
+  "#06d6a0","#ef476f","#8338ec","#3a86ff","#fb5607",
+];
+function artColor(name) {
+  let h = 0;
+  for (let i = 0; i < (name || "").length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+  return ART_COLORS[Math.abs(h) % ART_COLORS.length];
+}
+function AlbumArt(props) {
+  const name = () => props.name || "?";
+  const initial = () => name()[0].toUpperCase();
+  const bg = () => artColor(name());
+  const size = () => props.size || 48;
+  const [imgUrl, setImgUrl] = createSignal(props.src || null);
+
+  createEffect(() => {
+    const n = name();
+    if (props.src) { setImgUrl(props.src); return; }
+    setImgUrl(null);
+    fetchAlbumArt(n).then((url) => { if (url) setImgUrl(url); });
+  });
+
+  return (
+    <Show when={imgUrl()} fallback={
+      <div class="album-art-placeholder" style={{ background: bg(), width: `${size()}px`, height: `${size()}px`, "border-radius": props.radius || "6px" }}>
+        <span class="album-art-initial" style={{ "font-size": `${Math.round(size() * 0.4)}px` }}>{initial()}</span>
+      </div>
+    }>
+      <img class="album-art-img" src={imgUrl()} alt={name()} width={size()} height={size()} style={{ "border-radius": props.radius || "6px" }} loading="lazy" />
+    </Show>
+  );
+}
+
+// ─── Era / decade filter chips ───────────────────────────────────
+const DECADES = [
+  { label: "60s", from: 1960, to: 1970 },
+  { label: "70s", from: 1970, to: 1980 },
+  { label: "80s", from: 1980, to: 1990 },
+  { label: "90s", from: 1990, to: 2000 },
+  { label: "2000s", from: 2000, to: 2010 },
+  { label: "2010s", from: 2010, to: 2020 },
+  { label: "2020s", from: 2020, to: 2030 },
+];
+
+function EraChips(props) {
+  const decadeCounts = () => {
+    const counts = {};
+    for (const t of (props.tracks || [])) {
+      const y = parseInt(t.year);
+      if (isNaN(y)) continue;
+      const decade = Math.floor(y / 10) * 10;
+      counts[decade] = (counts[decade] || 0) + 1;
+    }
+    return counts;
+  };
+  const hasAny = () => DECADES.some((d) => (decadeCounts()[d.from] || 0) > 0 || props.eraFilter?.[0] === d.from);
+  return (
+    <Show when={hasAny()}>
+      <div class="era-chips">
+        <Show when={props.eraFilter}>
+          <button class="era-chip active era-clear" onClick={() => props.setEraFilter(null)} title="Clear era filter">
+            ✕ Clear
+          </button>
+        </Show>
+        <For each={DECADES}>
+          {(d) => {
+            const count = () => decadeCounts()[d.from] || 0;
+            const isActive = () => props.eraFilter?.[0] === d.from;
+            return (
+              <Show when={count() > 0 || isActive()}>
+                <button
+                  class="era-chip"
+                  classList={{ active: isActive() }}
+                  onClick={() => props.setEraFilter(isActive() ? null : [d.from, d.to])}
+                >
+                  {d.label}
+                  <span class="era-chip-count">{count()}</span>
+                </button>
+              </Show>
+            );
+          }}
+        </For>
+      </div>
+    </Show>
   );
 }
 
@@ -252,11 +354,35 @@ export function LibraryPage(props) {
                     <div class="pl-kicker">Album</div>
                   </Show>
                   <div class="pl-title-line">
+                    <Show when={isAlbum()}>
+                      <AlbumArt name={ctx.activeAlbum()} size={52} radius="8px" />
+                    </Show>
                     <h1 class="pl-title">{playlist().name}</h1>
                     <Show when={isAlbum() && ctx.activeAlbumTracks().length > 0}>
-                      <button class="btn-secondary album-play-btn" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks(), { type: "album", label: ctx.activeAlbum(), caption: "Album" })}>
-                        <Icon name="play" size={13} /><span>Play</span>
-                      </button>
+                      <div class="album-header-actions">
+                        <button class="btn-secondary album-play-btn" onClick={() => { ctx.setShuffle(false); ctx.playPlaylist(ctx.activeAlbumTracks(), { type: "album", label: ctx.activeAlbum(), caption: "Album" }); }}>
+                          <Icon name="play" size={13} /><span>Play</span>
+                        </button>
+                        <button class="btn-secondary album-play-btn" onClick={() => { ctx.setShuffle(true); ctx.playPlaylist(ctx.activeAlbumTracks(), { type: "album", label: ctx.activeAlbum(), caption: "Album" }); }}>
+                          <Icon name="shuffle" size={13} /><span>Shuffle</span>
+                        </button>
+                      </div>
+                    </Show>
+                    <Show when={!isAlbum() && ctx.activePlaylistMeta()?.source === "personal" && ctx.user()}>
+                      {() => {
+                        const meta = () => ctx.activePlaylistMeta();
+                        return (
+                          <button
+                            class="collab-toggle"
+                            classList={{ active: meta()?.isCollaborative }}
+                            title={meta()?.isCollaborative ? "Collaborative — click to make private" : "Make collaborative"}
+                            onClick={() => ctx.toggleCollaborative?.(meta()?.id, meta()?.isCollaborative)}
+                          >
+                            <Icon name="collab" size={14} />
+                            <span>{meta()?.isCollaborative ? "Collaborative" : "Make collaborative"}</span>
+                          </button>
+                        );
+                      }}
                     </Show>
                   </div>
                 </>
@@ -309,6 +435,9 @@ export function LibraryPage(props) {
           </div>
         </div>
       </div>
+      <Show when={!isSearch()}>
+        <EraChips eraFilter={ctx.eraFilter()} setEraFilter={ctx.setEraFilter} tracks={ctx.filteredTracks()} />
+      </Show>
       <Show when={!isSearch() || activeSearchTab() === "songs"}>
         <div class="tracklist" classList={{ "search-results": isSearch() }}>
         <div class={`track-row head ${ctx.density()}`}>
@@ -335,6 +464,7 @@ export function LibraryPage(props) {
                 onQueue={() => ctx.addToQueue(t.n)}
                 onSaveToPlaylist={() => ctx.addToActivePlaylist(t.n)}
                 onOpenAlbum={ctx.openAlbum}
+                onOpenArtist={ctx.openArtist}
               />
             )}
           </For>
@@ -369,7 +499,8 @@ export function LibraryPage(props) {
           items={ctx.searchDirectorResults()}
           loading={ctx.searchPending()}
           emptyLabel="music directors"
-          onOpenAlbums={ctx.openSearchPersonAlbums}
+          role="director"
+          onOpenArtist={ctx.openArtist}
         />
       </Show>
       <Show when={isSearch() && activeSearchTab() === "singers"}>
@@ -377,7 +508,8 @@ export function LibraryPage(props) {
           items={ctx.searchSingerResults()}
           loading={ctx.searchPending()}
           emptyLabel="singers"
-          onOpenAlbums={ctx.openSearchPersonAlbums}
+          role="singer"
+          onOpenArtist={ctx.openArtist}
         />
       </Show>
     </div>
@@ -538,8 +670,18 @@ export function RecentsPage(props) {
 
   return (
     <div class="page page-recents">
-      <div class="page-header">
+      <div class="page-header with-cta">
         <h1 class="page-title">Recents</h1>
+        <Show when={tracks().length > 0}>
+          <div class="header-actions">
+            <button class="btn-secondary" onClick={() => { ctx.setShuffle(true); ctx.playPlaylist(tracks()); }}>
+              <Icon name="shuffle" size={13} /><span>Shuffle</span>
+            </button>
+            <button class="btn-primary" onClick={() => { ctx.setShuffle(false); ctx.playPlaylist(tracks()); }}>
+              <Icon name="play" size={13} /><span>Play All</span>
+            </button>
+          </div>
+        </Show>
       </div>
       <div class="tracklist nopad">
         <div class={`track-row head ${ctx.density()} no-num recents-row`}>
@@ -606,13 +748,16 @@ export function FavoritesPage(props) {
   return (
     <div class="page page-favorites">
       <div class="page-header with-cta">
-        <div>
-          <h1 class="page-title">Favorites</h1>
-        </div>
+        <h1 class="page-title">Favorites</h1>
         <Show when={tracks().length > 0}>
-          <button class="btn-primary" onClick={() => ctx.playPlaylist(tracks())}>
-            <Icon name="play" size={13} /><span>Play All</span>
-          </button>
+          <div class="header-actions">
+            <button class="btn-secondary" onClick={() => { ctx.setShuffle(true); ctx.playPlaylist(tracks()); }}>
+              <Icon name="shuffle" size={13} /><span>Shuffle</span>
+            </button>
+            <button class="btn-primary" onClick={() => { ctx.setShuffle(false); ctx.playPlaylist(tracks()); }}>
+              <Icon name="play" size={13} /><span>Play All</span>
+            </button>
+          </div>
         </Show>
       </div>
       <Show
@@ -671,6 +816,374 @@ export function FavoritesPage(props) {
           </div>
         </div>
       </Show>
+    </div>
+  );
+}
+
+// ─── Stats / Wrapped Page ─────────────────────────────────────────
+export function StatsPage(props) {
+  const { ctx } = props;
+  const [stats, setStats] = createSignal(null);
+  const [loading, setLoading] = createSignal(false);
+  const [error, setError] = createSignal("");
+
+  createEffect(() => {
+    if (!ctx.user()) { setError("Sign in to view your listening stats."); return; }
+    setLoading(true);
+    fetch("/api/stats/listening", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then((data) => { setStats(data); setError(""); })
+      .catch(() => setError("Unable to load stats."))
+      .finally(() => setLoading(false));
+  });
+
+  const fmtHours = (mins) => {
+    if (mins < 60) return `${mins}m`;
+    return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  };
+
+  return (
+    <div class="stats-page">
+      <div class="stats-header">
+        <div class="stats-title">Your Listening Stats</div>
+        <div class="stats-sub">All-time summary of your isaibox activity</div>
+      </div>
+      <Show when={loading()}><div class="loading-state"><Icon name="spinner" size={20} /><span>Loading...</span></div></Show>
+      <Show when={!loading() && error()}><div class="empty">{error()}</div></Show>
+      <Show when={!loading() && stats()}>
+        {(s) => (
+          <>
+            <div class="stats-grid">
+              <div class="stats-card">
+                <div class="stats-card-label">Total Plays</div>
+                <div class="stats-card-value">{s().totalPlays?.toLocaleString()}</div>
+              </div>
+              <div class="stats-card">
+                <div class="stats-card-label">Listening Time</div>
+                <div class="stats-card-value">{fmtHours(s().totalMinutes || 0)}</div>
+              </div>
+            </div>
+            <div class="stats-section">
+              <div class="stats-section-title">Top Songs</div>
+              <For each={s().topSongs}>
+                {(song) => (
+                  <div class="stats-row">
+                    <div class="stats-row-name">{song.track} <span style="color:var(--fg-mute);font-weight:400">— {song.movie}</span></div>
+                    <div class="stats-row-count">{song.plays} plays</div>
+                  </div>
+                )}
+              </For>
+            </div>
+            <div class="stats-section">
+              <div class="stats-section-title">Favourite Directors</div>
+              <For each={s().topDirectors}>
+                {(d) => (
+                  <div class="stats-row">
+                    <div class="stats-row-name">{d.name}</div>
+                    <div class="stats-row-count">{d.plays} plays</div>
+                  </div>
+                )}
+              </For>
+            </div>
+            <div class="stats-section">
+              <div class="stats-section-title">Top Eras</div>
+              <For each={s().topYears}>
+                {(y) => (
+                  <div class="stats-row">
+                    <div class="stats-row-name">{y.year}s</div>
+                    <div class="stats-row-count">{y.plays} plays</div>
+                  </div>
+                )}
+              </For>
+            </div>
+          </>
+        )}
+      </Show>
+    </div>
+  );
+}
+
+// ─── New This Week Page ───────────────────────────────────────────
+export function NewThisWeekPage(props) {
+  const { ctx } = props;
+  const [albums, setAlbums] = createSignal([]);
+  const [loading, setLoading] = createSignal(true);
+
+  createEffect(() => {
+    fetch("/api/library/new", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.albums) setAlbums(data.albums); })
+      .finally(() => setLoading(false));
+  });
+
+  const toTrack = (song) => ctx.trackById()[song.id];
+
+  return (
+    <div class="page">
+      <div class="page-header">
+        <div class="page-kicker">Fresh drops</div>
+        <h1 class="page-title">New This Week</h1>
+      </div>
+      <Show when={loading()}><div class="loading-state"><Icon name="spinner" size={18} /><span>Loading...</span></div></Show>
+      <Show when={!loading() && albums().length === 0}>
+        <div class="empty">No new releases in the last 7 days.</div>
+      </Show>
+      <div style="padding:0 24px">
+        <For each={albums()}>
+          {(album) => {
+            const tracks = () => (album.songs || []).map((s) => toTrack(s)).filter(Boolean);
+            return (
+              <div class="artist-album">
+                <div class="artist-album-name">
+                  <button class="album-link" onClick={() => ctx.openAlbum(album.name)}>{album.name}</button>
+                  <span class="artist-album-year">{album.year}</span>
+                  <button class="btn-link" onClick={() => ctx.playPlaylist(tracks(), { type: "album", label: album.name, caption: "Album" })}>
+                    <Icon name="play" size={12} /> Play all
+                  </button>
+                </div>
+                <For each={(album.songs || []).slice(0, 4)}>
+                  {(song) => {
+                    const t = toTrack(song);
+                    return (
+                      <div class="track-row comfortable" style="padding-left:0">
+                        <div class="t-title">{song.track}</div>
+                        <div class="t-singer" style="color:var(--fg-mute);font-size:12px">{song.singers}</div>
+                        <div class="t-actions">
+                          <Show when={t}>
+                            <button class="t-icon" onClick={() => ctx.playTrack(t.n)}><Icon name="play" size={12} /></button>
+                            <button class="t-icon" onClick={() => ctx.addToQueue(t.n)}><Icon name="plus" size={12} /></button>
+                          </Show>
+                        </div>
+                      </div>
+                    );
+                  }}
+                </For>
+              </div>
+            );
+          }}
+        </For>
+      </div>
+    </div>
+  );
+}
+
+// ─── Recommendations Page ────────────────────────────────────────
+export function RecommendationsPage(props) {
+  const { ctx } = props;
+  const [songs, setSongs] = createSignal([]);
+  const [basedOn, setBasedOn] = createSignal([]);
+  const [loading, setLoading] = createSignal(true);
+
+  createEffect(() => {
+    fetch("/api/recommendations", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.songs) { setSongs(data.songs); setBasedOn(data.basedOn || []); } })
+      .finally(() => setLoading(false));
+  });
+
+  return (
+    <div class="page">
+      <div class="page-header">
+        <div class="page-kicker">
+          {basedOn().length > 0 ? `Based on: ${basedOn().slice(0, 2).join(", ")}` : "Personalised picks"}
+        </div>
+        <h1 class="page-title">Recommended For You</h1>
+      </div>
+      <Show when={loading()}><div class="loading-state"><Icon name="spinner" size={18} /><span>Loading...</span></div></Show>
+      <div class="track-body" style="padding:0 24px">
+        <For each={songs()}>
+          {(song) => {
+            const t = () => ctx.trackById()[song.id];
+            return (
+              <div class="track-row comfortable" onDblClick={() => t() && ctx.playTrack(t().n)}>
+                <div class="t-title">{song.track}</div>
+                <div class="t-movie"><button class="album-link" onClick={() => ctx.openAlbum(song.movie)}>{song.movie}</button></div>
+                <div class="t-director" style="color:var(--fg-mute);font-size:12px">{song.musicDirector}</div>
+                <div class="t-year mono" style="color:var(--fg-faint);font-size:11px">{song.year}</div>
+                <div class="t-actions">
+                  <Show when={t()}>
+                    <button class="t-icon" classList={{ active: ctx.favs().has(t().n) }} onClick={() => ctx.toggleFav(t().n)}>
+                      <Icon name={ctx.favs().has(t().n) ? "heart-fill" : "heart"} size={13} />
+                    </button>
+                    <button class="t-icon" onClick={() => ctx.playTrack(t().n)}><Icon name="play" size={12} /></button>
+                    <button class="t-icon" onClick={() => ctx.addToQueue(t().n)}><Icon name="plus" size={12} /></button>
+                  </Show>
+                </div>
+              </div>
+            );
+          }}
+        </For>
+      </div>
+    </div>
+  );
+}
+
+// ─── Artist / Music Director Page ────────────────────────────────
+export function ArtistPage(props) {
+  const { ctx } = props;
+  const [data, setData] = createSignal(null);
+  const [loading, setLoading] = createSignal(true);
+
+  createEffect(() => {
+    const view = ctx.artistView();
+    if (!view?.name) return;
+    setLoading(true);
+    setData(null);
+    fetch(`/api/artist?name=${encodeURIComponent(view.name)}&role=${view.role || "director"}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (d?.ok) setData(d); })
+      .finally(() => setLoading(false));
+  });
+
+  return (
+    <div class="artist-page">
+      <Show when={loading()}>
+        <div class="loading-state large"><Icon name="spinner" size={22} /><span>Loading...</span></div>
+      </Show>
+      <Show when={!loading() && data()}>
+        {(d) => {
+          const allTracks = () => d().albums.flatMap((a) => (a.songs || []).map((s) => ctx.trackById()[s.id]).filter(Boolean));
+          return (
+            <>
+              <div class="artist-header">
+                <div class="artist-kicker">{d().role === "singer" ? "Singer" : "Music Director"}</div>
+                <h1 class="artist-name">{d().name}</h1>
+                <div class="artist-meta">{d().totalAlbums} albums · {d().totalSongs} songs</div>
+                <div class="header-actions" style="margin-top:14px">
+                  <button class="btn-primary" onClick={() => { ctx.setShuffle(false); ctx.playPlaylist(allTracks(), { type: "artist", label: d().name, caption: d().role === "singer" ? "Singer" : "Director" }); }}>
+                    <Icon name="play" size={13} /><span>Play All</span>
+                  </button>
+                  <button class="btn-secondary" onClick={() => { ctx.setShuffle(true); ctx.playPlaylist(allTracks(), { type: "artist", label: d().name, caption: d().role === "singer" ? "Singer" : "Director" }); }}>
+                    <Icon name="shuffle" size={13} /><span>Shuffle</span>
+                  </button>
+                </div>
+              </div>
+              <div class="artist-albums-list">
+                <For each={d().albums}>
+                  {(album) => {
+                    const tracks = () => (album.songs || []).map((s) => ctx.trackById()[s.id]).filter(Boolean);
+                    return (
+                      <div class="artist-album">
+                        <div class="artist-album-head">
+                          <div class="artist-album-info">
+                            <button class="album-link artist-album-title" onClick={() => ctx.openAlbum(album.name)}>{album.name}</button>
+                            <span class="artist-album-year">{album.year}</span>
+                          </div>
+                          <button class="btn-link" onClick={() => { ctx.setShuffle(false); ctx.playPlaylist(tracks(), { type: "album", label: album.name, caption: "Album" }); }}>
+                            <Icon name="play" size={11} /> Play
+                          </button>
+                        </div>
+                        <div class="artist-album-tracks">
+                          <For each={(album.songs || []).slice(0, 5)}>
+                            {(song) => {
+                              const t = () => ctx.trackById()[song.id];
+                              return (
+                                <Show when={t()}>
+                                  {(track) => (
+                                    <div class="artist-track" classList={{ current: ctx.currentN() === track().n }} onClick={() => ctx.playTrack(track().n)}>
+                                      <span class="artist-track-n mono">{song.trackNumber}</span>
+                                      <span class="artist-track-title">{song.track}</span>
+                                      <span class="artist-track-sub">{song.singers}</span>
+                                      <button class="t-icon" classList={{ active: ctx.favs().has(track().n) }} onClick={(e) => { e.stopPropagation(); ctx.toggleFav(track().n); }}>
+                                        <Icon name={ctx.favs().has(track().n) ? "heart-fill" : "heart"} size={12} />
+                                      </button>
+                                    </div>
+                                  )}
+                                </Show>
+                              );
+                            }}
+                          </For>
+                          <Show when={(album.songs || []).length > 5}>
+                            <button class="btn-link artist-show-more" onClick={() => ctx.openAlbum(album.name)}>
+                              +{(album.songs || []).length - 5} more — open album
+                            </button>
+                          </Show>
+                        </div>
+                      </div>
+                    );
+                  }}
+                </For>
+              </div>
+            </>
+          );
+        }}
+      </Show>
+    </div>
+  );
+}
+
+// ─── Discover page (New / For You / Trending) ─────────────────────
+const DISCOVER_TABS = [
+  { id: "new", label: "New" },
+  { id: "foryou", label: "For You" },
+  { id: "trending", label: "Trending" },
+];
+
+export function DiscoverPage(props) {
+  const { ctx } = props;
+  const [sub, setSub] = createSignal("new");
+  return (
+    <div class="discover-page">
+      <div class="discover-sub-nav">
+        <For each={DISCOVER_TABS}>
+          {(t) => (
+            <button class="discover-sub-tab" classList={{ active: sub() === t.id }} onClick={() => setSub(t.id)}>
+              {t.label}
+            </button>
+          )}
+        </For>
+      </div>
+      <Switch>
+        <Match when={sub() === "new"}><NewThisWeekPage ctx={ctx} /></Match>
+        <Match when={sub() === "foryou"}><RecommendationsPage ctx={ctx} /></Match>
+        <Match when={sub() === "trending"}><TrendingPage ctx={ctx} /></Match>
+      </Switch>
+    </div>
+  );
+}
+
+// ─── Trending Page ────────────────────────────────────────────────
+export function TrendingPage(props) {
+  const { ctx } = props;
+  const [songs, setSongs] = createSignal([]);
+  const [loading, setLoading] = createSignal(true);
+
+  createEffect(() => {
+    fetch("/api/library/trending?limit=50", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.songs) setSongs(data.songs); })
+      .finally(() => setLoading(false));
+  });
+
+  return (
+    <div class="page">
+      <div class="page-header">
+        <div class="page-kicker">Most played</div>
+        <h1 class="page-title">Trending</h1>
+      </div>
+      <Show when={loading()}><div class="loading-state"><Icon name="spinner" size={18} /><span>Loading...</span></div></Show>
+      <div class="track-body" style="padding:0 24px">
+        <For each={songs()}>
+          {(song, i) => {
+            const t = () => ctx.trackById()[song.id];
+            return (
+              <div class="track-row comfortable" onDblClick={() => t() && ctx.playTrack(t().n)}>
+                <div class="t-num"><span class="t-n mono">{i() + 1}</span></div>
+                <div class="t-title">{song.track}</div>
+                <div class="t-movie"><button class="album-link" onClick={() => ctx.openAlbum(song.movie)}>{song.movie}</button></div>
+                <div class="t-director" style="color:var(--fg-mute);font-size:12px">{song.musicDirector}</div>
+                <div class="track-plays">{song.playCount?.toLocaleString()}</div>
+                <div class="t-actions">
+                  <Show when={t()}>
+                    <button class="t-icon" onClick={() => ctx.playTrack(t().n)}><Icon name="play" size={12} /></button>
+                    <button class="t-icon" onClick={() => ctx.addToQueue(t().n)}><Icon name="plus" size={12} /></button>
+                  </Show>
+                </div>
+              </div>
+            );
+          }}
+        </For>
+      </div>
     </div>
   );
 }

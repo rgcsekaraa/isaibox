@@ -2214,12 +2214,12 @@ def playlists_for_user(user_id: str) -> list[dict]:
     with get_read_conn() as conn:
         rows = conn.execute(
             f"""
-            SELECT p.playlist_id, p.name, p.is_global, p.source, p.source_url, p.updated_at, p.created_at, COUNT(s.song_id) AS track_count
+            SELECT p.playlist_id, p.name, p.is_global, p.source, p.source_url, p.updated_at, p.created_at, COUNT(s.song_id) AS track_count, COALESCE(p.is_collaborative, FALSE)
             FROM playlists p
             LEFT JOIN playlist_songs ps ON ps.playlist_id = p.playlist_id
             LEFT JOIN songs s ON s.song_id = ps.song_id AND {playlist_eligible_song_sql('s')}
             WHERE p.user_id = ? AND p.is_global = FALSE
-            GROUP BY 1,2,3,4,5,6,7
+            GROUP BY 1,2,3,4,5,6,7,9
             ORDER BY p.updated_at DESC, p.created_at DESC
             """,
             [user_id],
@@ -2233,6 +2233,7 @@ def playlists_for_user(user_id: str) -> list[dict]:
             "sourceUrl": row[4] or "",
             "updatedAt": row[5].isoformat() if row[5] else "",
             "trackCount": row[7] or 0,
+            "isCollaborative": bool(row[8]),
         }
         for row in rows
     ]

@@ -1,7 +1,7 @@
 import { createSignal, For, Show } from "solid-js";
 import { Icon } from "./Icon.jsx";
 
-const TABS = ["Library", "Recents", "Favorites"];
+const TABS = ["Library", "Discover", "Recents", "Favorites"];
 
 const SHORTCUT_GROUPS = [
   {
@@ -10,6 +10,8 @@ const SHORTCUT_GROUPS = [
       { keys: ["Space", "K"], label: "Play or pause" },
       { keys: ["J", "←"], label: "Previous track" },
       { keys: ["L", "→"], label: "Next track" },
+      { keys: ["Shift+←"], label: "Seek back 10 seconds" },
+      { keys: ["Shift+→"], label: "Seek forward 10 seconds" },
       { keys: ["S"], label: "Toggle shuffle" },
       { keys: ["R"], label: "Cycle repeat" },
       { keys: ["M"], label: "Mute or unmute" },
@@ -69,6 +71,14 @@ export function TopBar(props) {
             </button>
           )}
         </div>
+        <button
+          class="icon-btn"
+          classList={{ active: props.tab === "Stats" }}
+          title="Listening stats"
+          onClick={() => props.setTab?.("Stats")}
+        >
+          <Icon name="stats" size={15} />
+        </button>
         <button
           class="icon-btn"
           classList={{ active: props.settingsOpen }}

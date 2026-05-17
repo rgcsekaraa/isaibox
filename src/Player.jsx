@@ -1,6 +1,65 @@
-import { createSignal, Show, onCleanup } from "solid-js";
+import { createSignal, createEffect, Show, For, onCleanup } from "solid-js";
 import { Icon } from "./Icon.jsx";
 import { parseDur, fmtTime } from "./utils.js";
+import { fetchAlbumArt } from "./albumArt.js";
+
+function MoreMenu(props) {
+  const [open, setOpen] = createSignal(false);
+  const fmtRemaining = () => {
+    const s = props.sleepRemaining || 0;
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+  return (
+    <div class="more-menu-wrap" onMouseLeave={() => setOpen(false)}>
+      <button
+        class="icon-btn small"
+        classList={{ active: props.sleepMinutes > 0 }}
+        title="More options"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Icon name="dots" size={15} />
+        <Show when={props.sleepMinutes > 0}>
+          <span class="sleep-badge">{fmtRemaining()}</span>
+        </Show>
+      </button>
+      <Show when={open()}>
+        <div class="more-menu">
+          <button class="more-option" onClick={() => { props.onAddToQueue?.(); setOpen(false); }}>
+            <Icon name="plus" size={13} /><span>Add to queue</span>
+          </button>
+          <button class="more-option" onClick={() => { props.onSaveToPlaylist?.(); setOpen(false); }}>
+            <Icon name="list" size={13} /><span>Save to playlist</span>
+          </button>
+          <button class="more-option" onClick={() => { props.onShare?.(); setOpen(false); }}>
+            <Icon name="share" size={13} /><span>Share track</span>
+          </button>
+          <div class="more-divider" />
+          <button class="more-option" onClick={() => props.cycleSpeed?.()}>
+            <span class="mono more-speed">{props.speed}×</span><span>Playback speed</span>
+          </button>
+          <div class="more-divider" />
+          <div class="more-section-label">Sleep timer</div>
+          <Show when={props.sleepMinutes > 0}>
+            <button class="more-option active" onClick={() => { props.onSleepTimer?.(0); setOpen(false); }}>
+              <Icon name="moon" size={13} /><span>Cancel ({fmtRemaining()} left)</span>
+            </button>
+          </Show>
+          <For each={props.sleepOptions || []}>
+            {(m) => (
+              <button
+                class="more-option"
+                classList={{ active: props.sleepMinutes === m }}
+                onClick={() => { props.onSleepTimer?.(m); setOpen(false); }}
+              >
+                <Icon name="moon" size={13} /><span>{m} minutes</span>
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  );
+}
 
 function PlaybackSourcePill(props) {
   const source = () => props.source;
@@ -129,10 +188,23 @@ export function Scrubber(props) {
 // ─── Desktop dock ────────────────────────────────────────────────
 export function NowPlayingDock(props) {
   const duration = () => props.duration || parseDur(props.track.duration);
+  const [artUrl, setArtUrl] = createSignal(null);
+  createEffect(() => {
+    const name = props.track?.movie || props.track?.title || "";
+    setArtUrl(null);
+    if (name) fetchAlbumArt(name).then((url) => { if (url) setArtUrl(url); });
+  });
   return (
     <footer class="dock">
       <div class="dock-grid">
         <div class="dock-left">
+          <div class="dock-art" style={{ background: props.track.artColor || "#3d405b" }}>
+            <Show when={artUrl()} fallback={
+              <span class="dock-art-initial">{(props.track.movie || props.track.title || "?")[0].toUpperCase()}</span>
+            }>
+              <img src={artUrl()} alt={props.track.movie} class="dock-art-img" width="40" height="40" />
+            </Show>
+          </div>
           <div class="dock-meta">
             <div class="dock-title-row">
               <div class="dock-song" title={props.track.title}>{props.track.title}</div>
@@ -174,10 +246,23 @@ export function NowPlayingDock(props) {
         </div>
 
         <div class="dock-right">
-          <button class="icon-btn small" title="Add to queue" onClick={() => props.onAddToQueue?.()}><Icon name="plus" size={15} /></button>
-          <button class="icon-btn small" title="Save to playlist" onClick={() => props.onSaveToPlaylist?.()}><Icon name="dots" size={15} /></button>
-          <button class="icon-btn small" title="Share track" onClick={() => props.onShare?.()}><Icon name="share" size={15} /></button>
-          <button class="icon-btn small" title="Playback speed" onClick={() => props.cycleSpeed()}><span class="mono speed">{props.speed}×</span></button>
+          <MoreMenu
+            sleepMinutes={props.sleepTimerMinutes}
+            sleepRemaining={props.sleepTimerRemaining}
+            sleepOptions={props.sleepTimerOptions}
+            onSleepTimer={props.onSleepTimer}
+            speed={props.speed}
+            cycleSpeed={props.cycleSpeed}
+            onAddToQueue={props.onAddToQueue}
+            onSaveToPlaylist={props.onSaveToPlaylist}
+            onShare={props.onShare}
+          />
+          <button class="icon-btn small" classList={{ active: props.lyricsOpen }} title="Lyrics" onClick={() => props.onToggleLyrics?.()}>
+            <Icon name="lyrics" size={14} />
+          </button>
+          <button class="icon-btn small" classList={{ active: props.equalizerOpen }} title="Equalizer" onClick={() => props.onToggleEqualizer?.()}>
+            <Icon name="equalizer" size={14} />
+          </button>
           <button class="icon-btn small" title={props.queueCollapsed ? "Open queue" : "Collapse queue"} onClick={() => props.onToggleQueue?.()}>
             <Icon name="queue" size={15} />
           </button>

@@ -1151,3 +1151,472 @@ def admin_airflow_trigger():
         return error_response
     code, stdout, stderr = airflow_cli(["dags", "trigger", "masstamilan_daily_scraper"])
     return json_response({"ok": code == 0, "stdout": stdout, "stderr": stderr, "airflow": airflow_process_status()}), (200 if code == 0 else 500)
+
+
+# ── Play tracking ──────────────────────────────────────────────────────────────
+
+@app.post("/api/plays/<song_id>")
+def record_play(song_id: str):
+    """Record a song play. Anonymous plays are tracked globally; authenticated plays per-user."""
+    row = get_song_row(song_id)
+    if not row:
+        return json_response({"ok": False, "message": "Song not found"}), 404
+    user = get_session_user()
+    payload = request.get_json(silent=True) or {}
+    duration_s = max(0, int(payload.get("durationS", 0) or 0))
+    play_id = secrets.token_hex(12)
+    with db.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO song_plays (play_id, user_id, song_id, played_at, duration_s) VALUES (?, ?, ?, ?, ?)",
+            [play_id, user["user_id"] if user else None, song_id, now_utc(), duration_s],
+        )
+        conn.execute(
+            "UPDATE songs SET play_count = COALESCE(play_count, 0) + 1 WHERE song_id = ?",
+            [song_id],
+        )
+    return json_response({"ok": True})
+
+
+# ── New releases ───────────────────────────────────────────────────────────────
+
+@app.get("/api/library/new")
+def library_new():
+    """Songs added in the last 7 days, grouped by album."""
+    with get_read_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                s.song_id, s.movie_name, s.track_name, s.singers,
+                s.music_director, s.year, s.track_number,
+                s.updated_at, s.album_url,
+                a.cover_url,
+                s.first_seen_at
+            FROM songs s
+            LEFT JOIN albums a ON s.album_url = a.album_url
+            WHERE s.url_320kbps IS NOT NULL AND s.url_320kbps != ''
+              AND s.first_seen_at >= NOW() - INTERVAL '7 days'
+            ORDER BY s.first_seen_at DESC, s.movie_name, s.track_number
+            LIMIT 200
+            """
+        ).fetchall()
+    songs = [
+        {
+            "id": row[0],
+            "movie": row[1] or "",
+            "track": row[2] or "",
+            "singers": row[3] or "",
+            "musicDirector": row[4] or "",
+            "year": row[5] or "",
+            "trackNumber": row[6] or 0,
+            "audioUrl": f"/api/stream/{row[0]}",
+            "updatedAt": row[7].isoformat() if row[7] else "",
+            "albumUrl": row[8] or "",
+            "coverUrl": row[9] or "",
+            "firstSeenAt": row[10].isoformat() if row[10] else "",
+        }
+        for row in rows
+    ]
+    # Group into albums
+    albums: dict = {}
+    for song in songs:
+        key = song["movie"]
+        if key not in albums:
+            albums[key] = {"name": key, "coverUrl": song["coverUrl"], "year": song["year"], "songs": []}
+        albums[key]["songs"].append(song)
+    return json_response({"ok": True, "albums": list(albums.values()), "total": len(songs)})
+
+
+# ── Trending ───────────────────────────────────────────────────────────────────
+
+@app.get("/api/library/trending")
+def library_trending():
+    """Most-played songs globally."""
+    limit_raw = request.args.get("limit", 50)
+    try:
+        limit = max(1, min(200, int(limit_raw)))
+    except (TypeError, ValueError):
+        limit = 50
+    with get_read_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                s.song_id, s.movie_name, s.track_name, s.singers,
+                s.music_director, s.year, s.track_number,
+                s.updated_at, s.album_url,
+                COALESCE(s.play_count, 0) as play_count,
+                a.cover_url
+            FROM songs s
+            LEFT JOIN albums a ON s.album_url = a.album_url
+            WHERE s.url_320kbps IS NOT NULL AND s.url_320kbps != ''
+              AND COALESCE(s.play_count, 0) > 0
+            ORDER BY play_count DESC
+            LIMIT ?
+            """,
+            [limit],
+        ).fetchall()
+    songs = [
+        {
+            "id": row[0],
+            "movie": row[1] or "",
+            "track": row[2] or "",
+            "singers": row[3] or "",
+            "musicDirector": row[4] or "",
+            "year": row[5] or "",
+            "trackNumber": row[6] or 0,
+            "audioUrl": f"/api/stream/{row[0]}",
+            "updatedAt": row[7].isoformat() if row[7] else "",
+            "albumUrl": row[8] or "",
+            "playCount": row[9],
+            "coverUrl": row[10] or "",
+        }
+        for row in rows
+    ]
+    return json_response({"ok": True, "songs": songs})
+
+
+# ── Recommendations ────────────────────────────────────────────────────────────
+
+@app.get("/api/recommendations")
+def recommendations():
+    """Recommendations based on favorite directors/songs."""
+    user = get_session_user()
+    limit_raw = request.args.get("limit", 40)
+    try:
+        limit = max(1, min(100, int(limit_raw)))
+    except (TypeError, ValueError):
+        limit = 40
+
+    with get_read_conn() as conn:
+        if user:
+            fav_directors = conn.execute(
+                "SELECT music_director FROM favorite_music_directors WHERE user_id = ? LIMIT 5",
+                [user["user_id"]],
+            ).fetchall()
+            fav_song_ids = conn.execute(
+                "SELECT song_id FROM favorite_songs WHERE user_id = ? LIMIT 50",
+                [user["user_id"]],
+            ).fetchall()
+        else:
+            fav_directors = []
+            fav_song_ids = []
+
+        # Collect directors from fav songs
+        song_ids = [r[0] for r in fav_song_ids]
+        director_names = [r[0] for r in fav_directors]
+        if song_ids:
+            extra_directors = conn.execute(
+                f"SELECT DISTINCT music_director FROM songs WHERE song_id IN ({','.join('?' * len(song_ids))}) AND music_director IS NOT NULL",
+                song_ids,
+            ).fetchall()
+            director_names += [r[0] for r in extra_directors]
+        director_names = list(set(filter(None, director_names)))[:8]
+
+        if not director_names:
+            # Fall back to random recent songs
+            rows = conn.execute(
+                """
+                SELECT s.song_id, s.movie_name, s.track_name, s.singers,
+                       s.music_director, s.year, s.track_number, s.updated_at, s.album_url, a.cover_url
+                FROM songs s
+                LEFT JOIN albums a ON s.album_url = a.album_url
+                WHERE s.url_320kbps IS NOT NULL AND s.url_320kbps != ''
+                ORDER BY RANDOM()
+                LIMIT ?
+                """,
+                [limit],
+            ).fetchall()
+        else:
+            placeholders = ",".join("?" * len(director_names))
+            exclude = set(song_ids)
+            rows = conn.execute(
+                f"""
+                SELECT s.song_id, s.movie_name, s.track_name, s.singers,
+                       s.music_director, s.year, s.track_number, s.updated_at, s.album_url, a.cover_url
+                FROM songs s
+                LEFT JOIN albums a ON s.album_url = a.album_url
+                WHERE s.url_320kbps IS NOT NULL AND s.url_320kbps != ''
+                  AND s.music_director IN ({placeholders})
+                ORDER BY RANDOM()
+                LIMIT ?
+                """,
+                director_names + [limit * 2],
+            ).fetchall()
+            rows = [r for r in rows if r[0] not in exclude][:limit]
+
+    songs = [
+        {
+            "id": row[0], "movie": row[1] or "", "track": row[2] or "",
+            "singers": row[3] or "", "musicDirector": row[4] or "",
+            "year": row[5] or "", "trackNumber": row[6] or 0,
+            "audioUrl": f"/api/stream/{row[0]}",
+            "updatedAt": row[7].isoformat() if row[7] else "",
+            "albumUrl": row[8] or "", "coverUrl": row[9] or "",
+        }
+        for row in rows
+    ]
+    return json_response({"ok": True, "songs": songs, "basedOn": director_names})
+
+
+# ── Artist page ────────────────────────────────────────────────────────────────
+
+@app.get("/api/artist")
+def artist_page():
+    """Full discography for a music director or singer."""
+    name = (request.args.get("name") or "").strip()
+    role = (request.args.get("role") or "director").strip()  # director | singer
+    if not name:
+        return json_response({"ok": False, "message": "name is required"}), 400
+
+    with get_read_conn() as conn:
+        if role == "singer":
+            rows = conn.execute(
+                """
+                SELECT s.song_id, s.movie_name, s.track_name, s.singers,
+                       s.music_director, s.year, s.track_number,
+                       s.updated_at, s.album_url,
+                       COALESCE(s.play_count, 0),
+                       a.cover_url
+                FROM songs s
+                LEFT JOIN albums a ON s.album_url = a.album_url
+                WHERE s.url_320kbps IS NOT NULL AND s.url_320kbps != ''
+                  AND s.singers ILIKE ?
+                ORDER BY TRY_CAST(s.year AS INTEGER) DESC NULLS LAST, s.movie_name, s.track_number
+                LIMIT 500
+                """,
+                [f"%{name}%"],
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT s.song_id, s.movie_name, s.track_name, s.singers,
+                       s.music_director, s.year, s.track_number,
+                       s.updated_at, s.album_url,
+                       COALESCE(s.play_count, 0),
+                       a.cover_url
+                FROM songs s
+                LEFT JOIN albums a ON s.album_url = a.album_url
+                WHERE s.url_320kbps IS NOT NULL AND s.url_320kbps != ''
+                  AND s.music_director = ?
+                ORDER BY TRY_CAST(s.year AS INTEGER) DESC NULLS LAST, s.movie_name, s.track_number
+                LIMIT 500
+                """,
+                [name],
+            ).fetchall()
+
+    songs = [
+        {
+            "id": row[0], "movie": row[1] or "", "track": row[2] or "",
+            "singers": row[3] or "", "musicDirector": row[4] or "",
+            "year": row[5] or "", "trackNumber": row[6] or 0,
+            "audioUrl": f"/api/stream/{row[0]}",
+            "updatedAt": row[7].isoformat() if row[7] else "",
+            "albumUrl": row[8] or "", "playCount": row[9], "coverUrl": row[10] or "",
+        }
+        for row in rows
+    ]
+    # Group by movie/album
+    albums_map: dict = {}
+    for s in songs:
+        key = s["movie"]
+        if key not in albums_map:
+            albums_map[key] = {"name": key, "year": s["year"], "coverUrl": s["coverUrl"], "songs": []}
+        albums_map[key]["songs"].append(s)
+    albums_list = sorted(albums_map.values(), key=lambda a: a["year"] or "0", reverse=True)
+
+    return json_response({
+        "ok": True,
+        "name": name,
+        "role": role,
+        "totalSongs": len(songs),
+        "totalAlbums": len(albums_list),
+        "albums": albums_list,
+        "topSongs": sorted(songs, key=lambda s: s["playCount"], reverse=True)[:10],
+    })
+
+
+# ── Lyrics ─────────────────────────────────────────────────────────────────────
+
+@app.get("/api/lyrics")
+def get_lyrics():
+    """Proxy lyrics from lrclib.net."""
+    title = (request.args.get("title") or "").strip()
+    artist = (request.args.get("artist") or "").strip()
+    album = (request.args.get("album") or "").strip()
+    if not title:
+        return json_response({"ok": False, "message": "title is required"}), 400
+    try:
+        params = {"track_name": title, "artist_name": artist}
+        if album:
+            params["album_name"] = album
+        resp = requests.get(
+            "https://lrclib.net/api/get",
+            params=params,
+            timeout=8,
+            headers={"User-Agent": "isaibox/1.0 (https://github.com/rgcsekaraa/isaibox)"},
+        )
+        if resp.status_code == 404:
+            # Try search as fallback
+            search_resp = requests.get(
+                "https://lrclib.net/api/search",
+                params={"q": f"{title} {artist}".strip()},
+                timeout=8,
+                headers={"User-Agent": "isaibox/1.0 (https://github.com/rgcsekaraa/isaibox)"},
+            )
+            if search_resp.ok:
+                results = search_resp.json()
+                if results:
+                    best = results[0]
+                    return json_response({
+                        "ok": True,
+                        "synced": best.get("syncedLyrics") or "",
+                        "plain": best.get("plainLyrics") or "",
+                        "duration": best.get("duration"),
+                    })
+            return json_response({"ok": False, "message": "Lyrics not found"}), 404
+        if not resp.ok:
+            return json_response({"ok": False, "message": "Lyrics service error"}), 502
+        data = resp.json()
+        return json_response({
+            "ok": True,
+            "synced": data.get("syncedLyrics") or "",
+            "plain": data.get("plainLyrics") or "",
+            "duration": data.get("duration"),
+        })
+    except requests.RequestException:
+        return json_response({"ok": False, "message": "Lyrics service unreachable"}), 502
+
+
+# ── Listening stats ────────────────────────────────────────────────────────────
+
+@app.get("/api/stats/listening")
+def listening_stats():
+    """Per-user listening statistics."""
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    with get_read_conn() as conn:
+        total_plays = conn.execute(
+            "SELECT COUNT(*) FROM song_plays WHERE user_id = ?",
+            [user["user_id"]],
+        ).fetchone()[0]
+        total_minutes = conn.execute(
+            "SELECT COALESCE(SUM(duration_s), 0) / 60 FROM song_plays WHERE user_id = ?",
+            [user["user_id"]],
+        ).fetchone()[0]
+        top_songs = conn.execute(
+            """
+            SELECT sp.song_id, s.track_name, s.movie_name, s.singers, s.music_director,
+                   COUNT(*) as plays
+            FROM song_plays sp
+            JOIN songs s ON sp.song_id = s.song_id
+            WHERE sp.user_id = ?
+            GROUP BY sp.song_id, s.track_name, s.movie_name, s.singers, s.music_director
+            ORDER BY plays DESC
+            LIMIT 10
+            """,
+            [user["user_id"]],
+        ).fetchall()
+        top_directors = conn.execute(
+            """
+            SELECT s.music_director, COUNT(*) as plays
+            FROM song_plays sp
+            JOIN songs s ON sp.song_id = s.song_id
+            WHERE sp.user_id = ? AND s.music_director IS NOT NULL AND s.music_director != ''
+            GROUP BY s.music_director
+            ORDER BY plays DESC
+            LIMIT 5
+            """,
+            [user["user_id"]],
+        ).fetchall()
+        top_years = conn.execute(
+            """
+            SELECT s.year, COUNT(*) as plays
+            FROM song_plays sp
+            JOIN songs s ON sp.song_id = s.song_id
+            WHERE sp.user_id = ? AND s.year IS NOT NULL AND s.year != ''
+            GROUP BY s.year
+            ORDER BY plays DESC
+            LIMIT 5
+            """,
+            [user["user_id"]],
+        ).fetchall()
+    return json_response({
+        "ok": True,
+        "totalPlays": total_plays,
+        "totalMinutes": int(total_minutes or 0),
+        "topSongs": [
+            {"id": r[0], "track": r[1] or "", "movie": r[2] or "",
+             "singers": r[3] or "", "director": r[4] or "", "plays": r[5]}
+            for r in top_songs
+        ],
+        "topDirectors": [{"name": r[0], "plays": r[1]} for r in top_directors],
+        "topYears": [{"year": r[0], "plays": r[1]} for r in top_years],
+    })
+
+
+# ── Collaborative playlists ────────────────────────────────────────────────────
+
+@app.put("/api/playlists/<playlist_id>/collaborative")
+def toggle_collaborative(playlist_id: str):
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    is_collab = bool(payload.get("isCollaborative"))
+    with db.get_conn() as conn:
+        playlist = conn.execute(
+            "SELECT playlist_id, is_global, user_id FROM playlists WHERE playlist_id = ?",
+            [playlist_id],
+        ).fetchone()
+        if not playlist or (playlist[1] and not user["is_admin"]) or (not playlist[1] and playlist[2] != user["user_id"]):
+            return json_response({"ok": False, "message": "Playlist not found"}), 404
+        conn.execute(
+            "UPDATE playlists SET is_collaborative = ?, updated_at = ? WHERE playlist_id = ?",
+            [is_collab, now_utc(), playlist_id],
+        )
+    return json_response({"ok": True, "isCollaborative": is_collab})
+
+
+@app.post("/api/playlists/<playlist_id>/songs/collaborate")
+def collab_add_song(playlist_id: str):
+    """Any signed-in user can add songs to a collaborative playlist."""
+    user, error_response = require_session_user()
+    if error_response:
+        return error_response
+    payload = request.get_json(silent=True) or {}
+    song_id = (payload.get("songId") or "").strip()
+    if not song_id:
+        return json_response({"ok": False, "message": "songId is required"}), 400
+    with db.get_conn() as conn:
+        playlist = conn.execute(
+            "SELECT playlist_id, is_global, user_id, is_collaborative FROM playlists WHERE playlist_id = ?",
+            [playlist_id],
+        ).fetchone()
+        if not playlist:
+            return json_response({"ok": False, "message": "Playlist not found"}), 404
+        is_owner = playlist[2] == user["user_id"]
+        is_collab = bool(playlist[3])
+        if not is_owner and not is_collab and not user.get("is_admin"):
+            return json_response({"ok": False, "message": "This playlist is not collaborative"}), 403
+        song = conn.execute(
+            "SELECT song_id FROM songs WHERE song_id = ? AND url_320kbps IS NOT NULL AND url_320kbps != '' LIMIT 1",
+            [song_id],
+        ).fetchone()
+        if not song:
+            return json_response({"ok": False, "message": "Song not found"}), 404
+        existing = conn.execute(
+            "SELECT 1 FROM playlist_songs WHERE playlist_id = ? AND song_id = ? LIMIT 1",
+            [playlist_id, song_id],
+        ).fetchone()
+        if existing:
+            return json_response({"ok": True, "alreadyExists": True})
+        next_pos = conn.execute(
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_songs WHERE playlist_id = ?",
+            [playlist_id],
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO playlist_songs (playlist_id, song_id, position, added_at) VALUES (?, ?, ?, ?)",
+            [playlist_id, song_id, next_pos, now_utc()],
+        )
+        conn.execute("UPDATE playlists SET updated_at = ? WHERE playlist_id = ?", [now_utc(), playlist_id])
+    return json_response({"ok": True})

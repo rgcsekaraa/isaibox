@@ -2,15 +2,19 @@ import { createSignal, createMemo, createEffect, onCleanup, onMount, Show, Match
 import { fmtTime, getTrackSearchMatch, parseDur, prepareSearchQuery, prepareTrackSearch, useMediaQuery } from "./utils.js";
 import { TopBar, Sidebar, ShortcutsDrawer } from "./Desktop.jsx";
 import { MobileHeader, MobileBottomTabs, MobileLibraryPage, MobilePlaylistDetail } from "./Mobile.jsx";
-import { LibraryPage, QueuePanel, RecentsPage, FavoritesPage } from "./Pages.jsx";
+import { LibraryPage, QueuePanel, RecentsPage, FavoritesPage, StatsPage, NewThisWeekPage, RecommendationsPage, TrendingPage, ArtistPage, DiscoverPage } from "./Pages.jsx";
 import { NowPlayingDock, MiniPlayer, FullPlayer } from "./Player.jsx";
+import { LyricsPanel } from "./LyricsPanel.jsx";
+import { Equalizer } from "./Equalizer.jsx";
 import { MenuSelect } from "./MenuSelect.jsx";
 import { Icon } from "./Icon.jsx";
 
 const GOOGLE_GSI_SRC = "https://accounts.google.com/gsi/client";
 const THEME_STORAGE_KEY = "isaibox-theme";
 const INITIAL_LOADING_SEEN_KEY = "isaibox-initial-loading-seen";
+const RESUME_STATE_KEY = "isaibox-resume";
 const SEARCH_DEBOUNCE_MS = 120;
+const SLEEP_TIMER_OPTIONS = [15, 30, 45, 60, 90];
 let googleScriptPromise;
 
 const emptySearchResults = (query = "") => ({
@@ -130,6 +134,7 @@ function AppLoadingScreen() {
 export function App() {
   const isMobile = useMediaQuery("(max-width: 1023px)");
   let audioEl;
+  let audioEl2; // second audio element for near-gapless preloading
 
   // Navigation state
   const [tab, setTab] = createSignal("Library");
@@ -151,6 +156,13 @@ export function App() {
   const [savingPlaylist, setSavingPlaylist] = createSignal(false);
   const [queueCollapsed, setQueueCollapsed] = createSignal(false);
   const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
+  const [lyricsOpen, setLyricsOpen] = createSignal(false);
+  const [equalizerOpen, setEqualizerOpen] = createSignal(false);
+  const [sleepTimerMinutes, setSleepTimerMinutes] = createSignal(0);
+  const [sleepTimerRemaining, setSleepTimerRemaining] = createSignal(0);
+  const [newReleasesCount, setNewReleasesCount] = createSignal(0);
+  const [artistView, setArtistView] = createSignal(null);
+  const [eraFilter, setEraFilter] = createSignal(null); // null or [fromYear, toYear]
 
   // Mobile-specific
   const [mobileView, setMobileView] = createSignal("list"); // list | playlist
@@ -169,6 +181,7 @@ export function App() {
   const [speed, setSpeed] = createSignal(1);
   const [volume, setVolume] = createSignal(75);
   const [muted, setMuted] = createSignal(false);
+  const [crossfadeDuration, setCrossfadeDuration] = createSignal(3); // seconds
   const [favs, setFavs] = createSignal(new Set());
   const [queue, setQueue] = createSignal([]);
   const [playbackScope, setPlaybackScope] = createSignal([]);
@@ -192,6 +205,9 @@ export function App() {
   let playWatchTimer = null;
   let searchWorker = null;
   let searchRequestId = 0;
+  let sleepTimerInterval = null;
+  let pendingResumePosition = 0;
+  let playCountTimer = null;
 
   const setIsPlaying = (nextValue) => {
     let shouldStart = false;
@@ -257,6 +273,77 @@ export function App() {
 
   onCleanup(() => {
     if (playWatchTimer) window.clearTimeout(playWatchTimer);
+    if (sleepTimerInterval) clearInterval(sleepTimerInterval);
+    if (playCountTimer) clearTimeout(playCountTimer);
+  });
+
+  // ── Sleep timer ────────────────────────────────────────────────────────────
+  const startSleepTimer = (minutes) => {
+    if (sleepTimerInterval) clearInterval(sleepTimerInterval);
+    sleepTimerInterval = null;
+    if (!minutes) {
+      setSleepTimerMinutes(0);
+      setSleepTimerRemaining(0);
+      return;
+    }
+    let remaining = minutes * 60;
+    setSleepTimerMinutes(minutes);
+    setSleepTimerRemaining(remaining);
+    sleepTimerInterval = setInterval(() => {
+      remaining -= 1;
+      setSleepTimerRemaining(remaining);
+      if (remaining <= 0) {
+        clearInterval(sleepTimerInterval);
+        sleepTimerInterval = null;
+        setSleepTimerMinutes(0);
+        setSleepTimerRemaining(0);
+        setIsPlaying(false);
+        setMessage("Sleep timer ended. Playback paused.");
+      }
+    }, 1000);
+  };
+
+  // ── Persist resume state ───────────────────────────────────────────────────
+  createEffect(() => {
+    const n = currentN();
+    const pos = position();
+    if (!n || pos < 5) return;
+    const track = trackMap()[n];
+    if (!track) return;
+    try {
+      localStorage.setItem(RESUME_STATE_KEY, JSON.stringify({ trackId: track.id, position: pos }));
+    } catch {}
+  });
+
+  // ── Auto-seek to resume position when audio metadata loads ─────────────────
+  createEffect(() => {
+    const dur = duration();
+    if (dur > 0 && pendingResumePosition > 0) {
+      const pos = Math.min(pendingResumePosition, dur - 2);
+      if (pos > 5) seekTo(pos);
+      pendingResumePosition = 0;
+    }
+  });
+
+  // ── Play count tracking ────────────────────────────────────────────────────
+  const recordPlay = (track, dur) => {
+    if (!track?.id) return;
+    fetch(`/api/plays/${track.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ durationS: Math.round(dur) }),
+    }).catch(() => {});
+  };
+
+  createEffect(() => {
+    const playing = isPlaying();
+    const track = activeAudioTrack();
+    if (playCountTimer) clearTimeout(playCountTimer);
+    if (playing && track) {
+      // Record a play after 30s of continuous listening
+      playCountTimer = setTimeout(() => recordPlay(track, 30), 30000);
+    }
+    onCleanup(() => { if (playCountTimer) clearTimeout(playCountTimer); });
   });
 
   createEffect(() => {
@@ -330,15 +417,23 @@ export function App() {
   // Density (held simple — wire up a tweaks panel separately if you want)
   const [density] = createSignal("comfortable");
 
+  const ART_COLORS = ["#e84855","#3d405b","#81b29a","#f2cc8f","#118ab2","#06d6a0","#ef476f","#8338ec","#3a86ff","#fb5607"];
+  const artColor = (name) => {
+    let h = 0;
+    for (let i = 0; i < (name || "").length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+    return ART_COLORS[Math.abs(h) % ART_COLORS.length];
+  };
+
   const toTrack = (song, index) => {
     const id = String(song?.id || "").trim();
     const title = String(song?.track || song?.title || "").trim();
     if (!id || !title) return null;
+    const movie = song.movie || "";
     return {
       id,
       n: index + 1,
       title,
-      movie: song.movie || "",
+      movie,
       director: song.musicDirector || song.director || "",
       singer: song.singers || song.singer || "",
       year: song.year || "",
@@ -347,6 +442,7 @@ export function App() {
       albumUrl: song.albumUrl || "",
       updatedAt: song.updatedAt || "",
       fav: favs().has(index + 1),
+      artColor: artColor(movie || title),
     };
   };
 
@@ -450,6 +546,10 @@ export function App() {
       const rank = new Map(recents().map((item, index) => [item.n, index]));
       arr = arr.filter((track) => rank.has(track.n)).sort((a, b) => rank.get(a.n) - rank.get(b.n));
     }
+    const era = eraFilter();
+    if (era) {
+      arr = arr.filter((t) => { const y = parseInt(t.year); return !isNaN(y) && y >= era[0] && y < era[1]; });
+    }
     if (scopedQuery && sort() === "n") return arr;
     arr.sort((a, b) => {
       if (filterMode() !== "all" && sort() === "n") return 0;
@@ -505,6 +605,7 @@ export function App() {
       name: p.name,
       count: p.trackCount || 0,
       source: "personal",
+      isCollaborative: !!p.isCollaborative,
     }));
     setPlaylistSections({ global, personal });
     if ((global.length || personal.length) && !activePlaylistMeta()) {
@@ -563,10 +664,38 @@ export function App() {
       if (nextTracks.length) {
         const sharedTrackId = new URLSearchParams(window.location.search).get("track");
         const sharedTrack = sharedTrackId ? nextTracks.find((track) => track.id === sharedTrackId) : null;
-        setCurrentN((sharedTrack || nextTracks[0]).n);
+        // Restore resume state (continue where you left off)
+        let startTrack = sharedTrack || nextTracks[0];
+        if (!sharedTrack) {
+          try {
+            const saved = JSON.parse(localStorage.getItem(RESUME_STATE_KEY) || "{}");
+            if (saved.trackId && saved.position > 10) {
+              const savedTrack = nextTracks.find((t) => t.id === saved.trackId);
+              if (savedTrack) {
+                startTrack = savedTrack;
+                pendingResumePosition = saved.position;
+              }
+            }
+          } catch {}
+        }
+        setCurrentN(startTrack.n);
         setRecents([]);
         setQueue([]);
       }
+      // Deep-link from URL hash
+      const hash = window.location.hash.slice(1);
+      if (hash) {
+        const params = new URLSearchParams(hash);
+        if (params.get("album")) {
+          openAlbum(params.get("album"));
+        } else if (params.get("artist")) {
+          openArtist(params.get("artist"), params.get("role") || "director");
+        }
+      }
+      // Check for new releases and notify
+      fetch("/api/library/new", { cache: "no-store" }).then((r) => r.ok ? r.json() : null).then((payload) => {
+        if (payload?.total > 0) setNewReleasesCount(payload.total);
+      }).catch(() => {});
       if (playlistsResponse?.ok) {
         const payload = await playlistsResponse.json();
         if (sessionUser) {
@@ -667,6 +796,7 @@ export function App() {
     setActiveAlbum("");
     setSongSearch("");
     setTrackSearch("");
+    setEraFilter(null);
     setActivePlaylist(id);
     setMobileView("playlist");
   };
@@ -676,6 +806,7 @@ export function App() {
     setSongSearch("");
     setTrackSearch("");
     setMobileView("playlist");
+    history.replaceState(null, "", " ");
   };
 
   const openAlbum = (album, options = {}) => {
@@ -687,10 +818,21 @@ export function App() {
     setTab("Library");
     setMobileView("album");
     setPlayerExpanded(false);
+    history.replaceState(null, "", `#album=${encodeURIComponent(name)}`);
     if (options.play) {
       const albumTracks = tracks().filter((track) => track.movie === name);
       playPlaylist(albumTracks, albumPlaybackSource(name));
     }
+  };
+
+  const openArtist = (name, role = "director") => {
+    const cleanName = String(name || "").trim();
+    if (!cleanName) return;
+    setArtistView({ name: cleanName, role });
+    setTab("Artist");
+    setMobileView("list");
+    setPlayerExpanded(false);
+    history.replaceState(null, "", `#artist=${encodeURIComponent(cleanName)}&role=${role}`);
   };
 
   const playPlaylist = (tracks, source) => {
@@ -803,7 +945,10 @@ export function App() {
     if (list.length === 0) return;
     if (shuffle() && list.length > 1) {
       const candidates = list.filter((t) => t.n !== currentN());
-      const next = candidates[Math.floor(Math.random() * candidates.length)];
+      const recentNs = new Set(recents().slice(0, Math.min(candidates.length - 1, 12)).map((r) => r.n));
+      const fresh = candidates.filter((t) => !recentNs.has(t.n));
+      const pool = fresh.length > 0 ? fresh : candidates;
+      const next = pool[Math.floor(Math.random() * pool.length)];
       switchToTrack(next?.n, fromEnded ? true : isPlaying());
       return;
     }
@@ -965,12 +1110,31 @@ export function App() {
     setMessage(copied ? "Track link copied." : "Unable to copy track link.");
   };
 
+  const toggleCollaborative = async (playlistId, currentValue) => {
+    const next = !currentValue;
+    const res = await fetch(`/api/playlists/${playlistId}/collaborative`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isCollaborative: next }),
+    });
+    if (res.ok) {
+      setPlaylistSections((sections) => ({
+        ...sections,
+        personal: sections.personal.map((p) =>
+          p.id === playlistId ? { ...p, isCollaborative: next } : p
+        ),
+      }));
+      setMessage(next ? "Playlist is now collaborative." : "Playlist is now private.");
+    }
+  };
+
   const changeTab = (nextTab) => {
     setTab(nextTab);
     if (nextTab !== "Library") {
       setSongSearch("");
       setTrackSearch("");
       setActiveAlbum("");
+      setEraFilter(null);
     }
   };
 
@@ -1027,6 +1191,12 @@ export function App() {
       if (targetAcceptsText(event.target)) {
         if (key === "escape") event.target.blur?.();
         return;
+      }
+
+      // Shift+Arrow → seek ±10 seconds
+      if (event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        if (event.key === "ArrowLeft") { event.preventDefault(); seekTo(Math.max(0, position() - 10)); return; }
+        if (event.key === "ArrowRight") { event.preventDefault(); seekTo(position() + 10); return; }
       }
 
       if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -1155,6 +1325,22 @@ export function App() {
     }
   });
 
+  // Preload next track on audioEl2 for near-gapless playback
+  createEffect(() => {
+    if (!audioEl2) return;
+    const list = playbackList();
+    const n = currentN();
+    const idx = list.findIndex((t) => t.n === n);
+    if (idx < 0) return;
+    const nextTrack = list[idx + 1];
+    if (!nextTrack?.audioUrl) return;
+    const nextSrc = new URL(nextTrack.audioUrl, window.location.href).href;
+    if (audioEl2.src !== nextSrc) {
+      audioEl2.src = nextSrc;
+      audioEl2.load();
+    }
+  });
+
   // Reset mobileView when switching tabs
   createEffect(() => {
     if (tab() !== "Library") setMobileView("list");
@@ -1206,8 +1392,18 @@ export function App() {
     searchDirectorResults,
     searchSingerResults,
     searchResultCounts,
+    // new feature accessors
+    lyricsOpen, setLyricsOpen,
+    equalizerOpen, setEqualizerOpen,
+    sleepTimerMinutes, sleepTimerRemaining,
+    startSleepTimer,
+    newReleasesCount,
+    artistView, setArtistView,
+    eraFilter, setEraFilter,
+    crossfadeDuration, setCrossfadeDuration,
     // actions
-    playTrack, playPlaylist, toggleFav, addToQueue, addToActivePlaylist, removeFromQueue, clearQueue, openAlbum, closeAlbum, openSearchPersonAlbums,
+    playTrack, playPlaylist, toggleFav, addToQueue, addToActivePlaylist, removeFromQueue, clearQueue, openAlbum, closeAlbum, openSearchPersonAlbums, openArtist,
+    shareTrack, toggleCollaborative,
   };
 
   return (
@@ -1262,6 +1458,9 @@ export function App() {
 	                  <Match when={tab() === "Library"}><LibraryPage ctx={ctx} /></Match>
 	                  <Match when={tab() === "Recents"}><RecentsPage ctx={ctx} /></Match>
 	                  <Match when={tab() === "Favorites"}><FavoritesPage ctx={ctx} /></Match>
+	                  <Match when={tab() === "Discover"}><DiscoverPage ctx={ctx} /></Match>
+	                  <Match when={tab() === "Stats"}><StatsPage ctx={ctx} /></Match>
+	                  <Match when={tab() === "Artist"}><ArtistPage ctx={ctx} /></Match>
 	                </Switch>
               </section>
               <QueuePanel ctx={ctx} />
@@ -1326,10 +1525,35 @@ export function App() {
                   onOpenAlbum={() => openAlbum(track().movie)}
                   queueCollapsed={queueCollapsed()}
                   onToggleQueue={() => setQueueCollapsed((value) => !value)}
+                  lyricsOpen={lyricsOpen()}
+                  onToggleLyrics={() => setLyricsOpen((v) => !v)}
+                  equalizerOpen={equalizerOpen()}
+                  onToggleEqualizer={() => setEqualizerOpen((v) => !v)}
+                  sleepTimerMinutes={sleepTimerMinutes()}
+                  sleepTimerRemaining={sleepTimerRemaining()}
+                  onSleepTimer={startSleepTimer}
+                  sleepTimerOptions={SLEEP_TIMER_OPTIONS}
                 />
               )}
             </Show>
             <ShortcutsDrawer open={shortcutsOpen()} setOpen={setShortcutsOpen} />
+            <Show when={lyricsOpen() && currentTrack()}>
+              <LyricsPanel
+                track={currentTrack()}
+                position={position()}
+                onClose={() => setLyricsOpen(false)}
+              />
+            </Show>
+            <Show when={equalizerOpen()}>
+              <Equalizer audioEl={audioEl} onClose={() => setEqualizerOpen(false)} />
+            </Show>
+            <Show when={newReleasesCount() > 0}>
+              <div class="new-releases-banner" onClick={() => { setFilterMode("recent"); setNewReleasesCount(0); }}>
+                <Icon name="sparkle" size={13} />
+                <span>{newReleasesCount()} new songs added this week — click to explore</span>
+                <button class="new-releases-close" onClick={(e) => { e.stopPropagation(); setNewReleasesCount(0); }}>×</button>
+              </div>
+            </Show>
           </>
         }
       >
@@ -1476,6 +1700,7 @@ export function App() {
           setIsPlaying(false);
         }}
       />
+      <audio ref={audioEl2} preload="auto" style="display:none" aria-hidden="true" />
       <Show when={message()}>
         <div class="app-toast">{message()}</div>
       </Show>

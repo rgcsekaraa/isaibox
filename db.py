@@ -168,6 +168,18 @@ CREATE INDEX IF NOT EXISTS idx_favorite_album_entities_user_id ON favorite_album
 CREATE INDEX IF NOT EXISTS idx_favorite_music_directors_user_id ON favorite_music_directors (user_id);
 CREATE INDEX IF NOT EXISTS idx_playlists_user_id ON playlists (user_id);
 CREATE INDEX IF NOT EXISTS idx_playlist_songs_playlist_id ON playlist_songs (playlist_id);
+
+-- Play history table for listening stats
+CREATE TABLE IF NOT EXISTS song_plays (
+    play_id         VARCHAR PRIMARY KEY,
+    user_id         VARCHAR,
+    song_id         VARCHAR NOT NULL,
+    played_at       TIMESTAMPTZ NOT NULL,
+    duration_s      INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_song_plays_song_id ON song_plays (song_id);
+CREATE INDEX IF NOT EXISTS idx_song_plays_user_id ON song_plays (user_id);
+CREATE INDEX IF NOT EXISTS idx_song_plays_played_at ON song_plays (played_at);
 """
 
 _MIGRATIONS = {
@@ -179,6 +191,7 @@ _MIGRATIONS = {
     },
     "playlists": {
         "is_global": "BOOLEAN DEFAULT FALSE",
+        "is_collaborative": "BOOLEAN DEFAULT FALSE",
     },
     "user_preferences": {
         "theme_preference": "VARCHAR DEFAULT 'system'",
@@ -190,6 +203,13 @@ _MIGRATIONS = {
         "repeat_mode": "VARCHAR DEFAULT 'off'",
         "autoplay_next": "BOOLEAN DEFAULT TRUE",
         "updated_at": "TIMESTAMPTZ",
+    },
+    "songs": {
+        "play_count": "INTEGER DEFAULT 0",
+        "mood": "VARCHAR",
+    },
+    "albums": {
+        "cover_url": "VARCHAR",
     },
 }
 
