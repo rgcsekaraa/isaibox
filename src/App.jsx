@@ -189,6 +189,27 @@ export function App() {
     });
   };
 
+  const requestAudioPlay = (requestId, retries = 1) => {
+    if (!audioEl || !playbackIntent || requestId !== playbackRequestId) return;
+    const attemptId = ++playAttemptId;
+    setAudioLoading(true);
+    audioEl.play().then(() => {
+      if (attemptId !== playAttemptId || requestId !== playbackRequestId || !playbackIntent) {
+        audioEl.pause();
+        return;
+      }
+      setAudioLoading(false);
+    }).catch((error) => {
+      if (attemptId !== playAttemptId || requestId !== playbackRequestId) return;
+      if (error?.name === "AbortError" && playbackIntent && retries > 0) {
+        window.setTimeout(() => requestAudioPlay(requestId, retries - 1), 120);
+        return;
+      }
+      setAudioLoading(false);
+      setIsPlaying(false);
+    });
+  };
+
   createEffect(() => {
     const text = message();
     if (!text) return;
@@ -1024,21 +1045,7 @@ export function App() {
       audioEl.load();
     }
     if (isPlaying()) {
-      const requestId = playbackRequestId;
-      const attemptId = ++playAttemptId;
-      setAudioLoading(true);
-      audioEl.play().then(() => {
-        if (attemptId !== playAttemptId || requestId !== playbackRequestId || !playbackIntent) {
-          audioEl.pause();
-          return;
-        }
-        setAudioLoading(false);
-      }).catch((error) => {
-        if (attemptId !== playAttemptId || requestId !== playbackRequestId) return;
-        if (error?.name === "AbortError" && playbackIntent) return;
-        setAudioLoading(false);
-        setIsPlaying(false);
-      });
+      requestAudioPlay(playbackRequestId, 2);
     } else {
       playAttemptId += 1;
       setAudioLoading(false);
@@ -1316,7 +1323,13 @@ export function App() {
           if (isPlaying()) setAudioLoading(true);
         }}
         onLoadedMetadata={() => setDuration(Number.isFinite(audioEl.duration) ? audioEl.duration : 0)}
-        onCanPlay={() => setAudioLoading(false)}
+        onCanPlay={() => {
+          if (playbackIntent && isPlaying() && audioEl.paused) {
+            requestAudioPlay(playbackRequestId, 1);
+            return;
+          }
+          setAudioLoading(false);
+        }}
         onWaiting={() => {
           if (isPlaying()) setAudioLoading(true);
         }}
@@ -1348,7 +1361,6 @@ export function App() {
         }}
         onPause={() => {
           if (playbackIntent) {
-            if (isPlaying()) setAudioLoading(true);
             return;
           }
           setIsPlayingState(false);
