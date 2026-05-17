@@ -14,6 +14,7 @@ const SEARCH_TABS = [
   { id: "directors", label: "Music Directors" },
   { id: "singers", label: "Singers" },
 ];
+const SEARCH_HELP_TEXT = "Choose whether this search should show albums, songs, music directors, or singers.";
 const TABLE_SKELETON_ROWS = Array.from({ length: 10 });
 
 function LoadingState(props) {
@@ -246,7 +247,17 @@ export function LibraryPage(props) {
               <div class="pl-kicker">Album</div>
             </Show>
             <div class="pl-title-line">
-              <h1 class="pl-title">{playlist().name}</h1>
+              <h1 class="pl-title" classList={{ search: isSearch() }}>{playlist().name}</h1>
+              <Show when={isSearch()}>
+                <button
+                  class="search-help"
+                  title={SEARCH_HELP_TEXT}
+                  aria-label={SEARCH_HELP_TEXT}
+                  data-tooltip={SEARCH_HELP_TEXT}
+                >
+                  <Icon name="help" size={13} />
+                </button>
+              </Show>
               <Show when={isAlbum() && ctx.activeAlbumTracks().length > 0}>
                 <button class="btn-secondary album-play-btn" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks(), { type: "album", label: ctx.activeAlbum(), caption: "Album" })}>
                   <Icon name="play" size={13} /><span>Play</span>
@@ -254,7 +265,7 @@ export function LibraryPage(props) {
               </Show>
             </div>
             <Show when={isSearch()}>
-              <div class="pl-search-note">Choose whether this search should show albums, songs, music directors, or singers.</div>
+              <SearchTabs active={activeSearchTab()} counts={searchCounts()} onChange={ctx.setSearchResultTab} />
             </Show>
           </div>
           <div class="pl-tools">
@@ -282,9 +293,6 @@ export function LibraryPage(props) {
           </div>
         </div>
       </div>
-      <Show when={isSearch()}>
-        <SearchTabs active={activeSearchTab()} counts={searchCounts()} onChange={ctx.setSearchResultTab} />
-      </Show>
       <Show when={!isSearch() || activeSearchTab() === "songs"}>
         <div class="tracklist" classList={{ "search-results": isSearch() }}>
         <div class={`track-row head ${ctx.density()}`}>

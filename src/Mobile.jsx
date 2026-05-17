@@ -14,6 +14,7 @@ const SEARCH_TABS = [
   { id: "directors", label: "Directors" },
   { id: "singers", label: "Singers" },
 ];
+const SEARCH_HELP_TEXT = "Choose whether this search should show albums, songs, music directors, or singers.";
 const MOBILE_SKELETON_ROWS = Array.from({ length: 8 });
 
 function MobileLoadingState(props) {
@@ -241,10 +242,40 @@ export function MobilePlaylistDetail(props) {
             <Show when={isAlbum()}>
               <div class="m-page-kicker">Album</div>
             </Show>
-            <h2 class="m-detail-title">{playlist().name}</h2>
+            <div class="m-detail-title-row">
+              <h2 class="m-detail-title" classList={{ search: isSearch() }}>{playlist().name}</h2>
+              <Show when={isSearch()}>
+                <button class="search-help mobile" title={SEARCH_HELP_TEXT} aria-label={SEARCH_HELP_TEXT}>
+                  <Icon name="help" size={12} />
+                </button>
+              </Show>
+            </div>
           </div>
           <span class="m-detail-spacer" aria-hidden="true" />
         </div>
+        <Show when={isSearch()}>
+          <div class="m-search-tabs" role="tablist" aria-label="Search result type">
+            <For each={SEARCH_TABS}>
+              {(tab) => {
+                const count = () => searchCounts()[tab.id] || 0;
+                const disabled = () => count() === 0 && activeSearchTab() !== tab.id;
+                return (
+                  <button
+                    role="tab"
+                    class="m-search-tab"
+                    classList={{ active: activeSearchTab() === tab.id }}
+                    disabled={disabled()}
+                    aria-disabled={disabled()}
+                    onClick={() => !disabled() && ctx.setSearchResultTab(tab.id)}
+                  >
+                    <span>{tab.label}</span>
+                    <span>{count()}</span>
+                  </button>
+                );
+              }}
+            </For>
+          </div>
+        </Show>
         <Show when={isAlbum() && filteredTracks().length > 0}>
           <button class="btn-secondary m-play-album" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks(), { type: "album", label: ctx.activeAlbum(), caption: "Album" })}>
             <Icon name="play" size={13} /><span>Play</span>
@@ -273,29 +304,6 @@ export function MobilePlaylistDetail(props) {
           </div>
         </Show>
       </div>
-      <Show when={isSearch()}>
-        <div class="m-search-tabs" role="tablist" aria-label="Search result type">
-          <For each={SEARCH_TABS}>
-            {(tab) => {
-              const count = () => searchCounts()[tab.id] || 0;
-              const disabled = () => count() === 0 && activeSearchTab() !== tab.id;
-              return (
-                <button
-                  role="tab"
-                  class="m-search-tab"
-                  classList={{ active: activeSearchTab() === tab.id }}
-                  disabled={disabled()}
-                  aria-disabled={disabled()}
-                  onClick={() => !disabled() && ctx.setSearchResultTab(tab.id)}
-                >
-                  <span>{tab.label}</span>
-                  <span>{count()}</span>
-                </button>
-              );
-            }}
-          </For>
-        </div>
-      </Show>
       <Show when={isSearch() && activeSearchTab() === "albums"}>
         <section class="m-search-albums">
           <Show when={!ctx.searchPending()} fallback={<MobileLoadingState text="Searching..." />}>
