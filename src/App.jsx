@@ -11,6 +11,7 @@ const GOOGLE_GSI_SRC = "https://accounts.google.com/gsi/client";
 const THEME_STORAGE_KEY = "isaibox-theme";
 const INITIAL_LOADING_SEEN_KEY = "isaibox-initial-loading-seen";
 const SEARCH_DEBOUNCE_MS = 120;
+const SHELL_SKELETON_ROWS = Array.from({ length: 9 });
 let googleScriptPromise;
 
 const emptySearchResults = (query = "") => ({
@@ -122,6 +123,71 @@ function AppLoadingScreen() {
       <div class="app-loading-copy">
         <div class="app-loading-brand">isaibox</div>
         <div class="app-loading-text">Loading{".".repeat(dotCount())}</div>
+      </div>
+    </div>
+  );
+}
+
+function AppShellSkeleton(props) {
+  return (
+    <div class={`app-shell-skeleton ${props.mobile ? "mobile" : "desktop"}`} role="status" aria-live="polite">
+      <div class="shell-top">
+        <span class="sk shell-logo" />
+        <span class="sk shell-brand" />
+        <span class="sk shell-tab" />
+        <span class="sk shell-tab muted" />
+        <span class="sk shell-search" />
+      </div>
+      <div class="shell-main">
+        <Show when={!props.mobile}>
+          <aside class="shell-sidebar">
+            <span class="sk shell-sidebar-search" />
+            <span class="sk shell-section" />
+            <For each={SHELL_SKELETON_ROWS}>
+              {() => <span class="sk shell-list-line" />}
+            </For>
+          </aside>
+        </Show>
+        <section class="shell-content">
+          <div class="shell-heading-row">
+            <span class="sk shell-title" />
+            <span class="sk shell-control" />
+          </div>
+          <div class="shell-table">
+            <div class="shell-table-head">
+              <span class="sk shell-cell tiny" />
+              <span class="sk shell-cell title" />
+              <span class="sk shell-cell" />
+              <span class="sk shell-cell wide" />
+              <span class="sk shell-cell small" />
+            </div>
+            <For each={SHELL_SKELETON_ROWS}>
+              {() => (
+                <div class="shell-table-row">
+                  <span class="sk shell-cell tiny" />
+                  <span class="sk shell-cell title" />
+                  <span class="sk shell-cell" />
+                  <span class="sk shell-cell wide" />
+                  <span class="sk shell-cell small" />
+                </div>
+              )}
+            </For>
+          </div>
+        </section>
+        <Show when={!props.mobile}>
+          <aside class="shell-queue">
+            <span class="sk shell-queue-title" />
+            <span class="sk shell-section" />
+            <span class="sk shell-queue-empty" />
+          </aside>
+        </Show>
+      </div>
+      <div class="shell-player">
+        <span class="sk shell-player-title" />
+        <span class="sk shell-player-button" />
+        <span class="sk shell-player-button" />
+        <span class="sk shell-player-button" />
+        <span class="sk shell-player-bar" />
       </div>
     </div>
   );
@@ -1189,6 +1255,9 @@ export function App() {
     >
       <Show when={showInitialLoading() && loading() && tracks().length === 0}>
         <AppLoadingScreen />
+      </Show>
+      <Show when={!showInitialLoading() && loading() && tracks().length === 0}>
+        <AppShellSkeleton mobile={isMobile()} />
       </Show>
       <Show
         when={isMobile()}
