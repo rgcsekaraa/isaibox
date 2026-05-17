@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import hashlib
+import hmac
 import json
 import os
+import secrets
 import shutil
 import sys
 import time
@@ -16,10 +19,18 @@ from typing import Iterable
 
 import duckdb
 import requests
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
 
 AUDIO_MIN_BYTES = 64 * 1024
 AUDIO_SUFFIXES = {".mp3", ".m4a", ".aac", ".ogg", ".flac", ".wav"}
+ENCRYPTION_MAGIC = b"ISAIBOXIAENC1\n"
+ENCRYPTED_INDEX_REMOTE_NAME = "index/files.json.iaenc"
+MASTER_SALT = b"isaibox-internet-archive-encryption-v1"
+SCRYPT_N = 2**14
+SCRYPT_R = 8
+SCRYPT_P = 1
 PUBLIC_TABLES = {
     "albums",
     "songs",
@@ -54,6 +65,63 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def require_passphrase() -> bytes:
+    passphrase_file = os.environ.get("IA_ENCRYPTION_PASSPHRASE_FILE", "").strip()
+    if passphrase_file:
+        value = Path(passphrase_file).read_text().strip()
+    else:
+        value = os.environ.get("IA_ENCRYPTION_PASSPHRASE", "").strip()
+    if not value:
+        raise RuntimeError("IA_ENCRYPTION_PASSPHRASE is required; refusing to create a plaintext Archive backup.")
+    if len(value) < 24:
+        raise RuntimeError("IA_ENCRYPTION_PASSPHRASE must be at least 24 characters.")
+    return value.encode("utf-8")
+
+
+def remote_name_key(passphrase: bytes) -> bytes:
+    return hashlib.sha256(b"isaibox-internet-archive-remote-names-v1\0" + passphrase).digest()
+
+
+def encrypted_remote_name(logical_name: str, passphrase: bytes) -> str:
+    category = logical_name.split("/", 1)[0] if "/" in logical_name else "files"
+    digest = hmac.new(remote_name_key(passphrase), logical_name.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"encrypted/{category}/{digest}.iaenc"
+
+
+def derive_master_key(passphrase: bytes) -> bytes:
+    kdf = Scrypt(salt=MASTER_SALT, length=32, n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P)
+    return kdf.derive(passphrase)
+
+
+def derive_file_key(master_key: bytes, file_salt: bytes) -> bytes:
+    return hmac.new(master_key, b"isaibox-file-key-v1\0" + file_salt, hashlib.sha256).digest()
+
+
+def encrypt_bytes(plaintext: bytes, master_key: bytes) -> bytes:
+    salt = secrets.token_bytes(16)
+    nonce = secrets.token_bytes(12)
+    header = {
+        "alg": "AES-256-GCM",
+        "kdf": "scrypt-master+hmac-sha256-file-key",
+        "master_salt": base64.b64encode(MASTER_SALT).decode("ascii"),
+        "n": SCRYPT_N,
+        "r": SCRYPT_R,
+        "p": SCRYPT_P,
+        "salt": base64.b64encode(salt).decode("ascii"),
+        "nonce": base64.b64encode(nonce).decode("ascii"),
+        "version": 1,
+    }
+    header_bytes = json.dumps(header, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    key = derive_file_key(master_key, salt)
+    ciphertext = AESGCM(key).encrypt(nonce, plaintext, ENCRYPTION_MAGIC + header_bytes)
+    return ENCRYPTION_MAGIC + header_bytes + b"\n" + ciphertext
+
+
+def encrypt_file(source: Path, destination: Path, master_key: bytes) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(encrypt_bytes(source.read_bytes(), master_key))
 
 
 def table_exists(connection: duckdb.DuckDBPyConnection, table_name: str) -> bool:
@@ -189,15 +257,19 @@ def export_public_metadata(source_db: Path, manifest_path: Path, work_dir: Path)
     return exported, backup_manifest
 
 
-def load_song_sources(db_path: Path) -> dict[str, SongSource]:
+def load_song_sources(db_path: Path, *, allow_128_fallback: bool = False) -> dict[str, SongSource]:
     connection = duckdb.connect(str(db_path), read_only=True)
+    if allow_128_fallback:
+        url_expression = "COALESCE(NULLIF(url_320kbps, ''), NULLIF(url_128kbps, ''))"
+    else:
+        url_expression = "NULLIF(url_320kbps, '')"
     rows = connection.execute(
-        """
+        f"""
         SELECT song_id,
                COALESCE(album_url, '') AS album_url,
-               COALESCE(NULLIF(url_320kbps, ''), NULLIF(url_128kbps, '')) AS url
+               {url_expression} AS url
         FROM songs
-        WHERE COALESCE(NULLIF(url_320kbps, ''), NULLIF(url_128kbps, '')) IS NOT NULL
+        WHERE {url_expression} IS NOT NULL
         ORDER BY COALESCE(updated_at, first_seen_at) DESC NULLS LAST, song_id
         """
     ).fetchall()
@@ -224,7 +296,12 @@ def is_audio_response(response: requests.Response) -> bool:
     )
 
 
-def collect_cached_audio(audio_dir: Path, song_sources: dict[str, SongSource], existing_remote_names: set[str]) -> dict[str, Path]:
+def collect_cached_audio(
+    audio_dir: Path,
+    song_sources: dict[str, SongSource],
+    existing_remote_names: set[str],
+    passphrase: bytes,
+) -> dict[str, Path]:
     if not audio_dir.exists():
         return {}
     pending: dict[str, Path] = {}
@@ -235,10 +312,10 @@ def collect_cached_audio(audio_dir: Path, song_sources: dict[str, SongSource], e
             continue
         if not file_looks_audio(path):
             continue
-        remote_name = f"audio/{path.stem}.mp3"
-        if remote_name in existing_remote_names:
+        logical_name = f"audio/{path.stem}.mp3"
+        if encrypted_remote_name(logical_name, passphrase) in existing_remote_names:
             continue
-        pending[remote_name] = path
+        pending[logical_name] = path
     return pending
 
 
@@ -278,6 +355,7 @@ def hydrate_missing_audio(
     song_sources: dict[str, SongSource],
     existing_remote_names: set[str],
     already_pending: set[str],
+    passphrase: bytes,
     limit: int,
     delay: float,
     timeout: int,
@@ -285,16 +363,17 @@ def hydrate_missing_audio(
     pending: dict[str, Path] = {}
     remaining = limit
     for song_id, song in song_sources.items():
-        remote_name = f"audio/{song_id}.mp3"
-        if remote_name in existing_remote_names or remote_name in already_pending:
+        logical_name = f"audio/{song_id}.mp3"
+        encrypted_name = encrypted_remote_name(logical_name, passphrase)
+        if encrypted_name in existing_remote_names or logical_name in already_pending:
             continue
         if limit and remaining <= 0:
             break
         destination = audio_dir / f"{song_id}.mp3"
         if file_looks_audio(destination):
-            pending[remote_name] = destination
+            pending[logical_name] = destination
         elif download_audio(song, destination, timeout):
-            pending[remote_name] = destination
+            pending[logical_name] = destination
             if delay > 0:
                 time.sleep(delay)
         else:
@@ -345,7 +424,7 @@ def upload_to_archive(
         "title": title,
         "mediatype": "data",
         "subject": subject,
-        "description": "Public Isaibox library backup containing sanitized metadata and public audio files.",
+        "description": "Encrypted Isaibox backup. File contents and logical names require the private passphrase to decrypt.",
     }
     if collection:
         metadata["collection"] = collection
@@ -370,6 +449,59 @@ def upload_to_archive(
         raise RuntimeError(f"Internet Archive upload failed with status codes: {failed}")
 
 
+def build_encrypted_upload_set(
+    files: dict[str, Path],
+    master_key: bytes,
+    work_dir: Path,
+    backup_manifest: dict,
+    catalog: list[dict],
+) -> dict[str, Path]:
+    encrypted_dir = work_dir / "encrypted"
+    if encrypted_dir.exists():
+        shutil.rmtree(encrypted_dir)
+    encrypted_dir.mkdir(parents=True, exist_ok=True)
+
+    encrypted_files: dict[str, Path] = {}
+    records = []
+    catalog_names = {item["logical_name"]: item["encrypted_name"] for item in catalog}
+    for logical_name, plaintext_path in sorted(files.items()):
+        encrypted_name = catalog_names[logical_name]
+        encrypted_path = encrypted_dir / encrypted_name
+        encrypt_file(plaintext_path, encrypted_path, master_key)
+        encrypted_files[encrypted_name] = encrypted_path
+        records.append(
+            {
+                "logical_name": logical_name,
+                "encrypted_name": encrypted_name,
+                "plaintext_size": plaintext_path.stat().st_size,
+                "plaintext_sha256": sha256_file(plaintext_path),
+                "encrypted_size": encrypted_path.stat().st_size,
+                "encrypted_sha256": sha256_file(encrypted_path),
+            }
+        )
+
+    private_index = {
+        "format": "isaibox-internet-archive-encrypted-index-v1",
+        "generated_at": utc_now(),
+        "encryption": {
+            "file_format": "ISAIBOXIAENC1",
+            "algorithm": "AES-256-GCM",
+            "kdf": "scrypt-master+hmac-sha256-file-key",
+            "scrypt_master": {"n": SCRYPT_N, "r": SCRYPT_R, "p": SCRYPT_P},
+            "remote_names": "HMAC-SHA256 with the archive passphrase; public item file names do not reveal song ids.",
+        },
+        "backup_manifest": backup_manifest,
+        "catalog": catalog,
+        "files": records,
+    }
+    private_index_path = encrypted_dir / "private-index.json"
+    private_index_path.write_text(json.dumps(private_index, indent=2, sort_keys=True) + "\n")
+    encrypted_index_path = encrypted_dir / ENCRYPTED_INDEX_REMOTE_NAME
+    encrypt_file(private_index_path, encrypted_index_path, master_key)
+    encrypted_files[ENCRYPTED_INDEX_REMOTE_NAME] = encrypted_index_path
+    return encrypted_files
+
+
 def write_upload_plan(path: Path, files: dict[str, Path]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="") as handle:
@@ -391,7 +523,8 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser.add_argument("--collection", default=os.environ.get("IA_COLLECTION", ""))
     parser.add_argument("--include-audio", action="store_true")
     parser.add_argument("--download-missing-audio", action="store_true")
-    parser.add_argument("--audio-limit", type=int, default=int(os.environ.get("IA_AUDIO_LIMIT", "200") or "0"))
+    parser.add_argument("--audio-limit", type=int, default=int(os.environ.get("IA_AUDIO_LIMIT", "0") or "0"))
+    parser.add_argument("--allow-128-fallback", action="store_true")
     parser.add_argument("--download-delay", type=float, default=float(os.environ.get("IA_DOWNLOAD_DELAY", "1.0") or "0"))
     parser.add_argument("--download-timeout", type=int, default=int(os.environ.get("IA_DOWNLOAD_TIMEOUT", "90") or "90"))
     parser.add_argument("--dry-run", action="store_true")
@@ -405,6 +538,8 @@ def main(argv: Iterable[str]) -> int:
     audio_dir = Path(args.audio_dir)
     work_dir = Path(args.work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
+    passphrase = require_passphrase()
+    master_key = derive_master_key(passphrase)
 
     metadata_files, backup_manifest = export_public_metadata(db_path, manifest_path, work_dir)
     files_to_upload = dict(metadata_files)
@@ -418,10 +553,10 @@ def main(argv: Iterable[str]) -> int:
         session = internetarchive.get_session({"s3": {"access": access_key, "secret": secret_key}})
         existing_names = archive_existing_names(session.get_item(args.item))
 
-    song_sources = load_song_sources(db_path)
+    song_sources = load_song_sources(db_path, allow_128_fallback=args.allow_128_fallback)
     audio_candidates: dict[str, Path] = {}
     if args.include_audio:
-        audio_candidates.update(collect_cached_audio(audio_dir, song_sources, existing_names))
+        audio_candidates.update(collect_cached_audio(audio_dir, song_sources, existing_names, passphrase))
         remaining_limit = max(0, args.audio_limit - len(audio_candidates)) if args.audio_limit else 0
         if args.download_missing_audio and (not args.audio_limit or remaining_limit > 0):
             hydrated = hydrate_missing_audio(
@@ -429,6 +564,7 @@ def main(argv: Iterable[str]) -> int:
                 song_sources=song_sources,
                 existing_remote_names=existing_names,
                 already_pending=set(audio_candidates),
+                passphrase=passphrase,
                 limit=remaining_limit,
                 delay=args.download_delay,
                 timeout=args.download_timeout,
@@ -441,15 +577,36 @@ def main(argv: Iterable[str]) -> int:
     backup_manifest["audio"] = {
         "include_audio": bool(args.include_audio),
         "download_missing_audio": bool(args.download_missing_audio),
-        "existing_remote_audio_count": sum(1 for name in existing_names if name.startswith("audio/")),
+        "quality_source": "url_320kbps" if not args.allow_128_fallback else "url_320kbps with url_128kbps fallback",
+        "eligible_song_count": len(song_sources),
+        "existing_remote_audio_count": sum(1 for name in existing_names if name.startswith("encrypted/audio/")),
         "pending_audio_upload_count": len(audio_candidates),
         "audio_limit": args.audio_limit,
     }
     backup_manifest_path = Path(metadata_files["metadata/backup-manifest.json"])
     backup_manifest_path.write_text(json.dumps(backup_manifest, indent=2, sort_keys=True) + "\n")
+    catalog = [
+        {
+            "logical_name": logical_name,
+            "encrypted_name": encrypted_remote_name(logical_name, passphrase),
+            "kind": "metadata",
+        }
+        for logical_name in sorted(metadata_files)
+    ]
+    catalog.extend(
+        {
+            "logical_name": f"audio/{song_id}.mp3",
+            "encrypted_name": encrypted_remote_name(f"audio/{song_id}.mp3", passphrase),
+            "kind": "audio",
+            "quality_source": "url_320kbps" if not args.allow_128_fallback else "url_320kbps/url_128kbps",
+        }
+        for song_id in sorted(song_sources)
+    )
+    encrypted_files_to_upload = build_encrypted_upload_set(files_to_upload, master_key, work_dir, backup_manifest, catalog)
     upload_plan_path = work_dir / "upload-plan.csv"
-    write_upload_plan(upload_plan_path, files_to_upload)
+    write_upload_plan(upload_plan_path, encrypted_files_to_upload)
     print(f"Prepared {len(metadata_files)} metadata file(s) and {len(audio_candidates)} audio file(s).")
+    print(f"Encrypted {len(encrypted_files_to_upload)} Archive object(s).")
     print(f"Upload plan: {upload_plan_path}")
 
     if args.dry_run:
@@ -458,12 +615,12 @@ def main(argv: Iterable[str]) -> int:
         raise RuntimeError("IA_ACCESS_KEY and IA_SECRET_KEY are required for upload.")
     upload_to_archive(
         item_identifier=args.item,
-        files=files_to_upload,
         access_key=access_key,
         secret_key=secret_key,
         title=args.title,
         subject=args.subject,
         collection=args.collection,
+        files=encrypted_files_to_upload,
     )
     return 0
 

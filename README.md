@@ -143,19 +143,28 @@ Note:
 
 ## Internet Archive backup
 
-The `Backup Internet Archive` GitHub Actions workflow publishes a public, sanitized library backup to archive.org.
+The `Backup Internet Archive` GitHub Actions workflow publishes an encrypted backup to archive.org.
 
-- Required repository secrets: `IA_ACCESS_KEY`, `IA_SECRET_KEY`
+- Required repository secrets: `IA_ACCESS_KEY`, `IA_SECRET_KEY`, `IA_ENCRYPTION_PASSPHRASE`
 - Optional workflow input: `item` defaults to `isaibox-public-library`
-- Metadata backup excludes user, session, favorite, and preference tables before upload
-- Audio files are uploaded as `audio/<song_id>.mp3`; repeat runs skip files that already exist in the Archive item
-- Scheduled runs upload metadata plus up to 200 new audio files by default, so the audio backup fills incrementally without one huge runner job
+- Metadata backup excludes user, session, favorite, and preference tables before encryption
+- Audio backup uses `url_320kbps` only by default, so it does not silently store lower bitrate files
+- Archive object names are HMAC-hashed and file contents are AES-256-GCM encrypted; the public item is unusable without `IA_ENCRYPTION_PASSPHRASE`
+- Scheduled runs try to upload all missing 320kbps audio files; set `audio_limit` when you want a smaller batch
 
-Run locally with:
+Backup locally with:
 
 ```bash
-python -m pip install -r packages/isaibox-local/requirements-local.txt internetarchive
-IA_ACCESS_KEY=... IA_SECRET_KEY=... python scripts/backup_internet_archive.py --include-audio --download-missing-audio
+python -m pip install -r packages/isaibox-local/requirements-local.txt internetarchive cryptography
+IA_ACCESS_KEY=... IA_SECRET_KEY=... IA_ENCRYPTION_PASSPHRASE=... \
+  python scripts/backup_internet_archive.py --include-audio --download-missing-audio
+```
+
+Decrypt a downloaded Archive item with:
+
+```bash
+IA_ENCRYPTION_PASSPHRASE=... \
+  python scripts/decrypt_internet_archive_backup.py --dir path/to/downloaded/item --output-dir restored-isaibox-backup
 ```
 
 ## Automated GitHub DuckDB refresh
