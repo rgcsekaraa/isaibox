@@ -140,7 +140,7 @@ export function NowPlayingDock(props) {
             </div>
             <div class="dock-sub">
               <span>{props.track.singer}</span>
-              <span class="dock-sep">•</span>
+              <span class="dock-sep">-</span>
               <button class="dock-album" onClick={() => props.onOpenAlbum?.()}>{props.track.movie}</button>
             </div>
           </div>
