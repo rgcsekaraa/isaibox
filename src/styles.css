@@ -1312,7 +1312,7 @@ button:disabled,
 .play-source-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   width: max-content;
   max-width: 100%;
   min-width: 0;
@@ -1323,6 +1323,12 @@ button:disabled,
   background: transparent;
   color: var(--fg-mute);
   font-size: 10.5px;
+  line-height: 1;
+}
+.play-source-arrow {
+  flex: 0 0 auto;
+  color: var(--fg-faint);
+  font-size: 11px;
   line-height: 1;
 }
 .play-source-pill span {
@@ -1337,6 +1343,10 @@ button:disabled,
   content: "·";
   margin-left: 4px;
   color: var(--fg-faint);
+}
+.play-source-pill .play-source-arrow::after {
+  content: "";
+  margin-left: 0;
 }
 .play-source-pill strong {
   min-width: 0;

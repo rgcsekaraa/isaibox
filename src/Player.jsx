@@ -15,6 +15,7 @@ function PlaybackSourcePill(props) {
             event.stopPropagation();
             props.onOpen?.();
           }}>
+            <span class="play-source-arrow">↩</span>
             <Show when={!props.compact}>
               <span>{item().caption}</span>
             </Show>
