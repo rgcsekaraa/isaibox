@@ -8,12 +8,16 @@ function PlaybackSourcePill(props) {
     <Show when={source()}>
       {(item) => (
         <span class={`play-source-wrap ${props.mobile ? "mobile" : ""}`}>
-          <span class="play-source-prefix">Playing from</span>
+          <Show when={!props.compact}>
+            <span class="play-source-prefix">Playing from</span>
+          </Show>
           <button class={`play-source-pill ${props.compact ? "compact" : ""}`} title={`Open ${item().caption}: ${item().label}`} onClick={(event) => {
             event.stopPropagation();
             props.onOpen?.();
           }}>
-            <span>{item().caption}</span>
+            <Show when={!props.compact}>
+              <span>{item().caption}</span>
+            </Show>
             <strong>{item().label}</strong>
           </button>
         </span>
@@ -135,7 +139,7 @@ export function NowPlayingDock(props) {
             </div>
             <div class="dock-sub">
               <span>{props.track.singer}</span>
-              <span class="dock-sep">from</span>
+              <span class="dock-sep">•</span>
               <button class="dock-album" onClick={() => props.onOpenAlbum?.()}>{props.track.movie}</button>
             </div>
           </div>
