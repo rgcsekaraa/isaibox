@@ -14,12 +14,31 @@ const SEARCH_TABS = [
   { id: "directors", label: "Directors" },
   { id: "singers", label: "Singers" },
 ];
+const MOBILE_SKELETON_ROWS = Array.from({ length: 8 });
 
 function MobileLoadingState(props) {
   return (
     <div class="m-loading-state">
       <Icon name="spinner" size={20} />
       <span>{props.text || "Loading..."}</span>
+    </div>
+  );
+}
+
+function MobileTrackSkeleton() {
+  return (
+    <div class="m-track-skeleton" aria-label="Loading tracks">
+      <For each={MOBILE_SKELETON_ROWS}>
+        {() => (
+          <div class="m-track-skeleton-row">
+            <div class="m-track-skeleton-lines">
+              <span class="sk m-sk-title" />
+              <span class="sk m-sk-sub" />
+            </div>
+            <span class="sk m-sk-icon" />
+          </div>
+        )}
+      </For>
     </div>
   );
 }
@@ -378,10 +397,10 @@ export function MobilePlaylistDetail(props) {
             when={ctx.searchPending()}
             fallback={
               <Show
-                when={!ctx.loading() && ctx.playlistLoading()}
+                when={ctx.loading() || ctx.playlistLoading()}
                 fallback={<div class="empty">{ctx.trackSearch() ? `No tracks match "${ctx.trackSearch()}"` : "No tracks available"}</div>}
               >
-                <MobileLoadingState text="Loading playlist..." />
+                <MobileTrackSkeleton />
               </Show>
             }
           >

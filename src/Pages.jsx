@@ -326,7 +326,7 @@ export function LibraryPage(props) {
                 : "No tracks available"}
             </div>
           </Show>
-          <Show when={!ctx.loading() && ctx.playlistLoading() && ctx.filteredTracks().length === 0}>
+          <Show when={(ctx.loading() || ctx.playlistLoading()) && ctx.filteredTracks().length === 0}>
             <TrackTableSkeleton density={ctx.density()} />
           </Show>
         </div>
