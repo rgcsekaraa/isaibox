@@ -174,6 +174,16 @@ export function NowPlayingDock(props) {
         </div>
 
         <div class="dock-right">
+          <button
+            class="icon-btn small"
+            classList={{ active: props.lyricsState?.available, loading: props.lyricsState?.loading }}
+            title={props.lyricsState?.available ? "Show lyrics" : props.lyricsState?.loading ? "Loading lyrics" : "Lyrics"}
+            onClick={() => props.onToggleLyrics?.()}
+          >
+            <Show when={props.lyricsState?.loading} fallback={<Icon name="lyrics" size={15} />}>
+              <Icon name="spinner" size={15} />
+            </Show>
+          </button>
           <button class="icon-btn small" title="Add to queue" onClick={() => props.onAddToQueue?.()}><Icon name="plus" size={15} /></button>
           <button class="icon-btn small" title="Save to playlist" onClick={() => props.onSaveToPlaylist?.()}><Icon name="dots" size={15} /></button>
           <button class="icon-btn small" title="Share track" onClick={() => props.onShare?.()}><Icon name="share" size={15} /></button>
@@ -350,6 +360,12 @@ export function FullPlayer(props) {
             <button class="fp-action" onClick={() => props.onShare?.()}>
               <Icon name="share" size={16} />
               <span>Share</span>
+            </button>
+            <button class="fp-action" classList={{ active: props.lyricsState?.available }} onClick={() => props.onToggleLyrics?.()}>
+              <Show when={props.lyricsState?.loading} fallback={<Icon name="lyrics" size={16} />}>
+                <Icon name="spinner" size={16} />
+              </Show>
+              <span>Lyrics</span>
             </button>
             <button class="fp-action" onClick={() => props.cycleSpeed()}>
               <span class="mono">{props.speed}×</span>

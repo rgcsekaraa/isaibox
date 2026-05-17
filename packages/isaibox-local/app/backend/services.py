@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 import time
+from difflib import SequenceMatcher
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -41,6 +42,12 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 LOCAL_DB_MANIFEST_PATH = ROOT / "data" / "library-manifest.json"
 DB_SYNC_STATE_PATH = ROOT / "data" / "db-sync-state.json"
 GITHUB_ISSUES_URL = "https://github.com/rgcsekaraa/isaibox/issues"
+LRCLIB_API_BASE = os.environ.get("LRCLIB_API_BASE", "https://lrclib.net").rstrip("/")
+LYRICS_USER_AGENT = os.environ.get(
+    "ISAIBOX_LYRICS_USER_AGENT",
+    "isaibox/1.0 (https://github.com/rgcsekaraa/isaibox)",
+)
+LYRICS_CONFIDENCE_THRESHOLD = float(os.environ.get("ISAIBOX_LYRICS_CONFIDENCE_THRESHOLD", "72") or "72")
 
 
 def load_local_env() -> None:
@@ -384,6 +391,43 @@ def cache_status(song_id: str, result: dict) -> dict:
 def normalize_text(value: str) -> str:
     cleaned = re.sub(r"[^a-z0-9]+", " ", (value or "").lower())
     return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def normalize_lyrics_text(value: str) -> str:
+    text = normalize_text(value)
+    replacements = (
+        ("dhan", "than"),
+        ("dhaan", "than"),
+        ("thaan", "than"),
+        ("nee", "ni"),
+        ("neethan", "ni than"),
+        ("neethaan", "ni than"),
+        ("desiya", "desia"),
+        ("geetham", "githam"),
+    )
+    for source, target in replacements:
+        text = re.sub(rf"\b{re.escape(source)}\b", target, text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def similarity_score(left: str, right: str) -> float:
+    left_norm = normalize_lyrics_text(left)
+    right_norm = normalize_lyrics_text(right)
+    if not left_norm or not right_norm:
+        return 0.0
+    if left_norm == right_norm:
+        return 1.0
+    if left_norm in right_norm or right_norm in left_norm:
+        return 0.9
+    return SequenceMatcher(None, left_norm, right_norm).ratio()
+
+
+def token_overlap_ratio(left: str, right: str) -> float:
+    left_tokens = set(normalize_lyrics_text(left).split())
+    right_tokens = set(normalize_lyrics_text(right).split())
+    if not left_tokens or not right_tokens:
+        return 0.0
+    return len(left_tokens & right_tokens) / max(1, len(left_tokens | right_tokens))
 
 
 BGM_ALBUM_SQL_RE = r"(?i)\bbgm\b"
@@ -2961,7 +3005,7 @@ def fetch_song_row(song_id: str) -> dict | None:
     with get_read_conn() as conn:
         row = conn.execute(
             """
-            SELECT song_id, album_url, track_number, track_name, url_320kbps, movie_name, updated_at
+            SELECT song_id, album_url, track_number, track_name, url_320kbps, movie_name, updated_at, singers, music_director
             FROM songs
             WHERE song_id = ? AND url_320kbps IS NOT NULL AND url_320kbps != ''
             """,
@@ -2977,6 +3021,8 @@ def fetch_song_row(song_id: str) -> dict | None:
         "url_320kbps": row[4],
         "movie_name": row[5],
         "updated_at": row[6],
+        "singers": row[7] or "",
+        "music_director": row[8] or "",
     }
 
 
@@ -2995,6 +3041,203 @@ def get_song_row(song_id: str) -> dict | None:
             song_row_cache[song_id] = row
         return dict(row)
     return None
+
+
+def serialize_lyrics_row(row) -> dict:
+    if not row:
+        return {"status": "missing", "available": False}
+    return {
+        "songId": row[0],
+        "lrclibId": row[1],
+        "status": row[2] or "missing",
+        "available": (row[2] == "available") and bool((row[3] or row[4] or "").strip()),
+        "plainLyrics": row[3] or "",
+        "syncedLyrics": row[4] or "",
+        "instrumental": bool(row[5]),
+        "confidence": float(row[6] or 0),
+        "source": row[7] or "lrclib",
+        "matchDuration": row[8],
+        "fetchedAt": row[9].isoformat() if row[9] else "",
+        "updatedAt": row[10].isoformat() if row[10] else "",
+        "error": row[11] or "",
+    }
+
+
+def get_cached_lyrics(song_id: str) -> dict | None:
+    with db.get_conn() as conn:
+        row = conn.execute(
+            """
+            SELECT song_id, lrclib_id, status, plain_lyrics, synced_lyrics, instrumental,
+                   confidence, source, match_duration, fetched_at, updated_at, error
+            FROM song_lyrics
+            WHERE song_id = ?
+            """,
+            [song_id],
+        ).fetchone()
+    return serialize_lyrics_row(row) if row else None
+
+
+def upsert_lyrics_record(song_id: str, payload: dict) -> dict:
+    now = now_utc()
+    with db.get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO song_lyrics
+                (song_id, lrclib_id, status, plain_lyrics, synced_lyrics, instrumental,
+                 confidence, source, match_duration, fetched_at, updated_at, error)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (song_id) DO UPDATE SET
+                lrclib_id = excluded.lrclib_id,
+                status = excluded.status,
+                plain_lyrics = excluded.plain_lyrics,
+                synced_lyrics = excluded.synced_lyrics,
+                instrumental = excluded.instrumental,
+                confidence = excluded.confidence,
+                source = excluded.source,
+                match_duration = excluded.match_duration,
+                fetched_at = excluded.fetched_at,
+                updated_at = excluded.updated_at,
+                error = excluded.error
+            """,
+            [
+                song_id,
+                payload.get("lrclibId"),
+                payload.get("status", "missing"),
+                payload.get("plainLyrics", ""),
+                payload.get("syncedLyrics", ""),
+                bool(payload.get("instrumental", False)),
+                float(payload.get("confidence") or 0),
+                payload.get("source", "lrclib"),
+                payload.get("matchDuration"),
+                now,
+                now,
+                payload.get("error", ""),
+            ],
+        )
+    return get_cached_lyrics(song_id) or {"status": payload.get("status", "missing"), "available": False}
+
+
+def score_lrclib_candidate(song: dict, candidate: dict, duration: int | None = None) -> float:
+    track_score = similarity_score(song.get("track_name", ""), candidate.get("trackName", ""))
+    album_score = similarity_score(song.get("movie_name", ""), candidate.get("albumName", ""))
+    artist_source = song.get("singers") or song.get("music_director") or ""
+    artist_score = max(
+        token_overlap_ratio(artist_source, candidate.get("artistName", "")),
+        similarity_score(artist_source, candidate.get("artistName", "")) * 0.8,
+    )
+    score = (track_score * 55) + (album_score * 25) + (artist_score * 15)
+    candidate_duration = candidate.get("duration")
+    if duration and candidate_duration:
+        try:
+            diff = abs(int(round(float(candidate_duration))) - int(duration))
+            if diff <= 2:
+                score += 20
+            elif diff <= 8:
+                score += 8
+            else:
+                score -= min(25, diff)
+        except (TypeError, ValueError):
+            pass
+    elif album_score >= 0.9 and track_score >= 0.9:
+        score += 5
+    return max(0.0, min(100.0, score))
+
+
+def fetch_lrclib_candidates(song: dict, duration: int | None = None) -> list[dict]:
+    headers = {"User-Agent": LYRICS_USER_AGENT, "Accept": "application/json"}
+    candidates: list[dict] = []
+    track_name = song.get("track_name") or ""
+    artist_name = song.get("singers") or song.get("music_director") or ""
+    album_name = song.get("movie_name") or ""
+    if duration:
+        params = {
+            "track_name": track_name,
+            "artist_name": artist_name,
+            "album_name": album_name,
+            "duration": int(duration),
+        }
+        for path in ("/api/get-cached", "/api/get"):
+            response = requests.get(f"{LRCLIB_API_BASE}{path}", params=params, headers=headers, timeout=12)
+            if response.status_code == 404:
+                continue
+            response.raise_for_status()
+            payload = response.json()
+            if isinstance(payload, dict):
+                candidates.append(payload)
+                return candidates
+    search_params = {
+        "track_name": track_name,
+        "artist_name": artist_name,
+        "album_name": album_name,
+    }
+    response = requests.get(f"{LRCLIB_API_BASE}/api/search", params=search_params, headers=headers, timeout=12)
+    if response.status_code == 404:
+        return candidates
+    response.raise_for_status()
+    payload = response.json()
+    if isinstance(payload, list):
+        candidates.extend(item for item in payload if isinstance(item, dict))
+    return candidates
+
+
+def fetch_and_store_lyrics(song_id: str, duration: int | None = None, force: bool = False) -> dict:
+    song = get_song_row(song_id)
+    if not song:
+        return {"status": "missing", "available": False, "error": "Song not found"}
+    cached = None if force else get_cached_lyrics(song_id)
+    if cached and cached.get("status") == "available":
+        return cached
+    if cached and cached.get("status") in {"not_found", "instrumental"} and not duration:
+        return cached
+    if cached and cached.get("status") in {"not_found", "instrumental"} and cached.get("matchDuration"):
+        return cached
+    try:
+        candidates = fetch_lrclib_candidates(song, duration=duration)
+        scored = sorted(
+            ((score_lrclib_candidate(song, candidate, duration), candidate) for candidate in candidates),
+            key=lambda item: item[0],
+            reverse=True,
+        )
+        if not scored or scored[0][0] < LYRICS_CONFIDENCE_THRESHOLD:
+            confidence = scored[0][0] if scored else 0
+            return upsert_lyrics_record(
+                song_id,
+                {
+                    "status": "not_found",
+                    "confidence": confidence,
+                    "matchDuration": duration,
+                    "error": "No confident LRCLIB match",
+                },
+            )
+        confidence, best = scored[0]
+        plain = best.get("plainLyrics") or ""
+        synced = best.get("syncedLyrics") or ""
+        instrumental = bool(best.get("instrumental"))
+        status = "instrumental" if instrumental and not (plain or synced) else "available"
+        return upsert_lyrics_record(
+            song_id,
+            {
+                "lrclibId": best.get("id"),
+                "status": status,
+                "plainLyrics": plain,
+                "syncedLyrics": synced,
+                "instrumental": instrumental,
+                "confidence": confidence,
+                "matchDuration": int(duration) if duration else best.get("duration"),
+                "error": "",
+            },
+        )
+    except Exception as exc:
+        app.logger.info("Lyrics lookup failed for %s: %s", song_id, exc)
+        return upsert_lyrics_record(
+            song_id,
+            {
+                "status": "error",
+                "confidence": 0,
+                "matchDuration": duration,
+                "error": str(exc),
+            },
+        )
 
 
 def invalidate_song_cache(song_id: str | None = None) -> None:

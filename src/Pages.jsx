@@ -529,6 +529,94 @@ export function QueuePanel(props) {
   );
 }
 
+function parseSyncedLyrics(value = "") {
+  return String(value || "")
+    .split("\n")
+    .map((line) => {
+      const match = line.match(/^\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]\s*(.*)$/);
+      if (!match) return null;
+      const minutes = Number(match[1]) || 0;
+      const seconds = Number(match[2]) || 0;
+      const fraction = Number(`0.${match[3] || "0"}`) || 0;
+      return { time: minutes * 60 + seconds + fraction, text: match[4] || "" };
+    })
+    .filter((line) => line && line.text.trim());
+}
+
+export function LyricsPanel(props) {
+  const { ctx } = props;
+  const lyrics = () => ctx.lyricsState?.() || { status: "idle" };
+  const syncedLines = () => parseSyncedLyrics(lyrics().syncedLyrics);
+  const activeLineIndex = () => {
+    const lines = syncedLines();
+    const current = ctx.position?.() || 0;
+    let active = -1;
+    for (let index = 0; index < lines.length; index += 1) {
+      if (lines[index].time <= current + 0.2) active = index;
+    }
+    return active;
+  };
+  const plainLines = () => String(lyrics().plainLyrics || "").split("\n").filter((line) => line.trim());
+  const hasLyrics = () => lyrics().status === "available" && (syncedLines().length > 0 || plainLines().length > 0);
+
+  return (
+    <aside class={`lyrics-panel ${props.mobile ? "mobile" : "queue-panel"}`}>
+      <div class="page-header">
+        <div class="page-title-row queue-title-row">
+          <h1 class="page-title">Lyrics</h1>
+          <button class="icon-btn small" onClick={() => ctx.setLyricsOpen?.(false)} title="Close lyrics">
+            <Icon name={props.mobile ? "chevron-down" : "chevron-right"} size={16} />
+          </button>
+        </div>
+      </div>
+      <div class="lyrics-track">
+        <div class="lyrics-track-title">{ctx.currentTrack?.()?.title || "No track"}</div>
+        <div class="lyrics-track-sub">{ctx.currentTrack?.()?.singer || ctx.currentTrack?.()?.movie || ""}</div>
+      </div>
+      <Show when={!lyrics().loading} fallback={<LoadingState text="Loading lyrics..." />}>
+        <Show
+          when={hasLyrics()}
+          fallback={
+            <div class="empty lyrics-empty">
+              <Icon name="lyrics" size={26} />
+              <div class="empty-title">
+                {lyrics().status === "instrumental" ? "Instrumental" : "Lyrics unavailable"}
+              </div>
+              <div class="empty-sub">
+                {lyrics().status === "not_found"
+                  ? "No confident LRCLIB match was found."
+                  : lyrics().status === "error"
+                  ? "Lyrics lookup failed for this track."
+                  : "Lyrics will appear here when available."}
+              </div>
+              <button class="btn-ghost wide" onClick={() => ctx.refreshLyrics?.()}>Retry lookup</button>
+            </div>
+          }
+        >
+          <div class="lyrics-body">
+            <Show
+              when={syncedLines().length > 0}
+              fallback={
+                <For each={plainLines()}>
+                  {(line) => <p class="lyrics-line plain">{line}</p>}
+                </For>
+              }
+            >
+              <For each={syncedLines()}>
+                {(line, index) => (
+                  <p class="lyrics-line" classList={{ active: index() === activeLineIndex(), past: index() < activeLineIndex() }}>
+                    {line.text}
+                  </p>
+                )}
+              </For>
+            </Show>
+          </div>
+        </Show>
+      </Show>
+    </aside>
+  );
+}
+
 // ─── Recents page ────────────────────────────────────────────────
 export function RecentsPage(props) {
   const { ctx } = props;

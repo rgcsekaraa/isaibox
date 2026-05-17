@@ -109,6 +109,8 @@ export function Icon(props) {
             return <svg {...common()}><circle cx="9" cy="6" r="1" fill="currentColor" /><circle cx="9" cy="12" r="1" fill="currentColor" /><circle cx="9" cy="18" r="1" fill="currentColor" /><circle cx="15" cy="6" r="1" fill="currentColor" /><circle cx="15" cy="12" r="1" fill="currentColor" /><circle cx="15" cy="18" r="1" fill="currentColor" /></svg>;
           case "share":
             return <svg {...common()}><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></svg>;
+          case "lyrics":
+            return <svg {...common()}><path d="M7 5h10" /><path d="M7 9h10" /><path d="M7 13h7" /><path d="M5 3h14v18l-3-2-3 2-3-2-3 2-2-1.3V3z" /></svg>;
           default:
             return null;
         }

@@ -161,6 +161,21 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     updated_at          TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS song_lyrics (
+    song_id         VARCHAR PRIMARY KEY,
+    lrclib_id       BIGINT,
+    status          VARCHAR DEFAULT 'missing',
+    plain_lyrics    VARCHAR,
+    synced_lyrics   VARCHAR,
+    instrumental    BOOLEAN DEFAULT FALSE,
+    confidence      DOUBLE DEFAULT 0,
+    source          VARCHAR DEFAULT 'lrclib',
+    match_duration  INTEGER,
+    fetched_at      TIMESTAMPTZ,
+    updated_at      TIMESTAMPTZ,
+    error           VARCHAR
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON user_sessions (user_id);
 CREATE INDEX IF NOT EXISTS idx_favorites_user_id ON favorite_songs (user_id);
 CREATE INDEX IF NOT EXISTS idx_favorite_albums_user_id ON favorite_albums (user_id);
@@ -168,6 +183,7 @@ CREATE INDEX IF NOT EXISTS idx_favorite_album_entities_user_id ON favorite_album
 CREATE INDEX IF NOT EXISTS idx_favorite_music_directors_user_id ON favorite_music_directors (user_id);
 CREATE INDEX IF NOT EXISTS idx_playlists_user_id ON playlists (user_id);
 CREATE INDEX IF NOT EXISTS idx_playlist_songs_playlist_id ON playlist_songs (playlist_id);
+CREATE INDEX IF NOT EXISTS idx_song_lyrics_status ON song_lyrics (status);
 """
 
 _MIGRATIONS = {
@@ -190,6 +206,19 @@ _MIGRATIONS = {
         "repeat_mode": "VARCHAR DEFAULT 'off'",
         "autoplay_next": "BOOLEAN DEFAULT TRUE",
         "updated_at": "TIMESTAMPTZ",
+    },
+    "song_lyrics": {
+        "lrclib_id": "BIGINT",
+        "status": "VARCHAR DEFAULT 'missing'",
+        "plain_lyrics": "VARCHAR",
+        "synced_lyrics": "VARCHAR",
+        "instrumental": "BOOLEAN DEFAULT FALSE",
+        "confidence": "DOUBLE DEFAULT 0",
+        "source": "VARCHAR DEFAULT 'lrclib'",
+        "match_duration": "INTEGER",
+        "fetched_at": "TIMESTAMPTZ",
+        "updated_at": "TIMESTAMPTZ",
+        "error": "VARCHAR",
     },
 }
 

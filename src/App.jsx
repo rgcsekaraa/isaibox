@@ -2,7 +2,7 @@ import { createSignal, createMemo, createEffect, onCleanup, onMount, Show, Match
 import { fmtTime, getTrackSearchMatch, parseDur, prepareSearchQuery, prepareTrackSearch, useMediaQuery } from "./utils.js";
 import { TopBar, Sidebar, ShortcutsDrawer } from "./Desktop.jsx";
 import { MobileHeader, MobileBottomTabs, MobileLibraryPage, MobilePlaylistDetail } from "./Mobile.jsx";
-import { LibraryPage, QueuePanel, RecentsPage, FavoritesPage } from "./Pages.jsx";
+import { LibraryPage, QueuePanel, LyricsPanel, RecentsPage, FavoritesPage } from "./Pages.jsx";
 import { NowPlayingDock, MiniPlayer, FullPlayer } from "./Player.jsx";
 import { MenuSelect } from "./MenuSelect.jsx";
 import { Icon } from "./Icon.jsx";
@@ -150,6 +150,8 @@ export function App() {
   const [newPlaylistName, setNewPlaylistName] = createSignal("");
   const [savingPlaylist, setSavingPlaylist] = createSignal(false);
   const [queueCollapsed, setQueueCollapsed] = createSignal(false);
+  const [lyricsOpen, setLyricsOpen] = createSignal(false);
+  const [lyricsState, setLyricsState] = createSignal({ status: "idle", loading: false, available: false });
   const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
 
   // Mobile-specific
@@ -192,6 +194,8 @@ export function App() {
   let playWatchTimer = null;
   let searchWorker = null;
   let searchRequestId = 0;
+  let lyricsRequestId = 0;
+  let lyricsFetchKey = "";
 
   const setIsPlaying = (nextValue) => {
     let shouldStart = false;
@@ -406,6 +410,50 @@ export function App() {
       duration: duration() > 0 ? fmtTime(duration()) : (track.duration || "0:00"),
       fav: favs().has(track.n),
     };
+  });
+
+  const loadLyrics = async (options = {}) => {
+    const track = activeAudioTrack();
+    if (!track?.id) return;
+    const roundedDuration = Math.round(Number(duration()) || 0);
+    const requestId = ++lyricsRequestId;
+    setLyricsState((current) => ({
+      ...current,
+      songId: track.id,
+      status: current.songId === track.id ? current.status : "loading",
+      loading: true,
+    }));
+    const params = new URLSearchParams();
+    if (roundedDuration > 0) params.set("duration", String(roundedDuration));
+    if (options.force) params.set("refresh", "1");
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    const response = await fetch(`/api/lyrics/${track.id}${suffix}`, { cache: "no-store" }).catch(() => null);
+    if (requestId !== lyricsRequestId) return;
+    if (!response?.ok) {
+      setLyricsState({ songId: track.id, status: "error", loading: false, available: false, error: "Unable to load lyrics" });
+      return;
+    }
+    const payload = await response.json().catch(() => null);
+    setLyricsState({ songId: track.id, ...(payload?.lyrics || {}), loading: false });
+  };
+
+  const refreshLyrics = () => loadLyrics({ force: true });
+
+  createEffect(() => {
+    const track = activeAudioTrack();
+    if (!track?.id) {
+      setLyricsState({ status: "idle", loading: false, available: false });
+      lyricsFetchKey = "";
+      return;
+    }
+    const roundedDuration = Math.round(Number(duration()) || 0);
+    const key = `${track.id}:${roundedDuration > 0 ? roundedDuration : 0}`;
+    const currentLyrics = lyricsState();
+    if (lyricsFetchKey === key) return;
+    if (lyricsFetchKey.startsWith(`${track.id}:`) && roundedDuration === 0) return;
+    if (lyricsFetchKey.startsWith(`${track.id}:`) && currentLyrics.available) return;
+    lyricsFetchKey = key;
+    loadLyrics({ force: roundedDuration > 0 && currentLyrics.songId === track.id && !currentLyrics.available });
   });
 
   const filteredTracks = createMemo(() => {
@@ -1199,7 +1247,13 @@ export function App() {
     loadError,
     queueCollapsed,
     setQueueCollapsed,
+    lyricsOpen,
+    setLyricsOpen,
+    lyricsState,
+    refreshLyrics,
     mobileView, setMobileView,
+    currentTrack,
+    position,
     filteredTracks,
     searchPending,
     searchAlbumResults,
@@ -1264,7 +1318,9 @@ export function App() {
 	                  <Match when={tab() === "Favorites"}><FavoritesPage ctx={ctx} /></Match>
 	                </Switch>
               </section>
-              <QueuePanel ctx={ctx} />
+              <Show when={lyricsOpen()} fallback={<QueuePanel ctx={ctx} />}>
+                <LyricsPanel ctx={ctx} />
+              </Show>
             </main>
             <Show
               when={currentTrack()}
@@ -1323,6 +1379,8 @@ export function App() {
                   onAddToQueue={() => addToQueue(track().n)}
                   onSaveToPlaylist={() => addToActivePlaylist(track().n)}
                   onShare={() => shareTrack(track())}
+                  lyricsState={lyricsState()}
+                  onToggleLyrics={() => { setLyricsOpen((value) => !value); setQueueCollapsed(false); }}
                   onOpenAlbum={() => openAlbum(track().movie)}
                   queueCollapsed={queueCollapsed()}
                   onToggleQueue={() => setQueueCollapsed((value) => !value)}
@@ -1418,12 +1476,21 @@ export function App() {
                 onAddToQueue={() => addToQueue(track().n)}
                 onSaveToPlaylist={() => addToActivePlaylist(track().n)}
                 onShare={() => shareTrack(track())}
+                lyricsState={lyricsState()}
+                onToggleLyrics={() => setLyricsOpen(true)}
                 onOpenAlbum={() => openAlbum(track().movie)}
                 onCollapse={() => setPlayerExpanded(false)}
               />
             )}
           </Show>
         </div>
+        <Show when={lyricsOpen()}>
+          <div class="lyrics-mobile-backdrop" onClick={() => setLyricsOpen(false)}>
+            <section class="lyrics-mobile-sheet" onClick={(event) => event.stopPropagation()}>
+              <LyricsPanel ctx={ctx} mobile />
+            </section>
+          </div>
+        </Show>
       </Show>
       <audio
         ref={audioEl}

@@ -413,6 +413,36 @@ def song_status(song_id: str):
     return json_response(get_stream_health(song_id, url))
 
 
+@app.get("/api/lyrics/<song_id>")
+def song_lyrics(song_id: str):
+    row = get_song_row(song_id)
+    if not row:
+        return json_response({"ok": False, "message": "Song not found"}), 404
+    duration = None
+    duration_raw = request.args.get("duration")
+    if duration_raw:
+        try:
+            duration = max(0, int(round(float(duration_raw))))
+        except (TypeError, ValueError):
+            duration = None
+    force = str(request.args.get("refresh") or "").lower() in {"1", "true", "yes"}
+    lyrics = fetch_and_store_lyrics(song_id, duration=duration, force=force)
+    return json_response({"ok": True, "lyrics": lyrics})
+
+
+@app.post("/api/lyrics/<song_id>/refresh")
+def refresh_song_lyrics(song_id: str):
+    payload = request.get_json(silent=True) or {}
+    duration = None
+    if payload.get("duration"):
+        try:
+            duration = max(0, int(round(float(payload.get("duration")))))
+        except (TypeError, ValueError):
+            duration = None
+    lyrics = fetch_and_store_lyrics(song_id, duration=duration, force=True)
+    return json_response({"ok": True, "lyrics": lyrics})
+
+
 def open_upstream_stream(song_id: str, url: str, album_url: str | None = None):
     headers = build_upstream_headers(song_id=song_id, album_url=album_url)
     upstream, source = request_upstream(url, headers=headers, stream=True, timeout=(5, 30))
