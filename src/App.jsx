@@ -885,7 +885,7 @@ export function App() {
   });
 
   createEffect(() => {
-    if (isMobile() && tab() === "Library" && mobileView() !== "list") {
+    if (isMobile() && tab() === "Library" && mobileView() !== "list" && !songSearch().trim()) {
       setSearchOpen(false);
     }
   });
