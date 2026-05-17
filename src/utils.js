@@ -121,6 +121,25 @@ export const prepareSearchQuery = (query) => {
   };
 };
 
+export const splitCreditNames = (value) =>
+  String(value || "")
+    .split(/\s*(?:,|&|\/|\band\b)\s*/i)
+    .map((name) => name.trim())
+    .filter(Boolean);
+
+export const personSearchKey = (value) => normalizeSearchText(value).replace(/\s+/g, "");
+
+export const formatPersonName = (value) => {
+  const cleaned = String(value || "").trim().replace(/\s+/g, " ");
+  if (!cleaned) return "";
+  const compactPeriods = cleaned.replace(/\s*\.\s*/g, ".");
+  const parts = compactPeriods.split(".").filter(Boolean);
+  if (parts.length > 1 && parts.slice(0, -1).every((part) => part.length <= 2)) {
+    return `${parts.slice(0, -1).join(".")}. ${parts.at(-1)}`;
+  }
+  return cleaned;
+};
+
 export const scoreTrackSearch = (track, query) => {
   const preparedQuery = typeof query === "string" ? prepareSearchQuery(query) : query;
   if (!preparedQuery.normalizedQuery) return 0;

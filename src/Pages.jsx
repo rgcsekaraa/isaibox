@@ -213,9 +213,6 @@ export function LibraryPage(props) {
       <div class="pl-header">
         <div class="pl-header-top">
           <div class="pl-title-block">
-            <Show when={isSearch()}>
-              <div class="pl-kicker">All songs</div>
-            </Show>
             <Show when={isAlbum()}>
               <div class="pl-kicker">Album</div>
             </Show>

@@ -219,9 +219,6 @@ export function MobilePlaylistDetail(props) {
             <span>Library</span>
           </button>
           <div class="m-detail-meta">
-            <Show when={isSearch()}>
-              <div class="m-page-kicker">All songs</div>
-            </Show>
             <Show when={isAlbum()}>
               <div class="m-page-kicker">Album</div>
             </Show>

@@ -1,5 +1,5 @@
 import { createSignal, createMemo, createEffect, onCleanup, onMount, Show, Match, Switch } from "solid-js";
-import { fmtTime, getTrackFieldMatches, getTrackSearchMatch, parseDur, prepareSearchQuery, prepareTrackSearch, useMediaQuery } from "./utils.js";
+import { fmtTime, formatPersonName, getTrackFieldMatches, getTrackSearchMatch, normalizeSearchText, parseDur, personSearchKey, prepareSearchQuery, prepareTrackSearch, splitCreditNames, useMediaQuery } from "./utils.js";
 import { TopBar, Sidebar, ShortcutsDrawer } from "./Desktop.jsx";
 import { MobileHeader, MobileBottomTabs, MobileLibraryPage, MobilePlaylistDetail } from "./Mobile.jsx";
 import { LibraryPage, QueuePanel, RecentsPage, FavoritesPage } from "./Pages.jsx";
@@ -290,6 +290,31 @@ export function App() {
     return arr;
   });
 
+  const matchCreditName = (track, label, preparedQuery) => {
+    const names = splitCreditNames(label === "Music director" ? track.director : track.singer);
+    const base = label === "Music director" ? 26 : 32;
+    for (const name of names) {
+      const normalizedName = normalizeSearchText(name);
+      const nameCompact = normalizedName.replace(/\s+/g, "");
+      const nameTokens = normalizedName.split(/\s+/).filter(Boolean);
+      const { queryCompact, queryTokens } = preparedQuery;
+      let score = null;
+
+      if (nameCompact === queryCompact) {
+        score = base;
+      } else if (nameCompact.startsWith(queryCompact)) {
+        score = base + 8 + nameCompact.length - queryCompact.length;
+      } else if (queryTokens.every((queryToken) => nameTokens.some((nameToken) => nameToken === queryToken || nameToken.startsWith(queryToken)))) {
+        score = base + 22;
+      } else if (nameCompact.includes(queryCompact) && nameTokens.some((nameToken) => nameToken.startsWith(queryCompact))) {
+        score = base + 34 + nameCompact.indexOf(queryCompact);
+      }
+
+      if (score !== null) return { label, score, value: formatPersonName(name), key: personSearchKey(name) };
+    }
+    return null;
+  };
+
   const searchAlbumResults = createMemo(() => {
     const query = songSearch().trim();
     if (!query) return [];
@@ -309,7 +334,11 @@ export function App() {
       const album = String(track.movie || "").trim();
       if (!album) continue;
       const enrichedTrack = { ...track, fav: favs().has(track.n), _search: searchMap[track.id] };
-      const match = getTrackFieldMatches(enrichedTrack, preparedQuery).find((entry) => entry.label !== "Song");
+      const fieldMatches = getTrackFieldMatches(enrichedTrack, preparedQuery);
+      const match = [
+        fieldMatches.find((entry) => entry.label === "Album"),
+        matchCreditName(enrichedTrack, "Music director", preparedQuery),
+      ].filter(Boolean).sort((a, b) => a.score - b.score)[0];
       if (!match) continue;
 
       const existing = matchedAlbums.get(album);
@@ -332,8 +361,7 @@ export function App() {
     }
 
     return [...matchedAlbums.values()]
-      .sort((a, b) => a.score - b.score || String(b.year || "").localeCompare(String(a.year || "")) || a.name.localeCompare(b.name))
-      .slice(0, 24);
+      .sort((a, b) => a.score - b.score || String(b.year || "").localeCompare(String(a.year || "")) || a.name.localeCompare(b.name));
   });
 
   const searchPeopleResultsFor = (label) => {
@@ -345,11 +373,12 @@ export function App() {
 
     for (const track of tracks()) {
       const enrichedTrack = { ...track, fav: favs().has(track.n), _search: searchMap[track.id] };
-      const match = getTrackFieldMatches(enrichedTrack, preparedQuery).find((entry) => entry.label === label);
+      const match = matchCreditName(enrichedTrack, label, preparedQuery);
       const name = String(match?.value || "").trim();
-      if (!name) continue;
+      const key = match?.key;
+      if (!name || !key) continue;
 
-      const current = groups.get(name) || {
+      const current = groups.get(key) || {
         name,
         score: match.score,
         albums: new Set(),
@@ -358,7 +387,7 @@ export function App() {
       current.score = Math.min(current.score, match.score);
       current.trackCount += 1;
       if (track.movie) current.albums.add(track.movie);
-      groups.set(name, current);
+      groups.set(key, current);
     }
 
     return [...groups.values()]
@@ -367,8 +396,7 @@ export function App() {
         albumCount: group.albums.size,
         albums: [...group.albums],
       }))
-      .sort((a, b) => a.score - b.score || b.albumCount - a.albumCount || a.name.localeCompare(b.name))
-      .slice(0, 24);
+      .sort((a, b) => a.score - b.score || b.albumCount - a.albumCount || a.name.localeCompare(b.name));
   };
 
   const searchDirectorResults = createMemo(() => searchPeopleResultsFor("Music director"));
