@@ -14,12 +14,36 @@ const SEARCH_TABS = [
   { id: "directors", label: "Music Directors" },
   { id: "singers", label: "Singers" },
 ];
+const TABLE_SKELETON_ROWS = Array.from({ length: 10 });
 
 function LoadingState(props) {
   return (
     <div class={`loading-state ${props.large ? "large" : ""}`}>
       <Icon name="spinner" size={props.large ? 24 : 18} />
       <span>{props.text || "Loading..."}</span>
+    </div>
+  );
+}
+
+function TrackTableSkeleton(props) {
+  return (
+    <div class="track-skeleton" aria-label="Loading playlist">
+      <For each={TABLE_SKELETON_ROWS}>
+        {() => (
+          <div class={`track-row track-skeleton-row ${props.density || "comfortable"}`}>
+            <div class="t-num"><span class="sk sk-num" /></div>
+            <div class="t-title"><span class="sk sk-title" /></div>
+            <div class="t-movie"><span class="sk sk-mid" /></div>
+            <div class="t-director"><span class="sk sk-mid" /></div>
+            <div class="t-singer"><span class="sk sk-wide" /></div>
+            <div class="t-year"><span class="sk sk-year" /></div>
+            <div class="t-actions">
+              <span class="sk sk-icon" />
+              <span class="sk sk-icon" />
+            </div>
+          </div>
+        )}
+      </For>
     </div>
   );
 }
@@ -291,7 +315,7 @@ export function LibraryPage(props) {
             </div>
           </Show>
           <Show when={!ctx.loading() && ctx.playlistLoading() && ctx.filteredTracks().length === 0}>
-            <LoadingState text="Loading playlist..." />
+            <TrackTableSkeleton density={ctx.density()} />
           </Show>
         </div>
       </div>

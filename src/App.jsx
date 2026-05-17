@@ -530,6 +530,8 @@ export function App() {
     let cancelled = false;
     setPlaylistLoading(true);
     setPlaylistDetailState("loading");
+    setPlaylistTrackIds([]);
+    setPlaylistTracks([]);
     fetch(`/api/playlists/${playlistId}`, { cache: "no-store" })
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("Unable to load playlist")))
       .then((payload) => {

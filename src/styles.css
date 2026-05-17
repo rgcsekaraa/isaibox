@@ -788,6 +788,29 @@ button:disabled,
 .track-row.current { background: linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02)); }
 .track-row.current .t-title-text { font-weight: 600; }
 .track-row.current .t-num { color: var(--accent); }
+.track-skeleton { padding: 2px 0 8px; }
+.track-skeleton-row { pointer-events: none; }
+.track-skeleton-row:hover { background: transparent; }
+.sk {
+  display: block;
+  height: 14px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--bg-elev) 0%, var(--bg-elev-2) 48%, var(--bg-elev) 100%);
+  background-size: 220% 100%;
+  opacity: 0.72;
+  animation: skeleton-pulse 1.15s ease-in-out infinite;
+}
+.sk-num { width: 20px; height: 12px; margin: 0 auto; }
+.sk-title { width: min(78%, 320px); }
+.sk-mid { width: min(72%, 190px); }
+.sk-wide { width: min(82%, 260px); }
+.sk-year { width: 42px; margin-left: auto; }
+.sk-icon { width: 24px; height: 24px; border-radius: 50%; }
+@keyframes skeleton-pulse {
+  0% { background-position: 120% 0; opacity: 0.42; }
+  50% { opacity: 0.78; }
+  100% { background-position: -120% 0; opacity: 0.42; }
+}
 
 .t-num {
   position: relative;
