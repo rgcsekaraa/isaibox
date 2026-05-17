@@ -492,18 +492,16 @@ button:disabled,
 .search-help {
   position: relative;
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--line);
   border-radius: 50%;
   color: var(--fg-faint);
 }
 .search-help:hover,
 .search-help:focus-visible {
   color: var(--fg);
-  border-color: var(--line-strong);
 }
 .search-help::after {
   content: attr(data-tooltip);
@@ -547,16 +545,15 @@ button:disabled,
   align-items: center;
   gap: 6px;
   min-height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
+  padding: 0 2px 3px;
+  border-bottom: 1px solid transparent;
   color: var(--fg-mute);
   font-size: 11.5px;
   white-space: nowrap;
 }
 .search-tab.active {
   color: var(--fg);
-  border-color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 .search-tab:disabled,
 .m-search-tab:disabled {
@@ -1960,15 +1957,14 @@ button:disabled,
   align-items: center;
   gap: 6px;
   min-height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
+  padding: 0 2px 3px;
+  border-bottom: 1px solid transparent;
   color: var(--fg-mute);
   font-size: 11px;
 }
 .m-search-tab.active {
   color: var(--fg);
-  border-color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 .m-search-tab span:last-child {
   color: var(--fg-faint);
