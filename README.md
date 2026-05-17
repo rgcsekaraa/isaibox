@@ -141,6 +141,23 @@ Note:
 - R2 is the shared backing cache for production
 - if `boto3` is not installed, R2 is skipped and the app continues with local cache only
 
+## Internet Archive backup
+
+The `Backup Internet Archive` GitHub Actions workflow publishes a public, sanitized library backup to archive.org.
+
+- Required repository secrets: `IA_ACCESS_KEY`, `IA_SECRET_KEY`
+- Optional workflow input: `item` defaults to `isaibox-public-library`
+- Metadata backup excludes user, session, favorite, and preference tables before upload
+- Audio files are uploaded as `audio/<song_id>.mp3`; repeat runs skip files that already exist in the Archive item
+- Scheduled runs upload metadata plus up to 200 new audio files by default, so the audio backup fills incrementally without one huge runner job
+
+Run locally with:
+
+```bash
+python -m pip install -r packages/isaibox-local/requirements-local.txt internetarchive
+IA_ACCESS_KEY=... IA_SECRET_KEY=... python scripts/backup_internet_archive.py --include-audio --download-missing-audio
+```
+
 ## Automated GitHub DuckDB refresh
 
 The repository now uses GitHub Actions directly to refresh the GitHub-hosted DuckDB snapshot used by local package sync.

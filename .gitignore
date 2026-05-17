@@ -9,6 +9,7 @@ env/
 # Databases and Large Data
 data/
 exports/
+.ia-backup/
 *.duckdb
 *.parquet
 *.csv
