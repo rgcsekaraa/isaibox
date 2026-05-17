@@ -455,8 +455,8 @@ button:disabled,
 .btn-link:hover { color: var(--fg); }
 
 /* Library playlist hero */
-.pl-header { padding: 24px 36px 16px 36px; border-bottom: 1px solid var(--line); }
-.pl-header-top { display: flex; align-items: center; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+.pl-header { padding: 18px 36px; border-bottom: 1px solid var(--line); }
+.pl-header-top { display: flex; align-items: center; justify-content: space-between; gap: 14px 24px; flex-wrap: wrap; }
 .pl-title-block { min-width: 0; flex: 1 1 260px; }
 .pl-kicker {
   margin-bottom: 6px;
@@ -466,7 +466,7 @@ button:disabled,
   text-transform: uppercase;
   color: var(--fg-faint);
 }
-.pl-title { font-size: 36px; letter-spacing: -0.025em; font-weight: 600; margin: 0; line-height: 1.05; }
+.pl-title { font-size: 32px; letter-spacing: -0.025em; font-weight: 600; margin: 0; line-height: 1.08; }
 .pl-title-line { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .pl-title-line .pl-title {
   min-width: 0;
@@ -1411,9 +1411,8 @@ button:disabled,
 
 /* Density tweak */
 .app[data-density="compact"] { --topbar-h: 56px; --dock-h: 84px; }
-.app[data-density="compact"] .pl-header { padding: 20px 32px 8px 32px; }
-.app[data-density="compact"] .pl-title { font-size: 28px; }
-.app[data-density="compact"] .pl-header-top { margin-bottom: 12px; }
+.app[data-density="compact"] .pl-header { padding: 16px 32px; }
+.app[data-density="compact"] .pl-title { font-size: 27px; }
 
 /* ═══════════════════════════════════════════════════════════════
    MOBILE
@@ -1746,8 +1745,8 @@ button:disabled,
 .m-detail-panel {
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  padding: 10px 14px 12px;
+  gap: 8px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--bg);
 }
@@ -1777,7 +1776,7 @@ button:disabled,
 .m-detail-meta { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; gap: 3px; text-align: left; }
 .m-detail-meta .m-page-kicker { margin-bottom: 0; }
 .m-detail-title {
-  font-size: 21px;
+  font-size: 19px;
   font-weight: 600;
   letter-spacing: -0.02em;
   margin: 0;
