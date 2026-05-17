@@ -2,10 +2,7 @@ name: Backup Internet Archive
 
 on:
   schedule:
-    - cron: "15 2 * * *"
-  workflow_run:
-    workflows: ["Refresh DuckDB Library"]
-    types: [completed]
+    - cron: "45 6 * * *"
   workflow_dispatch:
     inputs:
       publish_ref:
@@ -46,7 +43,6 @@ concurrency:
 
 jobs:
   backup:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
