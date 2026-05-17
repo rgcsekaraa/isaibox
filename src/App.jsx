@@ -169,6 +169,7 @@ export function App() {
   const [message, setMessage] = createSignal("");
   let playbackIntent = false;
   let playbackRequestId = 0;
+  let playAttemptId = 0;
 
   const setIsPlaying = (nextValue) => {
     setIsPlayingState((current) => {
@@ -1009,19 +1010,22 @@ export function App() {
     }
     if (isPlaying()) {
       const requestId = playbackRequestId;
+      const attemptId = ++playAttemptId;
       setAudioLoading(true);
       audioEl.play().then(() => {
-        if (requestId !== playbackRequestId || !playbackIntent) {
+        if (attemptId !== playAttemptId || requestId !== playbackRequestId || !playbackIntent) {
           audioEl.pause();
           return;
         }
         setAudioLoading(false);
-      }).catch(() => {
-        if (requestId !== playbackRequestId) return;
+      }).catch((error) => {
+        if (attemptId !== playAttemptId || requestId !== playbackRequestId) return;
+        if (error?.name === "AbortError" && playbackIntent) return;
         setAudioLoading(false);
         setIsPlaying(false);
       });
     } else {
+      playAttemptId += 1;
       setAudioLoading(false);
       audioEl.pause();
     }
@@ -1327,7 +1331,14 @@ export function App() {
           }
           setAudioLoading(false);
         }}
-        onPause={() => { setIsPlaying(false); setAudioLoading(false); }}
+        onPause={() => {
+          if (playbackIntent) {
+            if (isPlaying()) setAudioLoading(true);
+            return;
+          }
+          setIsPlayingState(false);
+          setAudioLoading(false);
+        }}
         onError={() => { setAudioLoading(false); setIsPlaying(false); }}
       />
       <Show when={message()}>
