@@ -113,7 +113,7 @@ function SearchAlbumResults(props) {
                       <span>{album.count} tracks{album.year ? ` · ${album.year}` : ""}</span>
                     </span>
                   </button>
-                  <button class="search-album-play" title={`Play ${album.name}`} onClick={() => props.onPlay?.(album.tracks)}>
+                  <button class="search-album-play" title={`Play ${album.name}`} onClick={() => props.onPlay?.(album.tracks, { type: "album", label: album.name, caption: "Album" })}>
                     <Icon name="play" size={12} />
                   </button>
                 </div>
@@ -248,7 +248,7 @@ export function LibraryPage(props) {
             <div class="pl-title-line">
               <h1 class="pl-title">{playlist().name}</h1>
               <Show when={isAlbum() && ctx.activeAlbumTracks().length > 0}>
-                <button class="btn-secondary album-play-btn" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks())}>
+                <button class="btn-secondary album-play-btn" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks(), { type: "album", label: ctx.activeAlbum(), caption: "Album" })}>
                   <Icon name="play" size={13} /><span>Play</span>
                 </button>
               </Show>

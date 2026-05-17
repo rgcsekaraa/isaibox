@@ -2,6 +2,23 @@ import { createSignal, Show, onCleanup } from "solid-js";
 import { Icon } from "./Icon.jsx";
 import { parseDur, fmtTime } from "./utils.js";
 
+function PlaybackSourcePill(props) {
+  const source = () => props.source;
+  return (
+    <Show when={source()}>
+      {(item) => (
+        <button class={`play-source-pill ${props.compact ? "compact" : ""}`} title={`Open ${item().caption}: ${item().label}`} onClick={(event) => {
+          event.stopPropagation();
+          props.onOpen?.();
+        }}>
+          <span>{item().caption}</span>
+          <strong>{item().label}</strong>
+        </button>
+      )}
+    </Show>
+  );
+}
+
 // ─── Scrubber (shared) ───────────────────────────────────────────
 export function Scrubber(props) {
   let trackEl;
@@ -110,6 +127,7 @@ export function NowPlayingDock(props) {
         <div class="dock-left">
           <div class="dock-meta">
             <div class="dock-song" title={props.track.title}>{props.track.title}</div>
+            <PlaybackSourcePill source={props.playbackSource} onOpen={props.onOpenPlaybackSource} compact />
             <div class="dock-sub">
               <span>{props.track.singer}</span>
               <span class="dock-sep">from</span>
@@ -227,7 +245,10 @@ export function MiniPlayer(props) {
       <div class="mini-content">
         <div class="mini-meta">
           <div class="mini-title">{props.track.title}</div>
-          <div class="mini-sub">{props.track.singer}</div>
+          <div class="mini-sub-row">
+            <span class="mini-sub">{props.track.singer}</span>
+            <PlaybackSourcePill source={props.playbackSource} onOpen={props.onOpenPlaybackSource} compact />
+          </div>
         </div>
         <div class="mini-actions" onClick={(e) => e.stopPropagation()}>
           <button class="mini-btn" classList={{ loading: props.audioLoading }} onClick={() => props.setIsPlaying(!props.isPlaying)}>
@@ -255,8 +276,10 @@ export function FullPlayer(props) {
             <Icon name="chevron-down" size={20} />
           </button>
           <div class="fp-header-meta">
-            <div class="fp-header-kicker">Album</div>
-            <button class="fp-header-title fp-album-title" onClick={() => props.onOpenAlbum?.()}>{props.track.movie}</button>
+            <div class="fp-header-kicker">{props.playbackSource?.caption || "Album"}</div>
+            <button class="fp-header-title fp-album-title" onClick={() => props.playbackSource ? props.onOpenPlaybackSource?.() : props.onOpenAlbum?.()}>
+              {props.playbackSource?.label || props.track.movie}
+            </button>
           </div>
           <button class="fp-icon" onClick={() => props.onSaveToPlaylist?.()}><Icon name="dots" size={18} /></button>
         </div>

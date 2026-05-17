@@ -227,7 +227,7 @@ export function MobilePlaylistDetail(props) {
           <span class="m-detail-spacer" aria-hidden="true" />
         </div>
         <Show when={isAlbum() && filteredTracks().length > 0}>
-          <button class="btn-secondary m-play-album" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks())}>
+          <button class="btn-secondary m-play-album" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks(), { type: "album", label: ctx.activeAlbum(), caption: "Album" })}>
             <Icon name="play" size={13} /><span>Play</span>
           </button>
         </Show>
@@ -293,7 +293,7 @@ export function MobilePlaylistDetail(props) {
                         <span>{album.count} tracks{album.year ? ` · ${album.year}` : ""}</span>
                       </span>
                     </button>
-                    <button class="m-icon" onClick={() => ctx.playPlaylist(album.tracks)}>
+                    <button class="m-icon" onClick={() => ctx.playPlaylist(album.tracks, { type: "album", label: album.name, caption: "Album" })}>
                       <Icon name="play" size={14} />
                     </button>
                   </div>

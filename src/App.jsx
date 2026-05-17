@@ -170,6 +170,7 @@ export function App() {
   const [favs, setFavs] = createSignal(new Set());
   const [queue, setQueue] = createSignal([]);
   const [playbackScope, setPlaybackScope] = createSignal([]);
+  const [playbackSource, setPlaybackSource] = createSignal(null);
   const [recents, setRecents] = createSignal([]);
   const [tracks, setTracks] = createSignal([]);
   const [playlistSections, setPlaylistSections] = createSignal({ global: [], personal: [] });
@@ -361,6 +362,25 @@ export function App() {
     if (!album) return [];
     return tracks().filter((track) => track.movie === album);
   });
+  const albumPlaybackSource = (name) => name ? { type: "album", label: name, caption: "Album" } : null;
+  const playlistPlaybackSource = (playlist) => playlist ? {
+    type: "playlist",
+    id: playlist.id,
+    label: playlist.name,
+    caption: "Playlist",
+  } : null;
+  const searchPlaybackSource = (query) => query ? {
+    type: "search",
+    query,
+    label: query,
+    caption: "Search",
+  } : null;
+  const playbackSourceForCurrentView = () => {
+    const query = songSearch().trim();
+    if (activeAlbum()) return albumPlaybackSource(activeAlbum());
+    if (query) return searchPlaybackSource(query);
+    return playlistPlaybackSource(activePlaylistMeta()) || { type: "library", label: "Library", caption: "Library" };
+  };
   createEffect(() => {
     if (!searchWorker) return;
     searchWorker.postMessage({
@@ -618,12 +638,15 @@ export function App() {
     });
   });
 
-  const playTrack = (n) => {
+  const playTrack = (n, source) => {
     const visibleTracks = filteredTracks();
+    const nextSource = source || playbackSourceForCurrentView();
     if (visibleTracks.some((track) => track.n === n)) {
       setPlaybackScope(visibleTracks.map((track) => track.n));
+      setPlaybackSource(nextSource);
     } else if (!playbackScope().includes(n)) {
       setPlaybackScope([n]);
+      setPlaybackSource(nextSource);
     }
     if (n === currentN()) {
       setIsPlaying((p) => !p);
@@ -663,17 +686,18 @@ export function App() {
     setPlayerExpanded(false);
     if (options.play) {
       const albumTracks = tracks().filter((track) => track.movie === name);
-      playPlaylist(albumTracks);
+      playPlaylist(albumTracks, albumPlaybackSource(name));
     }
   };
 
-  const playPlaylist = (tracks) => {
+  const playPlaylist = (tracks, source) => {
     if (!tracks.length) return;
     const trackIds = tracks.map((track) => track.n).filter(Boolean);
     const firstTrack = shuffle() && tracks.length > 1
       ? tracks[Math.floor(Math.random() * tracks.length)]
       : tracks[0];
     setPlaybackScope(trackIds);
+    setPlaybackSource(source || playbackSourceForCurrentView());
     setCurrentN(firstTrack.n);
     setPosition(0);
     setDuration(0);
@@ -688,6 +712,32 @@ export function App() {
     const scopedTracks = scope.map((n) => byN[n]).filter(Boolean);
     if (scopedTracks.length) return scopedTracks;
     return filteredTracks().length ? filteredTracks() : tracks();
+  };
+  const openPlaybackSource = () => {
+    const source = playbackSource();
+    if (!source) return;
+    setTab("Library");
+    setPlayerExpanded(false);
+    setSearchOpen(false);
+    if (source.type === "playlist" && source.id) {
+      selectPlaylist(source.id);
+      return;
+    }
+    if (source.type === "album" && source.label) {
+      openAlbum(source.label);
+      return;
+    }
+    if (source.type === "search" && source.query) {
+      setActiveAlbum("");
+      setTrackSearch("");
+      setSongSearch(source.query);
+      setMobileView("playlist");
+      return;
+    }
+    setActiveAlbum("");
+    setSongSearch("");
+    setTrackSearch("");
+    setMobileView("playlist");
   };
   const switchToTrack = (n, shouldPlay = isPlaying()) => {
     if (!n) return;
@@ -1220,6 +1270,8 @@ export function App() {
                   position={position()}
                   duration={duration()}
                   setPosition={seekTo}
+                  playbackSource={playbackSource()}
+                  onOpenPlaybackSource={openPlaybackSource}
                   onPrev={handlePrev}
                   onNext={handleNext}
                   shuffle={shuffle()}
@@ -1292,10 +1344,12 @@ export function App() {
               track={track()}
               isPlaying={isPlaying()}
               audioLoading={audioLoading()}
+              playbackSource={playbackSource()}
               setIsPlaying={setIsPlaying}
               position={position()}
               duration={duration()}
               onNext={handleNext}
+              onOpenPlaybackSource={openPlaybackSource}
               onExpand={() => setPlayerExpanded(true)}
             />
           )}
@@ -1315,6 +1369,8 @@ export function App() {
                 position={position()}
                 duration={duration()}
                 setPosition={seekTo}
+                playbackSource={playbackSource()}
+                onOpenPlaybackSource={openPlaybackSource}
                 onPrev={handlePrev}
                 onNext={handleNext}
                 shuffle={shuffle()}

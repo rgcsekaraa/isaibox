@@ -94,6 +94,7 @@ ul { list-style: none; padding: 0; margin: 0; }
 .mini-btn,
 .fp-icon,
 .dock-album,
+.play-source-pill,
 .fp-album-title,
 .fp-album-link,
 .fp-tr-btn,
@@ -1220,6 +1221,44 @@ button:disabled,
 .dock-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .dock-meta { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .dock-song { font-size: 13.5px; font-weight: 500; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.play-source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: max-content;
+  max-width: 100%;
+  min-width: 0;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.035);
+  color: var(--fg-mute);
+  font-size: 10.5px;
+  line-height: 1;
+}
+.play-source-pill span {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.play-source-pill strong {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.play-source-pill:hover { color: var(--fg); border-color: var(--fg-faint); }
+.play-source-pill.compact {
+  height: 18px;
+  max-width: min(240px, 100%);
+  padding: 0 6px;
+  font-size: 10px;
+}
 .dock-sub { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--fg-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dock-sep {
   font-family: var(--font-mono);
@@ -1907,7 +1946,15 @@ button:disabled,
 .mini-meta { min-width: 0; }
 .mini-title { font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mini-title-loading { display: flex; align-items: center; gap: 8px; }
-.mini-sub { font-size: 11.5px; color: var(--fg-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini-sub-row { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 1px; }
+.mini-sub { min-width: 0; font-size: 11.5px; color: var(--fg-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini-sub-row .play-source-pill {
+  flex: 0 1 auto;
+  max-width: 48vw;
+  height: 17px;
+  padding: 0 6px;
+}
+.mini-sub-row .play-source-pill span { display: none; }
 .mini-actions { display: flex; gap: 2px; }
 .mini-btn {
   width: 40px; height: 40px;
