@@ -248,6 +248,10 @@ RANDOM_500_SOURCE_URL = "isaibox:dynamic:random-500"
 RANDOM_500_TRACK_COUNT = 500
 RANDOM_500_YEAR_START = 1980
 RANDOM_500_YEAR_END = 2026
+MUSIC_DIRECTOR_PLAYLIST_SOURCE = "music-director"
+MUSIC_DIRECTOR_PLAYLIST_PREFIX = "isaibox-director-"
+MUSIC_DIRECTOR_PLAYLIST_LIMIT = 24
+MUSIC_DIRECTOR_PLAYLIST_MIN_TRACKS = 8
 SESSION_SECRET = os.environ.get("ISAIBOX_SESSION_SECRET", "isaibox-dev-session-secret")
 ADMIN_EMAILS = {
     email.strip().lower()
@@ -396,6 +400,21 @@ def split_people(value: str) -> list[str]:
         return []
     parts = re.split(r",|/|&|\band\b", value, flags=re.IGNORECASE)
     return [part.strip() for part in parts if part and part.strip()]
+
+
+def person_key(value: str) -> str:
+    return normalize_text(value).replace(" ", "")
+
+
+def format_person_name(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", str(value or "")).strip()
+    if not cleaned:
+        return ""
+    compact_periods = re.sub(r"\s*\.\s*", ".", cleaned)
+    parts = [part for part in compact_periods.split(".") if part]
+    if len(parts) > 1 and all(len(part) <= 2 for part in parts[:-1]):
+        return f"{'.'.join(parts[:-1])}. {parts[-1]}"
+    return cleaned
 
 
 def parse_year_value(value: str | None) -> int | None:
@@ -1176,6 +1195,115 @@ def ensure_default_latest_2026_playlist() -> dict | None:
         source=DEFAULT_GLOBAL_PLAYLIST_SOURCE,
         source_url=DEFAULT_LATEST_2026_SOURCE_URL,
     )
+
+
+def music_director_playlist_id(director_name: str) -> str:
+    key = person_key(director_name)
+    digest = hashlib.md5(key.encode()).hexdigest()[:10]
+    slug = normalize_text(format_person_name(director_name)).replace(" ", "-") or "unknown"
+    return f"{MUSIC_DIRECTOR_PLAYLIST_PREFIX}{slug}-{digest}"
+
+
+def music_director_catalog() -> list[dict]:
+    songs = get_radio_library_rows()
+    groups: dict[str, dict] = {}
+    for song in songs:
+        for raw_name in split_people(song.get("music_director", "")):
+            key = person_key(raw_name)
+            name = format_person_name(raw_name)
+            if not key or not name:
+                continue
+            group = groups.setdefault(
+                key,
+                {
+                    "key": key,
+                    "name": name,
+                    "songIds": [],
+                    "albumKeys": set(),
+                    "latestYear": 0,
+                },
+            )
+            group["songIds"].append(song["id"])
+            if song.get("movie_norm"):
+                group["albumKeys"].add(song["movie_norm"])
+            if song.get("year_int"):
+                group["latestYear"] = max(group["latestYear"], song["year_int"])
+
+    directors = []
+    for group in groups.values():
+        track_count = len(group["songIds"])
+        if track_count < MUSIC_DIRECTOR_PLAYLIST_MIN_TRACKS:
+            continue
+        directors.append(
+            {
+                "id": music_director_playlist_id(group["name"]),
+                "name": f"{group['name']} Songs",
+                "isGlobal": True,
+                "source": MUSIC_DIRECTOR_PLAYLIST_SOURCE,
+                "sourceUrl": f"isaibox:music-director:{group['key']}",
+                "updatedAt": now_utc().isoformat(),
+                "trackCount": track_count,
+                "_albumCount": len(group["albumKeys"]),
+                "_latestYear": group["latestYear"],
+            }
+        )
+
+    directors.sort(key=lambda item: (-item["trackCount"], -item["_albumCount"], item["name"].lower()))
+    for item in directors:
+        item.pop("_albumCount", None)
+        item.pop("_latestYear", None)
+    return directors[:MUSIC_DIRECTOR_PLAYLIST_LIMIT]
+
+
+def music_director_playlist_detail(playlist_id: str) -> dict | None:
+    target = next((item for item in music_director_catalog() if item["id"] == playlist_id), None)
+    if not target:
+        return None
+    source_key = target["sourceUrl"].rsplit(":", 1)[-1]
+    with get_read_conn() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT
+                song_id,
+                movie_name,
+                track_name,
+                singers,
+                music_director,
+                year,
+                track_number,
+                url_320kbps,
+                updated_at,
+                album_url
+            FROM songs
+            WHERE url_320kbps IS NOT NULL
+              AND url_320kbps != ''
+              AND {playlist_eligible_song_sql('')}
+            ORDER BY TRY_CAST(year AS INTEGER) DESC NULLS LAST, movie_name, track_number
+            """
+        ).fetchall()
+
+    tracks = []
+    for row in rows:
+        director_keys = {person_key(name) for name in split_people(row[4] or "")}
+        if source_key not in director_keys:
+            continue
+        tracks.append(
+            {
+                **song_payload_from_row(row),
+                "playlistPosition": len(tracks) + 1,
+                "playlistAddedAt": "",
+            }
+        )
+
+    return {
+        "id": target["id"],
+        "name": target["name"],
+        "isGlobal": True,
+        "source": MUSIC_DIRECTOR_PLAYLIST_SOURCE,
+        "sourceUrl": target["sourceUrl"],
+        "updatedAt": now_utc().isoformat(),
+        "tracks": tracks,
+    }
 
 
 def rename_playlist_for_user(user: dict, playlist_id: str, name: str) -> dict:
@@ -2120,12 +2248,10 @@ def global_playlists() -> list[dict]:
             LEFT JOIN playlist_songs ps ON ps.playlist_id = p.playlist_id
             LEFT JOIN songs s ON s.song_id = ps.song_id AND {playlist_eligible_song_sql('s')}
             WHERE p.is_global = TRUE
+              AND p.source = ?
+              AND p.source_url = ?
             GROUP BY 1,2,3,4,5,6
             ORDER BY
-                CASE
-                    WHEN p.source = ? AND p.source_url = ? THEN 0
-                    ELSE 1
-                END,
                 LOWER(p.name) ASC,
                 p.updated_at DESC,
                 p.created_at DESC
@@ -2145,6 +2271,7 @@ def global_playlists() -> list[dict]:
         }
         for row in rows
     ]
+    playlists.extend(music_director_catalog())
     playlists.insert(
         0,
         {

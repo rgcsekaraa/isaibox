@@ -835,6 +835,11 @@ def get_playlist(playlist_id: str):
     user = get_session_user()
     if playlist_id == RANDOM_500_PLAYLIST_ID:
         return json_response({"ok": True, "playlist": random_500_playlist_detail()})
+    if playlist_id.startswith(MUSIC_DIRECTOR_PLAYLIST_PREFIX):
+        playlist = music_director_playlist_detail(playlist_id)
+        if not playlist:
+            return json_response({"ok": False, "message": "Playlist not found"}), 404
+        return json_response({"ok": True, "playlist": playlist})
     with get_read_conn() as conn:
         playlist = conn.execute(
             "SELECT playlist_id, name, is_global, source, source_url, user_id, updated_at FROM playlists WHERE playlist_id = ?",
