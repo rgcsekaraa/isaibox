@@ -26,13 +26,13 @@ on:
         required: false
         default: "true"
       audio_limit:
-        description: "Maximum new audio files to upload in this run"
+        description: "Maximum new audio files to upload in this run; 0 means no file-count cap"
         required: false
-        default: "25"
+        default: "0"
       audio_attempt_limit:
-        description: "Maximum upstream download attempts in this run"
+        description: "Maximum upstream download attempts in this run; 0 means no attempt-count cap"
         required: false
-        default: "25"
+        default: "0"
 
 permissions:
   contents: read
@@ -85,8 +85,9 @@ jobs:
           IA_SECRET_KEY: ${{ secrets.IA_SECRET_KEY }}
           IA_ENCRYPTION_PASSPHRASE: ${{ secrets.IA_ENCRYPTION_PASSPHRASE }}
           IA_ITEM: ${{ github.event.inputs.item || 'isaibox-public-library' }}
-          IA_AUDIO_LIMIT: ${{ github.event.inputs.audio_limit || '25' }}
-          IA_AUDIO_ATTEMPT_LIMIT: ${{ github.event.inputs.audio_attempt_limit || '25' }}
+          IA_AUDIO_LIMIT: ${{ github.event.inputs.audio_limit || '0' }}
+          IA_AUDIO_ATTEMPT_LIMIT: ${{ github.event.inputs.audio_attempt_limit || '0' }}
+          IA_AUDIO_HYDRATION_SECONDS: "18000"
           IA_DOWNLOAD_DELAY: "8"
           IA_ALLOW_128_FALLBACK: ${{ github.event.inputs.allow_128_fallback || 'true' }}
           INCLUDE_AUDIO: ${{ github.event.inputs.include_audio || 'true' }}
@@ -116,6 +117,7 @@ jobs:
             --item "${IA_ITEM}" \
             --audio-limit "${IA_AUDIO_LIMIT}" \
             --audio-attempt-limit "${IA_AUDIO_ATTEMPT_LIMIT}" \
+            --audio-hydration-seconds "${IA_AUDIO_HYDRATION_SECONDS}" \
             ${AUDIO_FLAGS}
 
       - name: Upload backup plan artifact

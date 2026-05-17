@@ -368,10 +368,12 @@ def hydrate_missing_audio(
     delay: float,
     timeout: int,
     attempt_limit: int,
+    hydration_seconds: int,
 ) -> dict[str, Path]:
     pending: dict[str, Path] = {}
     remaining = limit
     attempts_remaining = attempt_limit
+    started_at = time.monotonic()
     for song_id, song in song_sources.items():
         logical_name = f"audio/{song_id}.mp3"
         encrypted_name = encrypted_remote_name(logical_name, passphrase)
@@ -381,6 +383,9 @@ def hydrate_missing_audio(
             break
         if attempt_limit and attempts_remaining <= 0:
             print(f"Reached audio download attempt limit ({attempt_limit}); stopping hydration.")
+            break
+        if hydration_seconds and time.monotonic() - started_at >= hydration_seconds:
+            print(f"Reached audio hydration time budget ({hydration_seconds}s); uploading prepared files.")
             break
         destination = audio_dir / f"{song_id}.mp3"
         if file_looks_audio(destination):
@@ -546,13 +551,19 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
         "--audio-attempt-limit",
         type=int,
         default=int(os.environ.get("IA_AUDIO_ATTEMPT_LIMIT", "0") or "0"),
-        help="Maximum upstream download attempts per run; defaults to audio-limit, or 25 when audio-limit is 0.",
+        help="Maximum upstream download attempts per run. Set 0 for no attempt-count cap.",
     )
     fallback_default = os.environ.get("IA_ALLOW_128_FALLBACK", "true").strip().lower() != "false"
     parser.add_argument("--allow-128-fallback", action="store_true", default=fallback_default)
     parser.add_argument("--strict-320-only", action="store_false", dest="allow_128_fallback")
     parser.add_argument("--download-delay", type=float, default=float(os.environ.get("IA_DOWNLOAD_DELAY", "1.0") or "0"))
     parser.add_argument("--download-timeout", type=int, default=int(os.environ.get("IA_DOWNLOAD_TIMEOUT", "90") or "90"))
+    parser.add_argument(
+        "--audio-hydration-seconds",
+        type=int,
+        default=int(os.environ.get("IA_AUDIO_HYDRATION_SECONDS", "0") or "0"),
+        help="Maximum seconds spent downloading missing audio before uploading prepared files. Set 0 for no time cap.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args(list(argv))
 
@@ -585,7 +596,7 @@ def main(argv: Iterable[str]) -> int:
         audio_candidates.update(collect_cached_audio(audio_dir, song_sources, existing_names, passphrase))
         remaining_limit = max(0, args.audio_limit - len(audio_candidates)) if args.audio_limit else 0
         if args.download_missing_audio and (not args.audio_limit or remaining_limit > 0):
-            attempt_limit = args.audio_attempt_limit or remaining_limit or 25
+            attempt_limit = args.audio_attempt_limit
             try:
                 hydrated = hydrate_missing_audio(
                     audio_dir=audio_dir,
@@ -597,6 +608,7 @@ def main(argv: Iterable[str]) -> int:
                     delay=args.download_delay,
                     timeout=args.download_timeout,
                     attempt_limit=attempt_limit,
+                    hydration_seconds=args.audio_hydration_seconds,
                 )
             except RateLimitedError as exc:
                 print(f"{exc} Stopping audio hydration for this run; metadata and already prepared audio will still upload.")
@@ -614,7 +626,8 @@ def main(argv: Iterable[str]) -> int:
         "existing_remote_audio_count": sum(1 for name in existing_names if name.startswith("encrypted/audio/")),
         "pending_audio_upload_count": len(audio_candidates),
         "audio_limit": args.audio_limit,
-        "audio_attempt_limit": args.audio_attempt_limit or remaining_limit or 25 if args.include_audio else 0,
+        "audio_attempt_limit": args.audio_attempt_limit if args.include_audio else 0,
+        "audio_hydration_seconds": args.audio_hydration_seconds if args.include_audio else 0,
     }
     backup_manifest_path = Path(metadata_files["metadata/backup-manifest.json"])
     backup_manifest_path.write_text(json.dumps(backup_manifest, indent=2, sort_keys=True) + "\n")
