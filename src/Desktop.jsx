@@ -1,4 +1,4 @@
-import { For } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { Icon } from "./Icon.jsx";
 
 const TABS = ["Library", "Recents", "Favorites"];
@@ -133,6 +133,7 @@ export function ShortcutsDrawer(props) {
 }
 
 export function Sidebar(props) {
+  const [openSections, setOpenSections] = createSignal({ Global: true, Personal: true });
   const playlistQuery = () => String(props.playlistSearch || "").trim().toLowerCase();
   const sections = () => [
     { label: "Global", items: props.playlistSections?.global || [], addable: false },
@@ -143,6 +144,12 @@ export function Sidebar(props) {
       ? section.items.filter((item) => item.name.toLowerCase().includes(playlistQuery()))
       : section.items,
   }));
+  const isSectionOpen = (section) => !!playlistQuery() || !!openSections()[section.label];
+  const toggleSection = (section) => {
+    if (playlistQuery()) return;
+    setOpenSections((current) => ({ ...current, [section.label]: !current[section.label] }));
+  };
+
   return (
     <aside class="sidebar">
       <div class="sidebar-search">
@@ -160,35 +167,45 @@ export function Sidebar(props) {
       </div>
       <For each={sections()}>
         {(section) => (
-          <div class="sidebar-section">
+          <section class="sidebar-section" classList={{ collapsed: !isSectionOpen(section) }}>
             <div class="sidebar-head">
-              <span class="sidebar-label">{section.label}</span>
-              {section.addable ? (
-                <button class="sidebar-add" title="New playlist" onClick={() => props.onCreatePlaylist?.()}>
-                  <Icon name="plus" size={11} />
-                </button>
-              ) : (
+              <button
+                class="sidebar-toggle"
+                aria-expanded={isSectionOpen(section)}
+                onClick={() => toggleSection(section)}
+              >
+                <Icon name="chevron-down" size={13} />
+                <span class="sidebar-label">{section.label}</span>
+              </button>
+              <div class="sidebar-head-actions">
                 <span class="sidebar-meta">{section.items.length}</span>
-              )}
+                <Show when={section.addable}>
+                  <button class="sidebar-add" title="New playlist" onClick={() => props.onCreatePlaylist?.()}>
+                    <Icon name="plus" size={11} />
+                  </button>
+                </Show>
+              </div>
             </div>
-            <ul class="playlist-list">
-              <For each={section.items}>
-                {(p) => (
-                  <li>
-                    <button
-                      class="playlist-item"
-                      classList={{ active: props.active === p.id }}
-                      onClick={() => { props.setActive(p.id); props.setTab("Library"); }}
-                    >
-                      <span class="pl-bar" />
-                      <span class="pl-name" title={p.name}>{p.name}</span>
-                      <span class="pl-count">{p.count}</span>
-                    </button>
-                  </li>
-                )}
-              </For>
-            </ul>
-          </div>
+            <Show when={isSectionOpen(section)}>
+              <ul class="playlist-list">
+                <For each={section.items}>
+                  {(p) => (
+                    <li>
+                      <button
+                        class="playlist-item"
+                        classList={{ active: props.active === p.id }}
+                        onClick={() => { props.setActive(p.id); props.setTab("Library"); }}
+                      >
+                        <span class="pl-bar" />
+                        <span class="pl-name" title={p.name}>{p.name}</span>
+                        <span class="pl-count">{p.count}</span>
+                      </button>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
+          </section>
         )}
       </For>
     </aside>

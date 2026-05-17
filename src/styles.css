@@ -368,10 +368,31 @@ button:disabled,
 }
 .sidebar-search input::placeholder { color: var(--fg-faint); }
 
-.sidebar-section { padding: 12px 0 8px; }
+.sidebar-section { padding: 8px 0 4px; }
 .sidebar-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 8px 20px 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 14px 8px 16px;
+}
+.sidebar-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  height: 28px;
+  flex: 1;
+  color: var(--fg-faint);
+  text-align: left;
+}
+.sidebar-toggle:hover { color: var(--fg); }
+.sidebar-section.collapsed .sidebar-toggle svg { transform: rotate(-90deg); }
+.sidebar-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
 }
 .sidebar-label {
   font-family: var(--font-mono);
@@ -383,6 +404,7 @@ button:disabled,
 .sidebar-meta { font-family: var(--font-mono); font-size: 10px; color: var(--fg-faint); }
 .sidebar-add { width: 18px; height: 18px; border-radius: 2px; color: var(--fg-faint); display: grid; place-items: center; }
 .sidebar-add:hover { color: var(--fg); background: var(--bg-elev); }
+.playlist-list { margin-bottom: 4px; }
 
 .playlist-item {
   position: relative;
