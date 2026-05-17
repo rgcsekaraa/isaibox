@@ -156,6 +156,7 @@ export function App() {
   const [mobileView, setMobileView] = createSignal("list"); // list | playlist
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [playerExpanded, setPlayerExpanded] = createSignal(false);
+  const [pendingTrackReveal, setPendingTrackReveal] = createSignal(false);
 
   // Player state
   const [currentN, setCurrentN] = createSignal(0);
@@ -715,9 +716,20 @@ export function App() {
     if (scopedTracks.length) return scopedTracks;
     return filteredTracks().length ? filteredTracks() : tracks();
   };
+  const revealCurrentTrack = () => {
+    const n = currentN();
+    if (!n) return false;
+    const row = document.querySelector(`[data-track-n="${n}"]`);
+    if (!row) return false;
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    row.classList.add("reveal-current");
+    window.setTimeout(() => row.classList.remove("reveal-current"), 1300);
+    return true;
+  };
   const openPlaybackSource = () => {
     const source = playbackSource();
     if (!source) return;
+    setPendingTrackReveal(true);
     setTab("Library");
     setPlayerExpanded(false);
     setSearchOpen(false);
@@ -741,6 +753,27 @@ export function App() {
     setTrackSearch("");
     setMobileView("playlist");
   };
+  createEffect(() => {
+    if (!pendingTrackReveal()) return;
+    currentN();
+    tab();
+    mobileView();
+    activePlaylist();
+    activeAlbum();
+    committedSongSearch();
+    filteredTracks().length;
+    if (loading() || playlistLoading() || searchPending()) return;
+    const attemptReveal = (attempt = 0) => requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (revealCurrentTrack()) {
+          setPendingTrackReveal(false);
+        } else if (attempt < 8) {
+          window.setTimeout(() => attemptReveal(attempt + 1), 120);
+        }
+      });
+    });
+    attemptReveal();
+  });
   const switchToTrack = (n, shouldPlay = isPlaying()) => {
     if (!n) return;
     setCurrentN(n);

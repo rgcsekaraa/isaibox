@@ -158,6 +158,7 @@ function TrackRow(props) {
   return (
     <div
       class={`track-row ${props.class || ""}`}
+      data-track-n={props.track.n}
       classList={{
         [props.density || "comfortable"]: true,
         current: props.isCurrent,

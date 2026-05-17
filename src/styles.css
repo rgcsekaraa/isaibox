@@ -836,6 +836,11 @@ button:disabled,
 .track-row.current { background: linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02)); }
 .track-row.current .t-title-text { font-weight: 600; }
 .track-row.current .t-num { color: var(--accent); }
+.track-row.reveal-current,
+.m-track-row.reveal-current {
+  box-shadow: inset 3px 0 0 var(--accent);
+  background: linear-gradient(90deg, rgba(255,255,255,0.09), rgba(255,255,255,0.02));
+}
 .track-skeleton { padding: 2px 0 8px; }
 .track-skeleton-row { pointer-events: none; }
 .track-skeleton-row:hover { background: transparent; }
@@ -1269,10 +1274,26 @@ button:disabled,
   min-width: 0;
 }
 .dock-song { min-width: 0; font-size: 13.5px; font-weight: 500; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.play-source-pill {
+.play-source-wrap {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.play-source-prefix {
+  flex: 0 0 auto;
+  color: var(--fg-faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.play-source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   width: max-content;
   max-width: 100%;
   min-width: 0;
@@ -1293,6 +1314,11 @@ button:disabled,
   text-transform: uppercase;
   color: var(--fg-faint);
 }
+.play-source-pill span::after {
+  content: "·";
+  margin-left: 4px;
+  color: var(--fg-faint);
+}
 .play-source-pill strong {
   min-width: 0;
   overflow: hidden;
@@ -1303,7 +1329,7 @@ button:disabled,
 .play-source-pill:hover { color: var(--fg); border-color: var(--fg-faint); }
 .play-source-pill.compact {
   height: 18px;
-  max-width: min(220px, 42%);
+  max-width: min(220px, 100%);
   padding: 0 6px;
   font-size: 10px;
 }
@@ -2034,11 +2060,14 @@ button:disabled,
 .mini-sub { min-width: 0; font-size: 11.5px; color: var(--fg-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mini-title-row .play-source-pill {
   flex: 0 1 auto;
-  max-width: 38vw;
+  max-width: 34vw;
   height: 17px;
   padding: 0 6px;
 }
-.mini-title-row .play-source-pill span { display: none; }
+.mini-title-row .play-source-wrap.mobile .play-source-prefix {
+  font-size: 8.5px;
+}
+.mini-title-row .play-source-wrap.mobile .play-source-pill span { display: none; }
 .mini-actions { display: flex; gap: 2px; }
 .mini-btn {
   width: 40px; height: 40px;

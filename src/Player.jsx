@@ -7,13 +7,16 @@ function PlaybackSourcePill(props) {
   return (
     <Show when={source()}>
       {(item) => (
-        <button class={`play-source-pill ${props.compact ? "compact" : ""}`} title={`Open ${item().caption}: ${item().label}`} onClick={(event) => {
-          event.stopPropagation();
-          props.onOpen?.();
-        }}>
-          <span>{item().caption}</span>
-          <strong>{item().label}</strong>
-        </button>
+        <span class={`play-source-wrap ${props.mobile ? "mobile" : ""}`}>
+          <span class="play-source-prefix">Playing from</span>
+          <button class={`play-source-pill ${props.compact ? "compact" : ""}`} title={`Open ${item().caption}: ${item().label}`} onClick={(event) => {
+            event.stopPropagation();
+            props.onOpen?.();
+          }}>
+            <span>{item().caption}</span>
+            <strong>{item().label}</strong>
+          </button>
+        </span>
       )}
     </Show>
   );
@@ -248,7 +251,7 @@ export function MiniPlayer(props) {
         <div class="mini-meta">
           <div class="mini-title-row">
             <div class="mini-title">{props.track.title}</div>
-            <PlaybackSourcePill source={props.playbackSource} onOpen={props.onOpenPlaybackSource} compact />
+            <PlaybackSourcePill source={props.playbackSource} onOpen={props.onOpenPlaybackSource} compact mobile />
           </div>
           <div class="mini-sub-row">
             <span class="mini-sub">{props.track.singer}</span>

@@ -352,6 +352,7 @@ export function MobilePlaylistDetail(props) {
           {(t) => (
             <div
               class="m-track-row"
+              data-track-n={t.n}
               classList={{ current: ctx.currentN() === t.n }}
               onClick={() => ctx.playTrack(t.n)}
             >
