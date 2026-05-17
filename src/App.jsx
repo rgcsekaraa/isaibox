@@ -194,10 +194,11 @@ export function App() {
     const attemptId = ++playAttemptId;
     setAudioLoading(true);
     audioEl.play().then(() => {
-      if (attemptId !== playAttemptId || requestId !== playbackRequestId || !playbackIntent) {
+      if (requestId !== playbackRequestId || !playbackIntent) {
         audioEl.pause();
         return;
       }
+      if (attemptId !== playAttemptId) return;
       setAudioLoading(false);
     }).catch((error) => {
       if (attemptId !== playAttemptId || requestId !== playbackRequestId) return;
@@ -259,6 +260,7 @@ export function App() {
   const trackMap = createMemo(() => Object.fromEntries(tracks().map((t) => [t.n, { ...t, fav: favs().has(t.n) }])));
   const trackById = createMemo(() => Object.fromEntries(tracks().map((t) => [t.id, { ...t, fav: favs().has(t.n) }])));
   const trackSearchMap = createMemo(() => Object.fromEntries(tracks().map((t) => [t.id, prepareTrackSearch(t)])));
+  const activeAudioTrack = createMemo(() => tracks().find((track) => track.n === currentN()) || tracks()[0] || null);
   const isKnownPlaylist = createMemo(() =>
     [...playlistSections().global, ...playlistSections().personal].some((p) => p.id === activePlaylist())
   );
@@ -271,7 +273,7 @@ export function App() {
     return tracks().filter((track) => track.movie === album);
   });
   const currentTrack = createMemo(() => {
-    const track = trackMap()[currentN()] || tracks()[0] || null;
+    const track = activeAudioTrack();
     if (!track) return null;
     return {
       ...track,
@@ -1037,7 +1039,7 @@ export function App() {
   });
 
   createEffect(() => {
-    const track = currentTrack();
+    const track = activeAudioTrack();
     if (!audioEl || !track?.audioUrl) return;
     if (audioEl.src !== new URL(track.audioUrl, window.location.href).href) {
       setAudioLoading(isPlaying());
@@ -1323,13 +1325,7 @@ export function App() {
           if (isPlaying()) setAudioLoading(true);
         }}
         onLoadedMetadata={() => setDuration(Number.isFinite(audioEl.duration) ? audioEl.duration : 0)}
-        onCanPlay={() => {
-          if (playbackIntent && isPlaying() && audioEl.paused) {
-            requestAudioPlay(playbackRequestId, 1);
-            return;
-          }
-          setAudioLoading(false);
-        }}
+        onCanPlay={() => setAudioLoading(false)}
         onWaiting={() => {
           if (isPlaying()) setAudioLoading(true);
         }}
