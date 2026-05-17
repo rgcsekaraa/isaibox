@@ -138,6 +138,7 @@ button:disabled,
   border-radius: 6px;
   background: var(--fg);
   color: var(--bg);
+  animation: loading-pulse 1.2s ease-in-out infinite;
 }
 .app-loading-copy {
   display: flex;
@@ -155,9 +156,15 @@ button:disabled,
 }
 .app-loading-text {
   min-height: 24px;
+  min-width: 104px;
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.01em;
+  text-align: left;
+}
+@keyframes loading-pulse {
+  0%, 100% { transform: scale(1); opacity: 0.78; }
+  50% { transform: scale(1.04); opacity: 1; }
 }
 
 /* ═══════════════════════════════════════════════════════════════

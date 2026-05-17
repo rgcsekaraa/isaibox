@@ -9,13 +9,27 @@ import { Icon } from "./Icon.jsx";
 
 const GOOGLE_GSI_SRC = "https://accounts.google.com/gsi/client";
 const THEME_STORAGE_KEY = "isaibox-theme";
+const INITIAL_LOADING_SEEN_KEY = "isaibox-initial-loading-seen";
 const GLOBAL_SEARCH_RESULT_LIMIT = 500;
 let googleScriptPromise;
 
 function readInitialTheme() {
   if (typeof window === "undefined") return "dark";
-  const saved = localStorage.getItem(THEME_STORAGE_KEY);
-  return saved === "light" || saved === "dark" ? saved : "dark";
+  try {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    return saved === "light" || saved === "dark" ? saved : "dark";
+  } catch {
+    return "dark";
+  }
+}
+
+function shouldShowInitialLoading() {
+  if (typeof window === "undefined") return true;
+  try {
+    return localStorage.getItem(INITIAL_LOADING_SEEN_KEY) !== "1";
+  } catch {
+    return false;
+  }
 }
 
 async function copyTextToClipboard(text) {
@@ -83,21 +97,12 @@ function GoogleSignInButton(props) {
   return <div ref={buttonRef} class="google-signin-slot" />;
 }
 
-const APP_LOADING_STEPS = [
-  "isaibox loading...",
-  "isaibox setting environment...",
-  "isaibox getting ready...",
-  "isaibox almost done...",
-];
-
 function AppLoadingScreen() {
-  const [step, setStep] = createSignal(0);
+  const [dotCount, setDotCount] = createSignal(1);
 
   onMount(() => {
-    const timers = APP_LOADING_STEPS
-      .slice(1)
-      .map((_, index) => setTimeout(() => setStep(index + 1), (index + 1) * 900));
-    onCleanup(() => timers.forEach(clearTimeout));
+    const timer = setInterval(() => setDotCount((count) => count === 3 ? 1 : count + 1), 420);
+    onCleanup(() => clearInterval(timer));
   });
 
   return (
@@ -107,9 +112,8 @@ function AppLoadingScreen() {
       </div>
       <div class="app-loading-copy">
         <div class="app-loading-brand">isaibox</div>
-        <div class="app-loading-text">{APP_LOADING_STEPS[step()]}</div>
+        <div class="app-loading-text">Loading{".".repeat(dotCount())}</div>
       </div>
-      <Icon name="spinner" size={18} />
     </div>
   );
 }
@@ -163,6 +167,7 @@ export function App() {
   const [playlistLoading, setPlaylistLoading] = createSignal(false);
   const [playlistDetailState, setPlaylistDetailState] = createSignal("idle");
   const [loading, setLoading] = createSignal(true);
+  const [showInitialLoading, setShowInitialLoading] = createSignal(shouldShowInitialLoading());
   const [loadError, setLoadError] = createSignal("");
   const [config, setConfig] = createSignal(null);
   const [user, setUser] = createSignal(null);
@@ -189,6 +194,14 @@ export function App() {
     if (!text) return;
     const timer = setTimeout(() => setMessage(""), 3200);
     onCleanup(() => clearTimeout(timer));
+  });
+
+  createEffect(() => {
+    if (loading()) return;
+    setShowInitialLoading(false);
+    try {
+      localStorage.setItem(INITIAL_LOADING_SEEN_KEY, "1");
+    } catch {}
   });
 
   createEffect(() => {
@@ -1095,7 +1108,7 @@ export function App() {
       attr:data-density={density()}
       attr:data-theme={theme()}
     >
-      <Show when={loading() && tracks().length === 0}>
+      <Show when={showInitialLoading() && loading() && tracks().length === 0}>
         <AppLoadingScreen />
       </Show>
       <Show
@@ -1148,7 +1161,7 @@ export function App() {
                   <div class="dock-grid">
                     <div class="dock-left">
                       <div class="dock-meta">
-                        <div class="dock-song">{loading() ? "isaibox loading..." : (loadError() || "No tracks available")}</div>
+                        <div class="dock-song">{loading() ? "Loading..." : (loadError() || "No tracks available")}</div>
                         <div class="dock-sub">isaibox</div>
                       </div>
                     </div>
@@ -1239,7 +1252,7 @@ export function App() {
                     <Show when={loading()}>
                       <Icon name="spinner" size={15} />
                     </Show>
-                    <span>{loading() ? "Loading library..." : (loadError() || "No tracks available")}</span>
+                    <span>{loading() ? "Loading..." : (loadError() || "No tracks available")}</span>
                   </div>
                   <div class="mini-sub">isaibox</div>
                 </div>
