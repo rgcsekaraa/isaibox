@@ -70,10 +70,6 @@ function SearchAlbumResults(props) {
   return (
     <section class="search-albums">
       <Show when={albums().length > 0} fallback={<div class="empty">No albums match this search.</div>}>
-        <div class="search-albums-head">
-          <span>Albums</span>
-          <span class="mono">{albums().length}</span>
-        </div>
         <div class="search-album-grid">
           <For each={albums()}>
             {(album) => (

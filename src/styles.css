@@ -515,20 +515,9 @@ button:disabled,
 .search-people::-webkit-scrollbar { width: 8px; }
 .search-albums::-webkit-scrollbar-thumb,
 .search-people::-webkit-scrollbar-thumb { background: var(--line-strong); }
-.search-albums-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  color: var(--fg-faint);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
 .search-album-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 .search-album-item,
