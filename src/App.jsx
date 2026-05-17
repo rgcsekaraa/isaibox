@@ -1,5 +1,5 @@
 import { createSignal, createMemo, createEffect, onCleanup, onMount, Show, Match, Switch } from "solid-js";
-import { fmtTime, formatPersonName, getTrackFieldMatches, getTrackSearchMatch, normalizeSearchText, parseDur, personSearchKey, prepareSearchQuery, prepareTrackSearch, splitCreditNames, useMediaQuery } from "./utils.js";
+import { fmtTime, getTrackSearchMatch, parseDur, prepareSearchQuery, prepareTrackSearch, useMediaQuery } from "./utils.js";
 import { TopBar, Sidebar, ShortcutsDrawer } from "./Desktop.jsx";
 import { MobileHeader, MobileBottomTabs, MobileLibraryPage, MobilePlaylistDetail } from "./Mobile.jsx";
 import { LibraryPage, QueuePanel, RecentsPage, FavoritesPage } from "./Pages.jsx";
@@ -10,9 +10,17 @@ import { Icon } from "./Icon.jsx";
 const GOOGLE_GSI_SRC = "https://accounts.google.com/gsi/client";
 const THEME_STORAGE_KEY = "isaibox-theme";
 const INITIAL_LOADING_SEEN_KEY = "isaibox-initial-loading-seen";
-const GLOBAL_SEARCH_RESULT_LIMIT = 500;
 const SEARCH_DEBOUNCE_MS = 120;
 let googleScriptPromise;
+
+const emptySearchResults = (query = "") => ({
+  query,
+  songs: [],
+  albums: [],
+  directors: [],
+  singers: [],
+  counts: { songs: 0, albums: 0, directors: 0, singers: 0 },
+});
 
 function readInitialTheme() {
   if (typeof window === "undefined") return "dark";
@@ -128,7 +136,8 @@ export function App() {
   const [activePlaylist, setActivePlaylist] = createSignal("rahman");
   const [activeAlbum, setActiveAlbum] = createSignal("");
   const [songSearch, setSongSearch] = createSignal("");
-  const [searchQuery, setSearchQuery] = createSignal("");
+  const [searchResults, setSearchResults] = createSignal(emptySearchResults());
+  const [searchPending, setSearchPending] = createSignal(false);
   const [searchResultTab, setSearchResultTab] = createSignal("songs");
   const [playlistSearch, setPlaylistSearch] = createSignal("");
   const [trackSearch, setTrackSearch] = createSignal("");
@@ -178,6 +187,8 @@ export function App() {
   let playbackRequestId = 0;
   let playAttemptId = 0;
   let playWatchTimer = null;
+  let searchWorker = null;
+  let searchRequestId = 0;
 
   const setIsPlaying = (nextValue) => {
     let shouldStart = false;
@@ -269,13 +280,47 @@ export function App() {
   });
 
   createEffect(() => {
-    const value = songSearch();
-    if (!value.trim()) {
-      setSearchQuery("");
+    const value = songSearch().trim();
+    searchRequestId += 1;
+    const requestId = searchRequestId;
+    if (!value) {
+      setSearchPending(false);
+      setSearchResults(emptySearchResults());
       return;
     }
-    const timer = window.setTimeout(() => setSearchQuery(value), SEARCH_DEBOUNCE_MS);
+    setSearchPending(true);
+    setSearchResults(emptySearchResults(value));
+    const timer = window.setTimeout(() => {
+      searchWorker?.postMessage({ type: "search", requestId, payload: value });
+    }, SEARCH_DEBOUNCE_MS);
     onCleanup(() => window.clearTimeout(timer));
+  });
+
+  onMount(() => {
+    searchWorker = new Worker(new URL("./search.worker.js", import.meta.url), { type: "module" });
+    searchWorker.onmessage = (event) => {
+      const { type, requestId, payload } = event.data || {};
+      if (type !== "results" || requestId !== searchRequestId) return;
+      setSearchResults(payload || emptySearchResults(songSearch().trim()));
+      setSearchPending(false);
+    };
+    if (tracks().length) {
+      searchWorker.postMessage({
+        type: "index",
+        payload: tracks().map((track) => ({
+          n: track.n,
+          title: track.title,
+          movie: track.movie,
+          director: track.director,
+          singer: track.singer,
+          year: track.year,
+        })),
+      });
+    }
+    onCleanup(() => {
+      searchWorker?.terminate();
+      searchWorker = null;
+    });
   });
 
   // Density (held simple — wire up a tweaks panel separately if you want)
@@ -316,15 +361,19 @@ export function App() {
     if (!album) return [];
     return tracks().filter((track) => track.movie === album);
   });
-  const tracksByAlbum = createMemo(() => {
-    const groups = new Map();
-    for (const track of tracks()) {
-      const album = String(track.movie || "").trim();
-      if (!album) continue;
-      if (!groups.has(album)) groups.set(album, []);
-      groups.get(album).push(track);
-    }
-    return groups;
+  createEffect(() => {
+    if (!searchWorker) return;
+    searchWorker.postMessage({
+      type: "index",
+      payload: tracks().map((track) => ({
+        n: track.n,
+        title: track.title,
+        movie: track.movie,
+        director: track.director,
+        singer: track.singer,
+        year: track.year,
+      })),
+    });
   });
   const currentTrack = createMemo(() => {
     const track = activeAudioTrack();
@@ -339,9 +388,18 @@ export function App() {
   const filteredTracks = createMemo(() => {
     const hasPlaylistSections = playlistSections().global.length > 0 || playlistSections().personal.length > 0;
     const rawQuery = songSearch().trim();
-    const query = searchQuery().trim();
     const scopedQuery = rawQuery ? "" : trackSearch().trim();
-    if (rawQuery && query !== rawQuery) return [];
+    if (rawQuery) {
+      const results = searchResults();
+      if (results.query !== rawQuery || searchPending()) return [];
+      const byN = trackMap();
+      return results.songs
+        .map((result) => {
+          const track = byN[result.n];
+          return track ? { ...track, _matchLabel: result.matchLabel, _matchValue: result.matchValue } : null;
+        })
+        .filter(Boolean);
+    }
     const source = rawQuery
       ? tracks()
       : activeAlbum()
@@ -351,8 +409,8 @@ export function App() {
       : (!loading() && !hasPlaylistSections ? tracks() : []);
     const searchMap = trackSearchMap();
     let arr = source.map((t) => ({ ...t, fav: favs().has(t.n), _search: searchMap[t.id] }));
-    if (query || scopedQuery) {
-      const activeQuery = prepareSearchQuery(query || scopedQuery);
+    if (scopedQuery) {
+      const activeQuery = prepareSearchQuery(scopedQuery);
       arr = arr
         .map((track, index) => ({ track, index, match: getTrackSearchMatch(track, activeQuery) }))
         .filter((entry) => entry.match !== null)
@@ -362,9 +420,6 @@ export function App() {
           _matchLabel: entry.match.label,
           _matchValue: entry.match.value,
         }));
-      if (query && arr.length > GLOBAL_SEARCH_RESULT_LIMIT) {
-        arr = arr.slice(0, GLOBAL_SEARCH_RESULT_LIMIT);
-      }
     }
     if (filterMode() === "recent") {
       arr = [...arr].sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
@@ -372,7 +427,7 @@ export function App() {
       const rank = new Map(recents().map((item, index) => [item.n, index]));
       arr = arr.filter((track) => rank.has(track.n)).sort((a, b) => rank.get(a.n) - rank.get(b.n));
     }
-    if ((query || scopedQuery) && sort() === "n") return arr;
+    if (scopedQuery && sort() === "n") return arr;
     arr.sort((a, b) => {
       if (filterMode() !== "all" && sort() === "n") return 0;
       if (sort() === "title") return a.title.localeCompare(b.title);
@@ -383,118 +438,32 @@ export function App() {
     return arr;
   });
 
-  const matchCreditName = (track, label, preparedQuery) => {
-    const names = splitCreditNames(label === "Music director" ? track.director : track.singer);
-    const base = label === "Music director" ? 26 : 32;
-    for (const name of names) {
-      const normalizedName = normalizeSearchText(name);
-      const nameCompact = normalizedName.replace(/\s+/g, "");
-      const nameTokens = normalizedName.split(/\s+/).filter(Boolean);
-      const { queryCompact, queryTokens } = preparedQuery;
-      let score = null;
-
-      if (nameCompact === queryCompact) {
-        score = base;
-      } else if (nameCompact.startsWith(queryCompact)) {
-        score = base + 8 + nameCompact.length - queryCompact.length;
-      } else if (queryTokens.every((queryToken) => nameTokens.some((nameToken) => nameToken === queryToken || nameToken.startsWith(queryToken)))) {
-        score = base + 22;
-      } else if (nameCompact.includes(queryCompact) && nameTokens.some((nameToken) => nameToken.startsWith(queryCompact))) {
-        score = base + 34 + nameCompact.indexOf(queryCompact);
-      }
-
-      if (score !== null) return { label, score, value: formatPersonName(name), key: personSearchKey(name) };
-    }
-    return null;
-  };
-
   const searchAlbumResults = createMemo(() => {
     const rawQuery = songSearch().trim();
-    const query = searchQuery().trim();
-    if (!rawQuery || query !== rawQuery) return [];
-    const preparedQuery = prepareSearchQuery(query);
-    const searchMap = trackSearchMap();
-    const allTracksByAlbum = tracksByAlbum();
-    const matchedAlbums = new Map();
-
-    for (const track of tracks()) {
-      const album = String(track.movie || "").trim();
-      if (!album) continue;
-      const enrichedTrack = { ...track, _search: searchMap[track.id] };
-      const fieldMatches = getTrackFieldMatches(enrichedTrack, preparedQuery);
-      const match = [
-        fieldMatches.find((entry) => entry.label === "Album"),
-        matchCreditName(enrichedTrack, "Music director", preparedQuery),
-      ].filter(Boolean).sort((a, b) => a.score - b.score)[0];
-      if (!match) continue;
-
-      const existing = matchedAlbums.get(album);
-      const albumTracks = allTracksByAlbum.get(album) || [enrichedTrack];
-      const representative = albumTracks[0] || enrichedTrack;
-      const nextAlbum = {
-        name: album,
-        director: representative.director || enrichedTrack.director || "",
-        year: representative.year || enrichedTrack.year || "",
-        count: albumTracks.length,
-        tracks: albumTracks,
-        matchLabel: match.label,
-        matchValue: match.value,
-        score: match.score,
-      };
-
-      if (!existing || match.score < existing.score) {
-        matchedAlbums.set(album, nextAlbum);
-      }
-    }
-
-    return [...matchedAlbums.values()]
-      .sort((a, b) => a.score - b.score || String(b.year || "").localeCompare(String(a.year || "")) || a.name.localeCompare(b.name));
+    const results = searchResults();
+    if (!rawQuery || results.query !== rawQuery || searchPending()) return [];
+    const byN = trackMap();
+    return results.albums.map((album) => ({
+      ...album,
+      tracks: (album.trackNs || []).map((n) => byN[n]).filter(Boolean),
+    }));
   });
 
   const searchPeopleResultsFor = (label) => {
     const rawQuery = songSearch().trim();
-    const query = searchQuery().trim();
-    if (!rawQuery || query !== rawQuery) return [];
-    const preparedQuery = prepareSearchQuery(query);
-    const searchMap = trackSearchMap();
-    const groups = new Map();
-
-    for (const track of tracks()) {
-      const enrichedTrack = { ...track, _search: searchMap[track.id] };
-      const match = matchCreditName(enrichedTrack, label, preparedQuery);
-      const name = String(match?.value || "").trim();
-      const key = match?.key;
-      if (!name || !key) continue;
-
-      const current = groups.get(key) || {
-        name,
-        score: match.score,
-        albums: new Set(),
-        trackCount: 0,
-      };
-      current.score = Math.min(current.score, match.score);
-      current.trackCount += 1;
-      if (track.movie) current.albums.add(track.movie);
-      groups.set(key, current);
-    }
-
-    return [...groups.values()]
-      .map((group) => ({
-        ...group,
-        albumCount: group.albums.size,
-        albums: [...group.albums],
-      }))
-      .sort((a, b) => a.score - b.score || b.albumCount - a.albumCount || a.name.localeCompare(b.name));
+    const results = searchResults();
+    if (!rawQuery || results.query !== rawQuery || searchPending()) return [];
+    return label === "Music director" ? results.directors : results.singers;
   };
 
   const searchDirectorResults = createMemo(() => searchPeopleResultsFor("Music director"));
   const searchSingerResults = createMemo(() => searchPeopleResultsFor("Singer"));
 
   const searchResultCounts = createMemo(() => ({
-    albums: searchAlbumResults().length,
-    songs: filteredTracks().length,
-    directors: searchDirectorResults().length,
-    singers: searchSingerResults().length,
+    albums: songSearch().trim() && !searchPending() ? searchResults().counts.albums : searchAlbumResults().length,
+    songs: songSearch().trim() && !searchPending() ? searchResults().counts.songs : filteredTracks().length,
+    directors: songSearch().trim() && !searchPending() ? searchResults().counts.directors : searchDirectorResults().length,
+    singers: songSearch().trim() && !searchPending() ? searchResults().counts.singers : searchSingerResults().length,
   }));
 
   const addToRecents = (n) => {
