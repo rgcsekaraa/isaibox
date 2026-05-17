@@ -48,6 +48,10 @@ LYRICS_USER_AGENT = os.environ.get(
     "isaibox/1.0 (https://github.com/rgcsekaraa/isaibox)",
 )
 LYRICS_CONFIDENCE_THRESHOLD = float(os.environ.get("ISAIBOX_LYRICS_CONFIDENCE_THRESHOLD", "72") or "72")
+LYRICS_LOOKUP_WORKERS = max(1, int(os.environ.get("ISAIBOX_LYRICS_LOOKUP_WORKERS", "2") or "2"))
+lyrics_lookup_executor = ThreadPoolExecutor(max_workers=LYRICS_LOOKUP_WORKERS, thread_name_prefix="isaibox-lyrics")
+lyrics_lookup_lock = threading.Lock()
+lyrics_lookup_pending: set[str] = set()
 
 
 def load_local_env() -> None:
@@ -3262,6 +3266,54 @@ def fetch_and_store_lyrics(song_id: str, duration: int | None = None, force: boo
                 "error": str(exc),
             },
         )
+
+
+def lyrics_cache_satisfied(cached: dict | None, duration: int | None = None) -> bool:
+    if not cached:
+        return False
+    status = cached.get("status")
+    if status == "available":
+        return True
+    if status == "instrumental":
+        return True
+    if status == "not_found":
+        return not duration or bool(cached.get("matchDuration"))
+    return False
+
+
+def enqueue_lyrics_lookup(song_id: str, duration: int | None = None, force: bool = False) -> bool:
+    key = f"{song_id}:{int(duration) if duration else 0}"
+    with lyrics_lookup_lock:
+        if key in lyrics_lookup_pending:
+            return False
+        lyrics_lookup_pending.add(key)
+
+    def run_lookup() -> None:
+        try:
+            fetch_and_store_lyrics(song_id, duration=duration, force=force)
+        finally:
+            with lyrics_lookup_lock:
+                lyrics_lookup_pending.discard(key)
+
+    lyrics_lookup_executor.submit(run_lookup)
+    return True
+
+
+def get_lyrics_fast(song_id: str, duration: int | None = None, force: bool = False) -> dict:
+    if not get_song_row(song_id):
+        return {"status": "missing", "available": False, "error": "Song not found"}
+    cached = None if force else get_cached_lyrics(song_id)
+    if not force and lyrics_cache_satisfied(cached, duration=duration):
+        return cached or {"status": "missing", "available": False}
+    enqueue_lyrics_lookup(song_id, duration=duration, force=force)
+    if cached:
+        return {**cached, "loading": True}
+    return {
+        "songId": song_id,
+        "status": "loading",
+        "available": False,
+        "loading": True,
+    }
 
 
 def invalidate_song_cache(song_id: str | None = None) -> None:

@@ -426,7 +426,7 @@ def song_lyrics(song_id: str):
         except (TypeError, ValueError):
             duration = None
     force = str(request.args.get("refresh") or "").lower() in {"1", "true", "yes"}
-    lyrics = fetch_and_store_lyrics(song_id, duration=duration, force=force)
+    lyrics = get_lyrics_fast(song_id, duration=duration, force=force)
     return json_response({"ok": True, "lyrics": lyrics})
 
 
@@ -439,7 +439,7 @@ def refresh_song_lyrics(song_id: str):
             duration = max(0, int(round(float(payload.get("duration")))))
         except (TypeError, ValueError):
             duration = None
-    lyrics = fetch_and_store_lyrics(song_id, duration=duration, force=True)
+    lyrics = get_lyrics_fast(song_id, duration=duration, force=True)
     return json_response({"ok": True, "lyrics": lyrics})
 
 

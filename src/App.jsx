@@ -197,6 +197,7 @@ export function App() {
   let searchRequestId = 0;
   let lyricsRequestId = 0;
   let lyricsFetchKey = "";
+  let lyricsPollTimer = null;
 
   const setIsPlaying = (nextValue) => {
     let shouldStart = false;
@@ -262,6 +263,7 @@ export function App() {
 
   onCleanup(() => {
     if (playWatchTimer) window.clearTimeout(playWatchTimer);
+    if (lyricsPollTimer) window.clearTimeout(lyricsPollTimer);
   });
 
   createEffect(() => {
@@ -416,6 +418,10 @@ export function App() {
   const loadLyrics = async (options = {}) => {
     const track = activeAudioTrack();
     if (!track?.id) return;
+    if (lyricsPollTimer) {
+      window.clearTimeout(lyricsPollTimer);
+      lyricsPollTimer = null;
+    }
     const roundedDuration = Math.round(Number(duration()) || 0);
     const requestId = ++lyricsRequestId;
     setLyricsState((current) => ({
@@ -435,7 +441,15 @@ export function App() {
       return;
     }
     const payload = await response.json().catch(() => null);
-    setLyricsState({ songId: track.id, ...(payload?.lyrics || {}), loading: false });
+    const nextLyrics = { songId: track.id, ...(payload?.lyrics || {}) };
+    const stillLoading = Boolean(nextLyrics.loading);
+    setLyricsState({ ...nextLyrics, loading: stillLoading });
+    if (stillLoading && activeAudioTrack()?.id === track.id) {
+      lyricsPollTimer = window.setTimeout(() => {
+        lyricsPollTimer = null;
+        if (activeAudioTrack()?.id === track.id) loadLyrics({ poll: true });
+      }, options.poll ? 1200 : 700);
+    }
   };
 
   const refreshLyrics = () => loadLyrics({ force: true });
@@ -459,6 +473,10 @@ export function App() {
     if (!track?.id) {
       setLyricsState({ status: "idle", loading: false, available: false });
       lyricsFetchKey = "";
+      if (lyricsPollTimer) {
+        window.clearTimeout(lyricsPollTimer);
+        lyricsPollTimer = null;
+      }
       return;
     }
     const roundedDuration = Math.round(Number(duration()) || 0);
