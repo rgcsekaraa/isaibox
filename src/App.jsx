@@ -175,33 +175,61 @@ export function App() {
   let playbackIntent = false;
   let playbackRequestId = 0;
   let playAttemptId = 0;
+  let playWatchTimer = null;
 
   const setIsPlaying = (nextValue) => {
+    let shouldStart = false;
+    let requestId = 0;
     setIsPlayingState((current) => {
       const next = typeof nextValue === "function" ? nextValue(current) : nextValue;
       playbackIntent = !!next;
       playbackRequestId += 1;
+      requestId = playbackRequestId;
+      shouldStart = playbackIntent;
       if (!playbackIntent) {
         setAudioLoading(false);
         audioEl?.pause?.();
       }
       return playbackIntent;
     });
+    if (shouldStart) requestAudioPlay(requestId, 2);
+    return requestId;
+  };
+
+  const ensureAudioSource = (track) => {
+    if (!audioEl || !track?.audioUrl) return false;
+    const nextSrc = new URL(track.audioUrl, window.location.href).href;
+    if (audioEl.src !== nextSrc) {
+      setAudioLoading(playbackIntent);
+      audioEl.src = nextSrc;
+      audioEl.load();
+    }
+    return true;
   };
 
   const requestAudioPlay = (requestId, retries = 1) => {
     if (!audioEl || !playbackIntent || requestId !== playbackRequestId) return;
+    if (!ensureAudioSource(activeAudioTrack())) return;
     const attemptId = ++playAttemptId;
     setAudioLoading(true);
+    if (playWatchTimer) window.clearTimeout(playWatchTimer);
+    playWatchTimer = window.setTimeout(() => {
+      if (attemptId === playAttemptId && requestId === playbackRequestId && playbackIntent && audioEl?.paused) {
+        setAudioLoading(false);
+        setIsPlaying(false);
+      }
+    }, 8000);
     audioEl.play().then(() => {
       if (requestId !== playbackRequestId || !playbackIntent) {
         audioEl.pause();
         return;
       }
       if (attemptId !== playAttemptId) return;
+      if (playWatchTimer) window.clearTimeout(playWatchTimer);
       setAudioLoading(false);
     }).catch((error) => {
       if (attemptId !== playAttemptId || requestId !== playbackRequestId) return;
+      if (playWatchTimer) window.clearTimeout(playWatchTimer);
       if (error?.name === "AbortError" && playbackIntent && retries > 0) {
         window.setTimeout(() => requestAudioPlay(requestId, retries - 1), 120);
         return;
@@ -210,6 +238,10 @@ export function App() {
       setIsPlaying(false);
     });
   };
+
+  onCleanup(() => {
+    if (playWatchTimer) window.clearTimeout(playWatchTimer);
+  });
 
   createEffect(() => {
     const text = message();
@@ -611,6 +643,7 @@ export function App() {
       setCurrentN(n);
       setPosition(0);
       setDuration(0);
+      setQueue([]);
       setIsPlaying(true);
       addToRecents(n);
     }
@@ -1041,14 +1074,8 @@ export function App() {
   createEffect(() => {
     const track = activeAudioTrack();
     if (!audioEl || !track?.audioUrl) return;
-    if (audioEl.src !== new URL(track.audioUrl, window.location.href).href) {
-      setAudioLoading(isPlaying());
-      audioEl.src = track.audioUrl;
-      audioEl.load();
-    }
-    if (isPlaying()) {
-      requestAudioPlay(playbackRequestId, 2);
-    } else {
+    ensureAudioSource(track);
+    if (!isPlaying()) {
       playAttemptId += 1;
       setAudioLoading(false);
       audioEl.pause();
@@ -1353,6 +1380,7 @@ export function App() {
             audioEl.pause();
             return;
           }
+          if (playWatchTimer) window.clearTimeout(playWatchTimer);
           setAudioLoading(false);
         }}
         onPause={() => {
@@ -1362,7 +1390,11 @@ export function App() {
           setIsPlayingState(false);
           setAudioLoading(false);
         }}
-        onError={() => { setAudioLoading(false); setIsPlaying(false); }}
+        onError={() => {
+          if (playWatchTimer) window.clearTimeout(playWatchTimer);
+          setAudioLoading(false);
+          setIsPlaying(false);
+        }}
       />
       <Show when={message()}>
         <div class="app-toast">{message()}</div>
