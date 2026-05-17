@@ -348,6 +348,8 @@ def download_audio(song: SongSource, destination: Path, timeout: int) -> bool:
             temp_path.replace(destination)
             return True
         print(f"Skipping {song.song_id}: downloaded file did not look like audio", file=sys.stderr)
+    except RateLimitedError:
+        raise
     except Exception as exc:
         print(f"Skipping {song.song_id}: download failed: {exc}", file=sys.stderr)
     finally:
