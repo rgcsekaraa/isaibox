@@ -136,6 +136,7 @@ export function App() {
   const [activePlaylist, setActivePlaylist] = createSignal("rahman");
   const [activeAlbum, setActiveAlbum] = createSignal("");
   const [songSearch, setSongSearch] = createSignal("");
+  const [committedSongSearch, setCommittedSongSearch] = createSignal("");
   const [searchResults, setSearchResults] = createSignal(emptySearchResults());
   const [searchPending, setSearchPending] = createSignal(false);
   const [searchResultTab, setSearchResultTab] = createSignal("songs");
@@ -285,13 +286,14 @@ export function App() {
     searchRequestId += 1;
     const requestId = searchRequestId;
     if (!value) {
+      setCommittedSongSearch("");
       setSearchPending(false);
       setSearchResults(emptySearchResults());
       return;
     }
     setSearchPending(true);
-    setSearchResults(emptySearchResults(value));
     const timer = window.setTimeout(() => {
+      setCommittedSongSearch(value);
       searchWorker?.postMessage({ type: "search", requestId, payload: value });
     }, SEARCH_DEBOUNCE_MS);
     onCleanup(() => window.clearTimeout(timer));
@@ -302,7 +304,7 @@ export function App() {
     searchWorker.onmessage = (event) => {
       const { type, requestId, payload } = event.data || {};
       if (type !== "results" || requestId !== searchRequestId) return;
-      setSearchResults(payload || emptySearchResults(songSearch().trim()));
+      setSearchResults(payload || emptySearchResults(committedSongSearch().trim()));
       setSearchPending(false);
     };
     if (tracks().length) {
@@ -376,7 +378,7 @@ export function App() {
     caption: "Search",
   } : null;
   const playbackSourceForCurrentView = () => {
-    const query = songSearch().trim();
+    const query = committedSongSearch().trim() || songSearch().trim();
     if (activeAlbum()) return albumPlaybackSource(activeAlbum());
     if (query) return searchPlaybackSource(query);
     return playlistPlaybackSource(activePlaylistMeta()) || { type: "library", label: "Library", caption: "Library" };
@@ -407,7 +409,7 @@ export function App() {
 
   const filteredTracks = createMemo(() => {
     const hasPlaylistSections = playlistSections().global.length > 0 || playlistSections().personal.length > 0;
-    const rawQuery = songSearch().trim();
+    const rawQuery = committedSongSearch().trim();
     const scopedQuery = rawQuery ? "" : trackSearch().trim();
     if (rawQuery) {
       const results = searchResults();
@@ -459,7 +461,7 @@ export function App() {
   });
 
   const searchAlbumResults = createMemo(() => {
-    const rawQuery = songSearch().trim();
+    const rawQuery = committedSongSearch().trim();
     const results = searchResults();
     if (!rawQuery || results.query !== rawQuery || searchPending()) return [];
     const byN = trackMap();
@@ -470,7 +472,7 @@ export function App() {
   });
 
   const searchPeopleResultsFor = (label) => {
-    const rawQuery = songSearch().trim();
+    const rawQuery = committedSongSearch().trim();
     const results = searchResults();
     if (!rawQuery || results.query !== rawQuery || searchPending()) return [];
     return label === "Music director" ? results.directors : results.singers;
@@ -480,10 +482,10 @@ export function App() {
   const searchSingerResults = createMemo(() => searchPeopleResultsFor("Singer"));
 
   const searchResultCounts = createMemo(() => ({
-    albums: songSearch().trim() && !searchPending() ? searchResults().counts.albums : searchAlbumResults().length,
-    songs: songSearch().trim() && !searchPending() ? searchResults().counts.songs : filteredTracks().length,
-    directors: songSearch().trim() && !searchPending() ? searchResults().counts.directors : searchDirectorResults().length,
-    singers: songSearch().trim() && !searchPending() ? searchResults().counts.singers : searchSingerResults().length,
+    albums: committedSongSearch().trim() && !searchPending() ? searchResults().counts.albums : searchAlbumResults().length,
+    songs: committedSongSearch().trim() && !searchPending() ? searchResults().counts.songs : filteredTracks().length,
+    directors: committedSongSearch().trim() && !searchPending() ? searchResults().counts.directors : searchDirectorResults().length,
+    singers: committedSongSearch().trim() && !searchPending() ? searchResults().counts.singers : searchSingerResults().length,
   }));
 
   const addToRecents = (n) => {
