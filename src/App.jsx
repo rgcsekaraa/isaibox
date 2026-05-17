@@ -330,15 +330,23 @@ export function App() {
   // Density (held simple — wire up a tweaks panel separately if you want)
   const [density] = createSignal("comfortable");
 
+  const ART_COLORS = ["#e84855","#3d405b","#81b29a","#f2cc8f","#118ab2","#06d6a0","#ef476f","#8338ec","#3a86ff","#fb5607"];
+  const artColor = (name) => {
+    let h = 0;
+    for (let i = 0; i < (name || "").length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+    return ART_COLORS[Math.abs(h) % ART_COLORS.length];
+  };
+
   const toTrack = (song, index) => {
     const id = String(song?.id || "").trim();
     const title = String(song?.track || song?.title || "").trim();
     if (!id || !title) return null;
+    const movie = song.movie || "";
     return {
       id,
       n: index + 1,
       title,
-      movie: song.movie || "",
+      movie,
       director: song.musicDirector || song.director || "",
       singer: song.singers || song.singer || "",
       year: song.year || "",
@@ -347,6 +355,7 @@ export function App() {
       albumUrl: song.albumUrl || "",
       updatedAt: song.updatedAt || "",
       fav: favs().has(index + 1),
+      artColor: artColor(movie || title),
     };
   };
 

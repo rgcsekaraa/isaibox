@@ -1,6 +1,34 @@
-import { For, Show } from "solid-js";
+import { For, Show, createSignal, createEffect } from "solid-js";
 import { Icon } from "./Icon.jsx";
 import { MenuSelect } from "./MenuSelect.jsx";
+import { fetchAlbumArt } from "./albumArt.js";
+
+// ─── Album art ───────────────────────────────────────────────────
+const ART_COLORS = ["#e84855","#3d405b","#81b29a","#f2cc8f","#118ab2","#06d6a0","#ef476f","#8338ec","#3a86ff","#fb5607"];
+function artColor(name) {
+  let h = 0;
+  for (let i = 0; i < (name || "").length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+  return ART_COLORS[Math.abs(h) % ART_COLORS.length];
+}
+export function AlbumArt(props) {
+  const name = () => props.name || "";
+  const size = () => props.size || 48;
+  const [imgUrl, setImgUrl] = createSignal(null);
+  createEffect(() => {
+    const n = name();
+    setImgUrl(null);
+    if (n) fetchAlbumArt(n).then((url) => { if (url) setImgUrl(url); });
+  });
+  return (
+    <Show when={imgUrl()} fallback={
+      <div class="album-art-placeholder" style={{ background: artColor(name()), width: `${size()}px`, height: `${size()}px`, "border-radius": props.radius || "6px" }}>
+        <span class="album-art-initial" style={{ "font-size": `${Math.round(size() * 0.42)}px` }}>{(name()[0] || "?").toUpperCase()}</span>
+      </div>
+    }>
+      <img class="album-art-img" src={imgUrl()} alt={name()} width={size()} height={size()} style={{ "border-radius": props.radius || "6px" }} loading="lazy" />
+    </Show>
+  );
+}
 
 const SORT_OPTIONS = [
   { value: "n", label: "Track #" },
@@ -252,6 +280,9 @@ export function LibraryPage(props) {
                     <div class="pl-kicker">Album</div>
                   </Show>
                   <div class="pl-title-line">
+                    <Show when={isAlbum()}>
+                      <AlbumArt name={ctx.activeAlbum()} size={52} radius="8px" />
+                    </Show>
                     <h1 class="pl-title">{playlist().name}</h1>
                     <Show when={isAlbum() && ctx.activeAlbumTracks().length > 0}>
                       <button class="btn-secondary album-play-btn" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks(), { type: "album", label: ctx.activeAlbum(), caption: "Album" })}>

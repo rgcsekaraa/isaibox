@@ -1,6 +1,7 @@
-import { createSignal, Show, onCleanup } from "solid-js";
+import { createSignal, createEffect, Show, onCleanup } from "solid-js";
 import { Icon } from "./Icon.jsx";
 import { parseDur, fmtTime } from "./utils.js";
+import { fetchAlbumArt } from "./albumArt.js";
 
 function PlaybackSourcePill(props) {
   const source = () => props.source;
@@ -129,10 +130,23 @@ export function Scrubber(props) {
 // ─── Desktop dock ────────────────────────────────────────────────
 export function NowPlayingDock(props) {
   const duration = () => props.duration || parseDur(props.track.duration);
+  const [artUrl, setArtUrl] = createSignal(null);
+  createEffect(() => {
+    const name = props.track?.movie || props.track?.title || "";
+    setArtUrl(null);
+    if (name) fetchAlbumArt(name).then((url) => { if (url) setArtUrl(url); });
+  });
   return (
     <footer class="dock">
       <div class="dock-grid">
         <div class="dock-left">
+          <div class="dock-art" style={{ background: props.track.artColor || "#3d405b" }}>
+            <Show when={artUrl()} fallback={
+              <span class="dock-art-initial">{(props.track.movie || props.track.title || "?")[0].toUpperCase()}</span>
+            }>
+              <img src={artUrl()} alt={props.track.movie} class="dock-art-img" width="40" height="40" />
+            </Show>
+          </div>
           <div class="dock-meta">
             <div class="dock-title-row">
               <div class="dock-song" title={props.track.title}>{props.track.title}</div>

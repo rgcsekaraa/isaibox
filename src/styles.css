@@ -2373,3 +2373,48 @@ button:disabled,
     width: 100%;
   }
 }
+
+/* ─── Album art placeholder ─────────────────────────────── */
+.album-art-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.album-art-initial {
+  color: rgba(255,255,255,0.85);
+  font-weight: 700;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.album-art-img {
+  display: block;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+/* ─── Dock art thumbnail (player bar) ───────────────────── */
+.dock-art {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.dock-art-initial {
+  color: rgba(255,255,255,0.85);
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.dock-art-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
