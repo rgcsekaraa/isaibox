@@ -73,17 +73,22 @@ function SearchTabs(props) {
   return (
     <div class="search-tabs" role="tablist" aria-label="Search result type">
       <For each={SEARCH_TABS}>
-        {(tab) => (
-          <button
-            role="tab"
-            class="search-tab"
-            classList={{ active: props.active === tab.id }}
-            onClick={() => props.onChange?.(tab.id)}
-          >
-            <span>{tab.label}</span>
-            <span class="mono">{count(tab.id)}</span>
-          </button>
-        )}
+        {(tab) => {
+          const disabled = () => count(tab.id) === 0 && props.active !== tab.id;
+          return (
+            <button
+              role="tab"
+              class="search-tab"
+              classList={{ active: props.active === tab.id }}
+              disabled={disabled()}
+              aria-disabled={disabled()}
+              onClick={() => !disabled() && props.onChange?.(tab.id)}
+            >
+              <span>{tab.label}</span>
+              <span class="mono">{count(tab.id)}</span>
+            </button>
+          );
+        }}
       </For>
     </div>
   );

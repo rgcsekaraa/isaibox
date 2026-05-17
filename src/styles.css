@@ -506,6 +506,11 @@ button:disabled,
   color: var(--fg);
   border-color: var(--line-strong);
 }
+.search-tab:disabled,
+.m-search-tab:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
 .search-tab .mono {
   color: var(--fg-faint);
   font-size: 9px;

@@ -257,17 +257,23 @@ export function MobilePlaylistDetail(props) {
       <Show when={isSearch()}>
         <div class="m-search-tabs" role="tablist" aria-label="Search result type">
           <For each={SEARCH_TABS}>
-            {(tab) => (
-              <button
-                role="tab"
-                class="m-search-tab"
-                classList={{ active: activeSearchTab() === tab.id }}
-                onClick={() => ctx.setSearchResultTab(tab.id)}
-              >
-                <span>{tab.label}</span>
-                <span>{searchCounts()[tab.id] || 0}</span>
-              </button>
-            )}
+            {(tab) => {
+              const count = () => searchCounts()[tab.id] || 0;
+              const disabled = () => count() === 0 && activeSearchTab() !== tab.id;
+              return (
+                <button
+                  role="tab"
+                  class="m-search-tab"
+                  classList={{ active: activeSearchTab() === tab.id }}
+                  disabled={disabled()}
+                  aria-disabled={disabled()}
+                  onClick={() => !disabled() && ctx.setSearchResultTab(tab.id)}
+                >
+                  <span>{tab.label}</span>
+                  <span>{count()}</span>
+                </button>
+              );
+            }}
           </For>
         </div>
       </Show>
