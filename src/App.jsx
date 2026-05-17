@@ -1,5 +1,5 @@
 import { createSignal, createMemo, createEffect, onCleanup, onMount, Show, Match, Switch } from "solid-js";
-import { fmtTime, parseDur, prepareSearchQuery, prepareTrackSearch, scoreTrackSearch, useMediaQuery } from "./utils.js";
+import { fmtTime, getTrackSearchMatch, parseDur, prepareSearchQuery, prepareTrackSearch, useMediaQuery } from "./utils.js";
 import { TopBar, Sidebar, ShortcutsDrawer } from "./Desktop.jsx";
 import { MobileHeader, MobileBottomTabs, MobileLibraryPage, MobilePlaylistDetail } from "./Mobile.jsx";
 import { LibraryPage, QueuePanel, RecentsPage, FavoritesPage } from "./Pages.jsx";
@@ -260,10 +260,14 @@ export function App() {
     if (query || scopedQuery) {
       const activeQuery = prepareSearchQuery(query || scopedQuery);
       arr = arr
-        .map((track, index) => ({ track, index, score: scoreTrackSearch(track, activeQuery) }))
-        .filter((entry) => entry.score !== null)
-        .sort((a, b) => a.score - b.score || a.index - b.index)
-        .map((entry) => entry.track);
+        .map((track, index) => ({ track, index, match: getTrackSearchMatch(track, activeQuery) }))
+        .filter((entry) => entry.match !== null)
+        .sort((a, b) => a.match.score - b.match.score || a.index - b.index)
+        .map((entry) => ({
+          ...entry.track,
+          _matchLabel: entry.match.label,
+          _matchValue: entry.match.value,
+        }));
       if (query && arr.length > GLOBAL_SEARCH_RESULT_LIMIT) {
         arr = arr.slice(0, GLOBAL_SEARCH_RESULT_LIMIT);
       }
@@ -950,7 +954,7 @@ export function App() {
               setTab={changeTab}
               search={songSearch()}
               setSearch={updateSongSearch}
-              searchPlaceholder="Search all songs..."
+              searchPlaceholder="Search songs, albums, directors..."
 			              settingsOpen={settingsOpen()}
 			              shortcutsOpen={shortcutsOpen()}
 	              setSettingsOpen={setSettingsOpen}
@@ -1052,7 +1056,7 @@ export function App() {
         <MobileHeader
           search={songSearch()}
           setSearch={updateSongSearch}
-          searchPlaceholder="Search all songs..."
+          searchPlaceholder="Search songs, albums, directors..."
           searchOpen={searchOpen()}
           setSearchOpen={setSearchOpen}
           settingsOpen={settingsOpen()}

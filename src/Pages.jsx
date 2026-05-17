@@ -71,7 +71,9 @@ function TrackRow(props) {
       {props.leftSlot}
       <div class="t-title">
         <span class="t-title-text">{props.track.title}</span>
-        <Show when={props.isCurrent}><span class="t-now">Now Playing</span></Show>
+        <Show when={props.searchActive && props.track._matchLabel && props.track._matchLabel !== "Song"}>
+          <span class="t-match">{props.track._matchLabel}: {props.track._matchValue}</span>
+        </Show>
       </div>
       <Show when={props.showMovie !== false}>
         <div class="t-movie clickable">
@@ -134,7 +136,7 @@ export function LibraryPage(props) {
               </Show>
             </div>
             <Show when={isSearch()}>
-              <div class="pl-search-note">Showing matches for "{ctx.songSearch()}"</div>
+              <div class="pl-search-note">Searching song names, albums, music directors, and singers for "{ctx.songSearch()}"</div>
             </Show>
           </div>
           <div class="pl-tools">
@@ -160,7 +162,7 @@ export function LibraryPage(props) {
           </div>
         </div>
       </div>
-      <div class="tracklist">
+      <div class="tracklist" classList={{ "search-results": isSearch() }}>
         <div class={`track-row head ${ctx.density()}`}>
           <div class="t-num">#</div>
           <div class="t-title">Title</div>
@@ -178,6 +180,7 @@ export function LibraryPage(props) {
                 isCurrent={ctx.currentN() === t.n}
                 isPlaying={ctx.isPlaying()}
                 audioLoading={ctx.audioLoading()}
+                searchActive={isSearch() || !!ctx.trackSearch().trim()}
                 density={ctx.density()}
                 onPlay={() => ctx.playTrack(t.n)}
                 onFav={() => ctx.toggleFav(t.n)}
@@ -381,7 +384,6 @@ export function RecentsPage(props) {
               >
                 <div class="t-title">
                   <span class="t-title-text">{t.title}</span>
-                  <Show when={ctx.currentN() === t.n}><span class="t-now">Now Playing</span></Show>
                 </div>
                 <div class="t-movie clickable"><AlbumLink album={t.movie} onOpen={ctx.openAlbum} /></div>
                 <div class="t-singer">{t.singer}</div>
@@ -474,7 +476,6 @@ export function FavoritesPage(props) {
                 >
                   <div class="t-title">
                     <span class="t-title-text">{t.title}</span>
-                    <Show when={ctx.currentN() === t.n}><span class="t-now">Now Playing</span></Show>
                   </div>
                   <div class="t-movie clickable"><AlbumLink album={t.movie} onOpen={ctx.openAlbum} /></div>
                   <div class="t-director">{t.director}</div>

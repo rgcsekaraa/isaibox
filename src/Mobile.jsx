@@ -51,7 +51,7 @@ export function MobileHeader(props) {
             <Icon name="search" size={15} />
             <input
               autofocus
-              placeholder={props.searchPlaceholder || "Search tracks and singers..."}
+              placeholder={props.searchPlaceholder || "Search songs, albums, directors..."}
               value={props.search}
               onInput={(e) => props.setSearch(e.currentTarget.value)}
             />
@@ -260,6 +260,9 @@ export function MobilePlaylistDetail(props) {
 	                </div>
                 <div class="m-tr-sub">
                   <span>{t.singer}</span>
+                  <Show when={isSearch() && t._matchLabel && t._matchLabel !== "Song"}>
+                    <span class="m-tr-match">{t._matchLabel}: {t._matchValue}</span>
+                  </Show>
                   <Show when={t.movie}>
                     <button
                       class="m-tr-album"

@@ -125,24 +125,53 @@ export const scoreTrackSearch = (track, query) => {
   const preparedQuery = typeof query === "string" ? prepareSearchQuery(query) : query;
   if (!preparedQuery.normalizedQuery) return 0;
 
+  return getTrackSearchMatch(track, preparedQuery)?.score ?? null;
+};
+
+export const getTrackSearchMatch = (track, query) => {
+  const preparedQuery = typeof query === "string" ? prepareSearchQuery(query) : query;
+  if (!preparedQuery.normalizedQuery) return { score: 0, label: "Song", value: track.title || "" };
+
   const search = track.search || track._search || prepareTrackSearch(track);
   const { queryCompact, queryTokens } = preparedQuery;
+  const fieldMatches = [
+    {
+      label: "Song",
+      value: track.title || "",
+      score: fieldScore(search.title, search.titleCompact, queryCompact, queryTokens, 0),
+    },
+    {
+      label: "Album",
+      value: track.movie || "",
+      score: fieldScore(search.album, search.albumCompact, queryCompact, queryTokens, 22),
+    },
+    {
+      label: "Music director",
+      value: track.director || "",
+      score: fieldScore(search.director, search.directorCompact, queryCompact, queryTokens, 26),
+    },
+    {
+      label: "Singer",
+      value: track.singer || "",
+      score: fieldScore(search.singer, search.singerCompact, queryCompact, queryTokens, 32),
+    },
+  ]
+    .filter((match) => match.score !== null)
+    .sort((a, b) => a.score - b.score);
 
-  const directScores = [
-    fieldScore(search.title, search.titleCompact, queryCompact, queryTokens, 0),
-    fieldScore(search.album, search.albumCompact, queryCompact, queryTokens, 22),
-    fieldScore(search.director, search.directorCompact, queryCompact, queryTokens, 26),
-    fieldScore(search.singer, search.singerCompact, queryCompact, queryTokens, 32),
-  ].filter((score) => score !== null);
-  if (directScores.length) return Math.min(...directScores);
+  if (fieldMatches.length) return fieldMatches[0];
 
-  if (search.combinedCompact.includes(queryCompact)) return 70 + search.combinedCompact.indexOf(queryCompact);
+  if (search.combinedCompact.includes(queryCompact)) {
+    return { score: 70 + search.combinedCompact.indexOf(queryCompact), label: "Song", value: track.title || "" };
+  }
 
   const combinedTokenScore = orderedTokenScore(queryTokens, search.combined);
-  if (combinedTokenScore !== null) return 90 + combinedTokenScore;
+  if (combinedTokenScore !== null) {
+    return { score: 90 + combinedTokenScore, label: "Song", value: track.title || "" };
+  }
 
   const allTokensPresent = queryTokens.every((token) => search.combined.includes(token));
-  if (allTokensPresent) return 120;
+  if (allTokensPresent) return { score: 120, label: "Song", value: track.title || "" };
 
   // Levenshtein is intentionally last and gated; running it for every
   // non-candidate on every keystroke is what made the UI hang.
@@ -153,7 +182,9 @@ export const scoreTrackSearch = (track, query) => {
   ) {
     const maxDistance = Math.max(2, Math.floor(queryCompact.length * 0.22));
     const titleDistance = levenshteinDistance(queryCompact, search.titleCompact);
-    if (titleDistance <= maxDistance) return 45 + titleDistance * 4;
+    if (titleDistance <= maxDistance) {
+      return { score: 45 + titleDistance * 4, label: "Song", value: track.title || "" };
+    }
   }
 
   return null;

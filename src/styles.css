@@ -599,7 +599,19 @@ button:disabled,
 .main.with-library-sidebar:not(.queue-collapsed) .track-row .t-director {
   display: none;
 }
-.main.with-library-sidebar:not(.queue-collapsed) .track-row .t-now {
+.main.with-library-sidebar:not(.queue-collapsed) .tracklist.search-results .track-row {
+  grid-template-columns:
+    36px
+    minmax(130px, 2fr)
+    minmax(82px, 0.9fr)
+    minmax(116px, 1.2fr)
+    minmax(130px, 1.35fr)
+    84px;
+}
+.main.with-library-sidebar:not(.queue-collapsed) .tracklist.search-results .track-row .t-director {
+  display: block;
+}
+.main.with-library-sidebar:not(.queue-collapsed) .tracklist.search-results .track-row .t-year {
   display: none;
 }
 .track-row.comfortable { padding: 12px 12px; }
@@ -634,8 +646,11 @@ button:disabled,
   font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--fg-faint);
-  text-align: right;
-  padding-right: 4px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  padding-right: 0;
+  min-width: 0;
 }
 .t-n { transition: opacity 0.12s; display: inline-block; }
 .t-play { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; color: var(--fg); transition: opacity 0.12s; }
@@ -644,18 +659,24 @@ button:disabled,
 .t-grip:hover { color: var(--fg-mute); }
 
 .t-title { display: flex; align-items: center; gap: 12px; min-width: 0; overflow: hidden; }
+.track-row:not(.head) .t-title {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+}
 .t-title-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.005em; }
 .app[data-mono-titles="true"] .t-title-text { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: -0.01em; }
-.t-now {
+.t-match {
   font-family: var(--font-mono);
   font-size: 9.5px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--accent);
-  padding: 2px 6px;
-  border: 1px solid var(--accent-soft);
-  border-radius: 3px;
-  flex-shrink: 0;
+  color: var(--fg-faint);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .t-movie, .t-director, .t-singer { color: var(--fg-mute); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .t-movie.clickable {
@@ -1402,6 +1423,13 @@ button:disabled,
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.m-tr-match {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-faint);
 }
 .m-tr-album {
   max-width: 100%;
