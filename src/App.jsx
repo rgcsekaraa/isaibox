@@ -468,7 +468,13 @@ export function App() {
     if (lyricsFetchKey.startsWith(`${track.id}:`) && roundedDuration === 0) return;
     if (lyricsFetchKey.startsWith(`${track.id}:`) && currentLyrics.available) return;
     lyricsFetchKey = key;
-    loadLyrics({ force: roundedDuration > 0 && currentLyrics.songId === track.id && !currentLyrics.available });
+    const needsDurationRetry =
+      roundedDuration > 0 &&
+      currentLyrics.songId === track.id &&
+      !currentLyrics.available &&
+      !currentLyrics.matchDuration &&
+      currentLyrics.status !== "instrumental";
+    loadLyrics({ force: needsDurationRetry });
   });
 
   createEffect(() => {

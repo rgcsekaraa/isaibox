@@ -1670,6 +1670,29 @@ def merge_preserved_user_state(source_path: Path, target_path: Path) -> None:
                 sql += f" WHERE {where_clause}"
             conn.execute(sql)
 
+        def upsert_common_columns(table: str, conflict_columns: list[str]) -> None:
+            target_columns = [
+                row[1]
+                for row in conn.execute(f"PRAGMA table_info('{table}')").fetchall()
+            ]
+            source_columns = {
+                row[1]
+                for row in conn.execute(f"PRAGMA table_info('previous.{table}')").fetchall()
+            }
+            shared_columns = [column for column in target_columns if column in source_columns]
+            if not shared_columns or any(column not in shared_columns for column in conflict_columns):
+                return
+            update_columns = [column for column in shared_columns if column not in conflict_columns]
+            column_list = ", ".join(shared_columns)
+            sql = f"INSERT INTO {table} ({column_list}) SELECT {column_list} FROM previous.{table}"
+            if update_columns:
+                conflict = ", ".join(conflict_columns)
+                update_set = ", ".join(f"{column} = excluded.{column}" for column in update_columns)
+                sql += f" ON CONFLICT ({conflict}) DO UPDATE SET {update_set}"
+            else:
+                sql += f" ON CONFLICT ({', '.join(conflict_columns)}) DO NOTHING"
+            conn.execute(sql)
+
         conn.execute("DELETE FROM user_sessions")
         conn.execute("DELETE FROM favorite_songs")
         conn.execute("DELETE FROM favorite_albums")
@@ -1741,6 +1764,7 @@ def merge_preserved_user_state(source_path: Path, target_path: Path) -> None:
             )
             """
         )
+        upsert_common_columns("song_lyrics", ["song_id"])
         conn.execute("DETACH previous")
     finally:
         conn.close()
