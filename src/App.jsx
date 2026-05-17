@@ -11,6 +11,7 @@ const GOOGLE_GSI_SRC = "https://accounts.google.com/gsi/client";
 const THEME_STORAGE_KEY = "isaibox-theme";
 const INITIAL_LOADING_SEEN_KEY = "isaibox-initial-loading-seen";
 const GLOBAL_SEARCH_RESULT_LIMIT = 500;
+const SEARCH_DEBOUNCE_MS = 120;
 let googleScriptPromise;
 
 function readInitialTheme() {
@@ -127,6 +128,7 @@ export function App() {
   const [activePlaylist, setActivePlaylist] = createSignal("rahman");
   const [activeAlbum, setActiveAlbum] = createSignal("");
   const [songSearch, setSongSearch] = createSignal("");
+  const [searchQuery, setSearchQuery] = createSignal("");
   const [searchResultTab, setSearchResultTab] = createSignal("songs");
   const [playlistSearch, setPlaylistSearch] = createSignal("");
   const [trackSearch, setTrackSearch] = createSignal("");
@@ -266,6 +268,16 @@ export function App() {
     } catch {}
   });
 
+  createEffect(() => {
+    const value = songSearch();
+    if (!value.trim()) {
+      setSearchQuery("");
+      return;
+    }
+    const timer = window.setTimeout(() => setSearchQuery(value), SEARCH_DEBOUNCE_MS);
+    onCleanup(() => window.clearTimeout(timer));
+  });
+
   // Density (held simple — wire up a tweaks panel separately if you want)
   const [density] = createSignal("comfortable");
 
@@ -304,6 +316,16 @@ export function App() {
     if (!album) return [];
     return tracks().filter((track) => track.movie === album);
   });
+  const tracksByAlbum = createMemo(() => {
+    const groups = new Map();
+    for (const track of tracks()) {
+      const album = String(track.movie || "").trim();
+      if (!album) continue;
+      if (!groups.has(album)) groups.set(album, []);
+      groups.get(album).push(track);
+    }
+    return groups;
+  });
   const currentTrack = createMemo(() => {
     const track = activeAudioTrack();
     if (!track) return null;
@@ -316,9 +338,11 @@ export function App() {
 
   const filteredTracks = createMemo(() => {
     const hasPlaylistSections = playlistSections().global.length > 0 || playlistSections().personal.length > 0;
-    const query = songSearch().trim();
-    const scopedQuery = query ? "" : trackSearch().trim();
-    const source = query
+    const rawQuery = songSearch().trim();
+    const query = searchQuery().trim();
+    const scopedQuery = rawQuery ? "" : trackSearch().trim();
+    if (rawQuery && query !== rawQuery) return [];
+    const source = rawQuery
       ? tracks()
       : activeAlbum()
       ? activeAlbumTracks()
@@ -385,24 +409,18 @@ export function App() {
   };
 
   const searchAlbumResults = createMemo(() => {
-    const query = songSearch().trim();
-    if (!query) return [];
+    const rawQuery = songSearch().trim();
+    const query = searchQuery().trim();
+    if (!rawQuery || query !== rawQuery) return [];
     const preparedQuery = prepareSearchQuery(query);
     const searchMap = trackSearchMap();
-    const allTracksByAlbum = new Map();
+    const allTracksByAlbum = tracksByAlbum();
     const matchedAlbums = new Map();
 
     for (const track of tracks()) {
       const album = String(track.movie || "").trim();
       if (!album) continue;
-      if (!allTracksByAlbum.has(album)) allTracksByAlbum.set(album, []);
-      allTracksByAlbum.get(album).push({ ...track, fav: favs().has(track.n), _search: searchMap[track.id] });
-    }
-
-    for (const track of tracks()) {
-      const album = String(track.movie || "").trim();
-      if (!album) continue;
-      const enrichedTrack = { ...track, fav: favs().has(track.n), _search: searchMap[track.id] };
+      const enrichedTrack = { ...track, _search: searchMap[track.id] };
       const fieldMatches = getTrackFieldMatches(enrichedTrack, preparedQuery);
       const match = [
         fieldMatches.find((entry) => entry.label === "Album"),
@@ -434,14 +452,15 @@ export function App() {
   });
 
   const searchPeopleResultsFor = (label) => {
-    const query = songSearch().trim();
-    if (!query) return [];
+    const rawQuery = songSearch().trim();
+    const query = searchQuery().trim();
+    if (!rawQuery || query !== rawQuery) return [];
     const preparedQuery = prepareSearchQuery(query);
     const searchMap = trackSearchMap();
     const groups = new Map();
 
     for (const track of tracks()) {
-      const enrichedTrack = { ...track, fav: favs().has(track.n), _search: searchMap[track.id] };
+      const enrichedTrack = { ...track, _search: searchMap[track.id] };
       const match = matchCreditName(enrichedTrack, label, preparedQuery);
       const name = String(match?.value || "").trim();
       const key = match?.key;
