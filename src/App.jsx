@@ -448,7 +448,7 @@ export function App() {
     if (!lyricsState().available) return;
     if (isMobile()) {
       setPlayerExpanded(true);
-      setMobileLyricsMode(true);
+      setMobileLyricsMode((value) => !value);
       return;
     }
     setLyricsOpen(true);
@@ -1503,7 +1503,6 @@ export function App() {
                 lyricsState={lyricsState()}
                 lyricsMode={mobileLyricsMode()}
                 onToggleLyrics={openLyricsPanel}
-                onExitLyrics={() => setMobileLyricsMode(false)}
                 onOpenAlbum={() => openAlbum(track().movie)}
                 onCollapse={() => { setMobileLyricsMode(false); setPlayerExpanded(false); }}
               />
