@@ -1,0 +1,107 @@
+name: Initial Internet Archive Audio Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_ref:
+        description: "Git ref to read the app manifest from"
+        required: false
+        default: "main"
+      item:
+        description: "Internet Archive item identifier"
+        required: false
+        default: "isaibox-public-library"
+      allow_128_fallback:
+        description: "Use 128kbps when a 320kbps link is not available"
+        required: false
+        default: "true"
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        shard: [0, 1, 2, 3, 4]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.publish_ref || 'main' }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install backup dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r packages/isaibox-local/requirements-local.txt internetarchive cryptography
+
+      - name: Download current published DuckDB
+        shell: bash
+        run: |
+          mkdir -p packages/isaibox-local/app/data packages/isaibox-local/app/.cache/audio
+          DOWNLOAD_URL="$(python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("packages/isaibox-local/app/data/library-manifest.json").read_text())
+          print(manifest["download_url"])
+          PY
+          )"
+          curl -fL --retry 3 --retry-delay 20 \
+            -o packages/isaibox-local/app/data/masstamilan.duckdb \
+            "${DOWNLOAD_URL}"
+
+      - name: Backfill audio shard
+        shell: bash
+        env:
+          IA_ACCESS_KEY: ${{ secrets.IA_ACCESS_KEY }}
+          IA_SECRET_KEY: ${{ secrets.IA_SECRET_KEY }}
+          IA_ENCRYPTION_PASSPHRASE: ${{ secrets.IA_ENCRYPTION_PASSPHRASE }}
+          IA_ITEM: ${{ github.event.inputs.item || 'isaibox-public-library' }}
+          IA_ALLOW_128_FALLBACK: ${{ github.event.inputs.allow_128_fallback || 'true' }}
+        run: |
+          if [ -z "${IA_ACCESS_KEY}" ] || [ -z "${IA_SECRET_KEY}" ]; then
+            echo "IA_ACCESS_KEY and IA_SECRET_KEY secrets are required."
+            exit 1
+          fi
+          if [ -z "${IA_ENCRYPTION_PASSPHRASE}" ]; then
+            echo "IA_ENCRYPTION_PASSPHRASE secret is required."
+            exit 1
+          fi
+
+          AUDIO_FLAGS="--allow-128-fallback"
+          if [ "${IA_ALLOW_128_FALLBACK}" != "true" ]; then
+            AUDIO_FLAGS="--strict-320-only"
+          fi
+
+          python scripts/backup_internet_archive.py \
+            --item "${IA_ITEM}" \
+            --include-audio \
+            --download-missing-audio \
+            --audio-only \
+            --audio-limit 0 \
+            --audio-attempt-limit 0 \
+            --audio-hydration-seconds 18000 \
+            --download-delay 8 \
+            --audio-shard-index "${{ matrix.shard }}" \
+            --audio-shard-count 5 \
+            ${AUDIO_FLAGS}
+
+      - name: Upload backfill plan artifact
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: internet-archive-backfill-plan-${{ github.run_id }}-${{ matrix.shard }}
+          path: .ia-backup/upload-plan.csv
+          if-no-files-found: ignore
+          retention-days: 14
