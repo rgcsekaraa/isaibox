@@ -24,8 +24,12 @@ on:
         description: "Download missing audio from the library DB before uploading"
         required: false
         default: "true"
+      allow_128_fallback:
+        description: "Use 128kbps when a 320kbps link is not available"
+        required: false
+        default: "true"
       audio_limit:
-        description: "Maximum new 320kbps audio files to upload in this run; 0 means all missing files"
+        description: "Maximum new audio files to upload in this run; 0 means all missing files"
         required: false
         default: "0"
 
@@ -82,6 +86,7 @@ jobs:
           IA_ENCRYPTION_PASSPHRASE: ${{ secrets.IA_ENCRYPTION_PASSPHRASE }}
           IA_ITEM: ${{ github.event.inputs.item || 'isaibox-public-library' }}
           IA_AUDIO_LIMIT: ${{ github.event.inputs.audio_limit || '0' }}
+          IA_ALLOW_128_FALLBACK: ${{ github.event.inputs.allow_128_fallback || 'true' }}
           INCLUDE_AUDIO: ${{ github.event.inputs.include_audio || 'true' }}
           DOWNLOAD_MISSING_AUDIO: ${{ github.event.inputs.download_missing_audio || 'true' }}
         run: |
@@ -100,6 +105,9 @@ jobs:
           fi
           if [ "${DOWNLOAD_MISSING_AUDIO}" = "true" ]; then
             AUDIO_FLAGS="${AUDIO_FLAGS} --download-missing-audio"
+          fi
+          if [ "${IA_ALLOW_128_FALLBACK}" != "true" ]; then
+            AUDIO_FLAGS="${AUDIO_FLAGS} --strict-320-only"
           fi
 
           python scripts/backup_internet_archive.py \

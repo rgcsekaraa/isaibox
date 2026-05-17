@@ -148,9 +148,9 @@ The `Backup Internet Archive` GitHub Actions workflow publishes an encrypted bac
 - Required repository secrets: `IA_ACCESS_KEY`, `IA_SECRET_KEY`, `IA_ENCRYPTION_PASSPHRASE`
 - Optional workflow input: `item` defaults to `isaibox-public-library`
 - Metadata backup excludes user, session, favorite, and preference tables before encryption
-- Audio backup uses `url_320kbps` only by default, so it does not silently store lower bitrate files
+- Audio backup prefers `url_320kbps` and falls back to `url_128kbps` when 320kbps is not available
 - Archive object names are HMAC-hashed and file contents are AES-256-GCM encrypted; the public item is unusable without `IA_ENCRYPTION_PASSPHRASE`
-- Scheduled runs try to upload all missing 320kbps audio files; set `audio_limit` when you want a smaller batch
+- Scheduled runs try to upload all missing audio files; set `audio_limit` when you want a smaller batch
 
 Backup locally with:
 

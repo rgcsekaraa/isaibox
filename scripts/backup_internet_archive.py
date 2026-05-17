@@ -524,7 +524,9 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser.add_argument("--include-audio", action="store_true")
     parser.add_argument("--download-missing-audio", action="store_true")
     parser.add_argument("--audio-limit", type=int, default=int(os.environ.get("IA_AUDIO_LIMIT", "0") or "0"))
-    parser.add_argument("--allow-128-fallback", action="store_true")
+    fallback_default = os.environ.get("IA_ALLOW_128_FALLBACK", "true").strip().lower() != "false"
+    parser.add_argument("--allow-128-fallback", action="store_true", default=fallback_default)
+    parser.add_argument("--strict-320-only", action="store_false", dest="allow_128_fallback")
     parser.add_argument("--download-delay", type=float, default=float(os.environ.get("IA_DOWNLOAD_DELAY", "1.0") or "0"))
     parser.add_argument("--download-timeout", type=int, default=int(os.environ.get("IA_DOWNLOAD_TIMEOUT", "90") or "90"))
     parser.add_argument("--dry-run", action="store_true")
