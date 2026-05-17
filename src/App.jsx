@@ -787,6 +787,29 @@ export function App() {
     onCleanup(() => window.removeEventListener("keydown", onKeyDown));
   });
 
+  onMount(() => {
+    if (!("mediaSession" in navigator)) return;
+    const setHandler = (action, handler) => {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler);
+      } catch {}
+    };
+    setHandler("play", () => setIsPlaying(true));
+    setHandler("pause", () => setIsPlaying(false));
+    setHandler("previoustrack", () => handlePrev());
+    setHandler("nexttrack", () => handleNext());
+    setHandler("seekbackward", (details) => seekTo(position() - (details.seekOffset || 10)));
+    setHandler("seekforward", (details) => seekTo(position() + (details.seekOffset || 10)));
+    setHandler("seekto", (details) => {
+      if (typeof details.seekTime === "number") seekTo(details.seekTime);
+    });
+    onCleanup(() => {
+      ["play", "pause", "previoustrack", "nexttrack", "seekbackward", "seekforward", "seekto"].forEach((action) => {
+        setHandler(action, null);
+      });
+    });
+  });
+
   const seekTo = (nextPosition) => {
     const safePosition = Math.max(0, Number(nextPosition) || 0);
     setPosition(safePosition);
@@ -800,6 +823,28 @@ export function App() {
     audioEl.volume = Math.max(0, Math.min(1, volume() / 100));
     audioEl.muted = muted();
     audioEl.playbackRate = speed();
+  });
+
+  createEffect(() => {
+    if (!("mediaSession" in navigator)) return;
+    const track = currentTrack();
+    navigator.mediaSession.playbackState = isPlaying() ? "playing" : "paused";
+    if (track) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: track.title || "isaibox",
+        artist: track.singer || "",
+        album: track.movie || "",
+      });
+    }
+    if ("setPositionState" in navigator.mediaSession) {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: Math.max(0, Number(duration()) || parseDur(track?.duration || "0:00")),
+          playbackRate: speed(),
+          position: Math.max(0, Number(position()) || 0),
+        });
+      } catch {}
+    }
   });
 
   createEffect(() => {
