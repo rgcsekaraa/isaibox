@@ -158,6 +158,7 @@ export function App() {
   const [mobileView, setMobileView] = createSignal("list"); // list | playlist
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [playerExpanded, setPlayerExpanded] = createSignal(false);
+  const [mobileLyricsMode, setMobileLyricsMode] = createSignal(false);
   const [pendingTrackReveal, setPendingTrackReveal] = createSignal(false);
 
   // Player state
@@ -445,6 +446,11 @@ export function App() {
   };
   const openLyricsPanel = () => {
     if (!lyricsState().available) return;
+    if (isMobile()) {
+      setPlayerExpanded(true);
+      setMobileLyricsMode(true);
+      return;
+    }
     setLyricsOpen(true);
   };
 
@@ -467,6 +473,7 @@ export function App() {
 
   createEffect(() => {
     if (lyricsOpen() && !lyricsState().available) setLyricsOpen(false);
+    if (mobileLyricsMode() && !lyricsState().available) setMobileLyricsMode(false);
   });
 
   const filteredTracks = createMemo(() => {
@@ -1222,6 +1229,10 @@ export function App() {
   });
 
   createEffect(() => {
+    if (!playerExpanded()) setMobileLyricsMode(false);
+  });
+
+  createEffect(() => {
     if (isMobile() && tab() === "Library" && mobileView() !== "list" && !songSearch().trim()) {
       setSearchOpen(false);
     }
@@ -1464,7 +1475,7 @@ export function App() {
           tab={tab()}
           setTab={(t) => { changeTab(t); setSearchOpen(false); }}
         />
-        <div class="fp-wrap" classList={{ open: playerExpanded() }}>
+        <div class="fp-wrap" classList={{ open: playerExpanded(), "lyrics-mode": mobileLyricsMode() }}>
           <Show when={currentTrack()}>
             {(track) => (
               <FullPlayer
@@ -1490,20 +1501,15 @@ export function App() {
                 onSaveToPlaylist={() => addToActivePlaylist(track().n)}
                 onShare={() => shareTrack(track())}
                 lyricsState={lyricsState()}
+                lyricsMode={mobileLyricsMode()}
                 onToggleLyrics={openLyricsPanel}
+                onExitLyrics={() => setMobileLyricsMode(false)}
                 onOpenAlbum={() => openAlbum(track().movie)}
-                onCollapse={() => setPlayerExpanded(false)}
+                onCollapse={() => { setMobileLyricsMode(false); setPlayerExpanded(false); }}
               />
             )}
           </Show>
         </div>
-        <Show when={lyricsOpen()}>
-          <div class="lyrics-mobile-backdrop" onClick={() => setLyricsOpen(false)}>
-            <section class="lyrics-mobile-sheet" onClick={(event) => event.stopPropagation()}>
-              <LyricsPanel ctx={ctx} mobile />
-            </section>
-          </div>
-        </Show>
       </Show>
       <audio
         ref={audioEl}

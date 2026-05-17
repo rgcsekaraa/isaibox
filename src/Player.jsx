@@ -1,4 +1,4 @@
-import { createSignal, Show, onCleanup } from "solid-js";
+import { createEffect, createSignal, For, Show, onCleanup } from "solid-js";
 import { Icon } from "./Icon.jsx";
 import { parseDur, fmtTime } from "./utils.js";
 
@@ -289,25 +289,134 @@ export function MiniPlayer(props) {
 }
 
 // ─── Mobile player sheet ─────────────────────────────────────────
+function parseSyncedLyrics(value = "") {
+  const lines = [];
+  for (const rawLine of String(value || "").split("\n")) {
+    const stamps = [...rawLine.matchAll(/\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g)];
+    if (!stamps.length) continue;
+    const text = rawLine.replace(/(?:\[\d{1,2}:\d{2}(?:\.\d{1,3})?\])+/g, "").trim();
+    if (!text) continue;
+    for (const stamp of stamps) {
+      const minutes = Number(stamp[1]) || 0;
+      const seconds = Number(stamp[2]) || 0;
+      const fractionText = (stamp[3] || "0").padEnd(3, "0").slice(0, 3);
+      lines.push({ time: minutes * 60 + seconds + ((Number(fractionText) || 0) / 1000), text });
+    }
+  }
+  return lines.sort((a, b) => a.time - b.time);
+}
+
+function MobilePlayerLyrics(props) {
+  let bodyEl;
+  let lastScrolledLine = -1;
+  const lyrics = () => props.lyricsState || {};
+  const syncedLines = () => parseSyncedLyrics(lyrics().syncedLyrics);
+  const plainLines = () => String(lyrics().plainLyrics || "").split("\n").filter((line) => line.trim());
+  const activeLineIndex = () => {
+    const lines = syncedLines();
+    const current = Number(props.position) || 0;
+    let active = -1;
+    for (let index = 0; index < lines.length; index += 1) {
+      if (lines[index].time <= current + 0.2) active = index;
+    }
+    return active;
+  };
+
+  createEffect(() => {
+    const index = activeLineIndex();
+    if (index < 0 || !bodyEl || index === lastScrolledLine) return;
+    lastScrolledLine = index;
+    requestAnimationFrame(() => {
+      bodyEl?.querySelector(`[data-mobile-lyrics-line="${index}"]`)?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    });
+  });
+
+  return (
+    <div class="fp-lyrics-view">
+      <div class="fp-lyrics-now">
+        <div class="fp-lyrics-song">{props.track.title}</div>
+        <div class="fp-lyrics-sub">{props.track.singer || props.track.movie}</div>
+      </div>
+      <div class="fp-lyrics-body" ref={bodyEl}>
+        <Show
+          when={syncedLines().length > 0}
+          fallback={
+            <For each={plainLines()}>
+              {(line) => <p class="fp-lyrics-line plain">{line}</p>}
+            </For>
+          }
+        >
+          <For each={syncedLines()}>
+            {(line, index) => (
+              <p
+                class="fp-lyrics-line"
+                data-mobile-lyrics-line={index()}
+                classList={{ active: index() === activeLineIndex(), past: index() < activeLineIndex() }}
+              >
+                {line.text}
+              </p>
+            )}
+          </For>
+        </Show>
+      </div>
+      <div class="fp-lyrics-controls">
+        <div class="fp-lyrics-scrub">
+          <Scrubber value={props.position} max={props.duration} onChange={props.setPosition} />
+          <div class="fp-times mono">
+            <span>{fmtTime(props.position)}</span>
+            <span>{fmtTime(props.duration)}</span>
+          </div>
+        </div>
+        <div class="fp-lyrics-transport">
+          <button class="fp-tr-btn" onClick={() => props.onPrev()}><Icon name="prev" size={22} /></button>
+          <button class="fp-tr-play compact" classList={{ loading: props.audioLoading }} onClick={() => props.setIsPlaying(!props.isPlaying)}>
+            <Show when={props.audioLoading} fallback={<Icon name={props.isPlaying ? "pause" : "play"} size={19} />}>
+              <Icon name="spinner" size={20} />
+            </Show>
+          </button>
+          <button class="fp-tr-btn" onClick={() => props.onNext()}><Icon name="next" size={22} /></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function FullPlayer(props) {
   const duration = () => props.duration || parseDur(props.track.duration);
   return (
     <div class="full-player">
-      <div class="fp-content">
+      <div class="fp-content" classList={{ lyrics: props.lyricsMode }}>
         <div class="fp-header">
           <button class="fp-icon" onClick={() => props.onCollapse()}>
             <Icon name="chevron-down" size={20} />
           </button>
           <div class="fp-header-meta">
-            <div class="fp-header-kicker">{props.playbackSource?.caption || "Album"}</div>
-            <button class="fp-header-title fp-album-title" onClick={() => props.playbackSource ? props.onOpenPlaybackSource?.() : props.onOpenAlbum?.()}>
-              {props.playbackSource?.label || props.track.movie}
-            </button>
+            <Show
+              when={props.lyricsMode}
+              fallback={
+                <>
+                  <div class="fp-header-kicker">{props.playbackSource?.caption || "Album"}</div>
+                  <button class="fp-header-title fp-album-title" onClick={() => props.playbackSource ? props.onOpenPlaybackSource?.() : props.onOpenAlbum?.()}>
+                    {props.playbackSource?.label || props.track.movie}
+                  </button>
+                </>
+              }
+            >
+              <div class="fp-header-kicker">Now Playing</div>
+              <div class="fp-header-title">Lyrics</div>
+            </Show>
           </div>
-          <button class="fp-icon" onClick={() => props.onSaveToPlaylist?.()}><Icon name="dots" size={18} /></button>
+          <Show
+            when={props.lyricsMode}
+            fallback={<button class="fp-icon" onClick={() => props.onSaveToPlaylist?.()}><Icon name="dots" size={18} /></button>}
+          >
+            <button class="fp-icon active" onClick={() => props.onExitLyrics?.()}><Icon name="lyrics" size={18} /></button>
+          </Show>
         </div>
 
-        <div class="fp-info">
+        <Show
+          when={props.lyricsMode}
+          fallback={<div class="fp-info">
           <div class="fp-title-row">
             <div class="fp-info-text">
               <div class="fp-song-title">{props.track.title}</div>
@@ -378,7 +487,21 @@ export function FullPlayer(props) {
               <span>Speed</span>
             </button>
           </div>
-        </div>
+        </div>}
+        >
+          <MobilePlayerLyrics
+            track={props.track}
+            lyricsState={props.lyricsState}
+            position={props.position}
+            duration={duration()}
+            setPosition={props.setPosition}
+            isPlaying={props.isPlaying}
+            audioLoading={props.audioLoading}
+            setIsPlaying={props.setIsPlaying}
+            onPrev={props.onPrev}
+            onNext={props.onNext}
+          />
+        </Show>
       </div>
     </div>
   );
