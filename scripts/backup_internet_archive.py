@@ -51,6 +51,10 @@ class SongSource:
     url: str
 
 
+class RateLimitedError(RuntimeError):
+    pass
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -327,6 +331,8 @@ def download_audio(song: SongSource, destination: Path, timeout: int) -> bool:
         headers["Referer"] = song.album_url
     try:
         with requests.get(song.url, headers=headers, stream=True, timeout=(10, timeout), allow_redirects=True) as response:
+            if response.status_code == 429:
+                raise RateLimitedError(f"Upstream rate-limited backup downloads at song {song.song_id}.")
             if not is_audio_response(response):
                 print(
                     f"Skipping {song.song_id}: non-audio response "
@@ -359,9 +365,11 @@ def hydrate_missing_audio(
     limit: int,
     delay: float,
     timeout: int,
+    attempt_limit: int,
 ) -> dict[str, Path]:
     pending: dict[str, Path] = {}
     remaining = limit
+    attempts_remaining = attempt_limit
     for song_id, song in song_sources.items():
         logical_name = f"audio/{song_id}.mp3"
         encrypted_name = encrypted_remote_name(logical_name, passphrase)
@@ -369,15 +377,23 @@ def hydrate_missing_audio(
             continue
         if limit and remaining <= 0:
             break
+        if attempt_limit and attempts_remaining <= 0:
+            print(f"Reached audio download attempt limit ({attempt_limit}); stopping hydration.")
+            break
         destination = audio_dir / f"{song_id}.mp3"
         if file_looks_audio(destination):
             pending[logical_name] = destination
-        elif download_audio(song, destination, timeout):
-            pending[logical_name] = destination
+        else:
+            if attempt_limit:
+                attempts_remaining -= 1
+            if download_audio(song, destination, timeout):
+                pending[logical_name] = destination
+            else:
+                if delay > 0:
+                    time.sleep(delay)
+                continue
             if delay > 0:
                 time.sleep(delay)
-        else:
-            continue
         if limit:
             remaining -= 1
     return pending
@@ -523,7 +539,13 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser.add_argument("--collection", default=os.environ.get("IA_COLLECTION", ""))
     parser.add_argument("--include-audio", action="store_true")
     parser.add_argument("--download-missing-audio", action="store_true")
-    parser.add_argument("--audio-limit", type=int, default=int(os.environ.get("IA_AUDIO_LIMIT", "0") or "0"))
+    parser.add_argument("--audio-limit", type=int, default=int(os.environ.get("IA_AUDIO_LIMIT", "25") or "0"))
+    parser.add_argument(
+        "--audio-attempt-limit",
+        type=int,
+        default=int(os.environ.get("IA_AUDIO_ATTEMPT_LIMIT", "0") or "0"),
+        help="Maximum upstream download attempts per run; defaults to audio-limit, or 25 when audio-limit is 0.",
+    )
     fallback_default = os.environ.get("IA_ALLOW_128_FALLBACK", "true").strip().lower() != "false"
     parser.add_argument("--allow-128-fallback", action="store_true", default=fallback_default)
     parser.add_argument("--strict-320-only", action="store_false", dest="allow_128_fallback")
@@ -561,16 +583,22 @@ def main(argv: Iterable[str]) -> int:
         audio_candidates.update(collect_cached_audio(audio_dir, song_sources, existing_names, passphrase))
         remaining_limit = max(0, args.audio_limit - len(audio_candidates)) if args.audio_limit else 0
         if args.download_missing_audio and (not args.audio_limit or remaining_limit > 0):
-            hydrated = hydrate_missing_audio(
-                audio_dir=audio_dir,
-                song_sources=song_sources,
-                existing_remote_names=existing_names,
-                already_pending=set(audio_candidates),
-                passphrase=passphrase,
-                limit=remaining_limit,
-                delay=args.download_delay,
-                timeout=args.download_timeout,
-            )
+            attempt_limit = args.audio_attempt_limit or remaining_limit or 25
+            try:
+                hydrated = hydrate_missing_audio(
+                    audio_dir=audio_dir,
+                    song_sources=song_sources,
+                    existing_remote_names=existing_names,
+                    already_pending=set(audio_candidates),
+                    passphrase=passphrase,
+                    limit=remaining_limit,
+                    delay=args.download_delay,
+                    timeout=args.download_timeout,
+                    attempt_limit=attempt_limit,
+                )
+            except RateLimitedError as exc:
+                print(f"{exc} Stopping audio hydration for this run; metadata and already prepared audio will still upload.")
+                hydrated = {}
             audio_candidates.update(hydrated)
         if args.audio_limit:
             audio_candidates = dict(list(sorted(audio_candidates.items()))[: args.audio_limit])
@@ -584,6 +612,7 @@ def main(argv: Iterable[str]) -> int:
         "existing_remote_audio_count": sum(1 for name in existing_names if name.startswith("encrypted/audio/")),
         "pending_audio_upload_count": len(audio_candidates),
         "audio_limit": args.audio_limit,
+        "audio_attempt_limit": args.audio_attempt_limit or remaining_limit or 25 if args.include_audio else 0,
     }
     backup_manifest_path = Path(metadata_files["metadata/backup-manifest.json"])
     backup_manifest_path.write_text(json.dumps(backup_manifest, indent=2, sort_keys=True) + "\n")

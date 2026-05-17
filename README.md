@@ -150,7 +150,7 @@ The `Backup Internet Archive` GitHub Actions workflow publishes an encrypted bac
 - Metadata backup excludes user, session, favorite, and preference tables before encryption
 - Audio backup prefers `url_320kbps` and falls back to `url_128kbps` when 320kbps is not available
 - Archive object names are HMAC-hashed and file contents are AES-256-GCM encrypted; the public item is unusable without `IA_ENCRYPTION_PASSPHRASE`
-- Scheduled runs try to upload all missing audio files; set `audio_limit` when you want a smaller batch
+- Scheduled runs upload small batches by default: up to 25 upstream attempts with an 8 second delay, and stop early if the source returns HTTP 429
 
 Backup locally with:
 
