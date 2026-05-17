@@ -1116,6 +1116,7 @@ export function App() {
     setQueueCollapsed,
     mobileView, setMobileView,
     filteredTracks,
+    searchPending,
     searchAlbumResults,
     searchDirectorResults,
     searchSingerResults,

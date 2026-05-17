@@ -279,40 +279,44 @@ export function MobilePlaylistDetail(props) {
       </Show>
       <Show when={isSearch() && activeSearchTab() === "albums"}>
         <section class="m-search-albums">
-          <Show when={ctx.searchAlbumResults().length > 0} fallback={<div class="empty">No albums match this search.</div>}>
-            <For each={ctx.searchAlbumResults()}>
-              {(album) => (
-                <div class="m-search-album-row">
-                  <button class="m-search-album-main" onClick={() => ctx.openAlbum(album.name)}>
-                    <span class="m-search-album-title">{album.name}</span>
-                    <span class="m-search-album-sub">
-                      <Show when={album.matchLabel && album.matchValue}>
-                        {album.matchLabel}: {album.matchValue}
-                      </Show>
-                      <span>{album.count} tracks{album.year ? ` · ${album.year}` : ""}</span>
-                    </span>
-                  </button>
-                  <button class="m-icon" onClick={() => ctx.playPlaylist(album.tracks)}>
-                    <Icon name="play" size={14} />
-                  </button>
-                </div>
-              )}
-            </For>
+          <Show when={!ctx.searchPending()} fallback={<MobileLoadingState text="Searching..." />}>
+            <Show when={ctx.searchAlbumResults().length > 0} fallback={<div class="empty">No albums match this search.</div>}>
+              <For each={ctx.searchAlbumResults()}>
+                {(album) => (
+                  <div class="m-search-album-row">
+                    <button class="m-search-album-main" onClick={() => ctx.openAlbum(album.name)}>
+                      <span class="m-search-album-title">{album.name}</span>
+                      <span class="m-search-album-sub">
+                        <Show when={album.matchLabel && album.matchValue}>
+                          {album.matchLabel}: {album.matchValue}
+                        </Show>
+                        <span>{album.count} tracks{album.year ? ` · ${album.year}` : ""}</span>
+                      </span>
+                    </button>
+                    <button class="m-icon" onClick={() => ctx.playPlaylist(album.tracks)}>
+                      <Icon name="play" size={14} />
+                    </button>
+                  </div>
+                )}
+              </For>
+            </Show>
           </Show>
         </section>
       </Show>
       <Show when={isSearch() && (activeSearchTab() === "directors" || activeSearchTab() === "singers")}>
         <section class="m-search-people">
-          <For each={activeSearchTab() === "directors" ? ctx.searchDirectorResults() : ctx.searchSingerResults()}>
-            {(item) => (
-              <div class="m-search-person-row">
-                <button class="m-search-person-main" onClick={() => ctx.openSearchPersonAlbums(item.name)}>
-                  <span class="m-search-person-title">{item.name}</span>
-                  <span class="m-search-person-sub">{item.albumCount} albums · {item.trackCount} songs</span>
-                </button>
-              </div>
-            )}
-          </For>
+          <Show when={!ctx.searchPending()} fallback={<MobileLoadingState text="Searching..." />}>
+            <For each={activeSearchTab() === "directors" ? ctx.searchDirectorResults() : ctx.searchSingerResults()}>
+              {(item) => (
+                <div class="m-search-person-row">
+                  <button class="m-search-person-main" onClick={() => ctx.openSearchPersonAlbums(item.name)}>
+                    <span class="m-search-person-title">{item.name}</span>
+                    <span class="m-search-person-sub">{item.albumCount} albums · {item.trackCount} songs</span>
+                  </button>
+                </div>
+              )}
+            </For>
+          </Show>
         </section>
       </Show>
       <Show when={!isSearch() || activeSearchTab() === "songs"}>
@@ -371,10 +375,17 @@ export function MobilePlaylistDetail(props) {
         </For>
         <Show when={filteredTracks().length === 0}>
           <Show
-            when={!ctx.loading() && ctx.playlistLoading()}
-            fallback={<div class="empty">{ctx.trackSearch() ? `No tracks match "${ctx.trackSearch()}"` : "No tracks available"}</div>}
+            when={ctx.searchPending()}
+            fallback={
+              <Show
+                when={!ctx.loading() && ctx.playlistLoading()}
+                fallback={<div class="empty">{ctx.trackSearch() ? `No tracks match "${ctx.trackSearch()}"` : "No tracks available"}</div>}
+              >
+                <MobileLoadingState text="Loading playlist..." />
+              </Show>
+            }
           >
-            <MobileLoadingState text="Loading playlist..." />
+            <MobileLoadingState text="Searching..." />
           </Show>
         </Show>
       </div>

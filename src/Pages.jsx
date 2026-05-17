@@ -98,27 +98,29 @@ function SearchAlbumResults(props) {
   const albums = () => props.albums || [];
   return (
     <section class="search-albums">
-      <Show when={albums().length > 0} fallback={<div class="empty">No albums match this search.</div>}>
-        <div class="search-album-grid">
-          <For each={albums()}>
-            {(album) => (
-              <div class="search-album-item">
-                <button class="search-album-main" onClick={() => props.onOpen?.(album.name)}>
-                  <span class="search-album-title">{album.name}</span>
-                  <span class="search-album-sub">
-                    <Show when={album.matchLabel && album.matchValue}>
-                      <span>{album.matchLabel}: {album.matchValue}</span>
-                    </Show>
-                    <span>{album.count} tracks{album.year ? ` · ${album.year}` : ""}</span>
-                  </span>
-                </button>
-                <button class="search-album-play" title={`Play ${album.name}`} onClick={() => props.onPlay?.(album.tracks)}>
-                  <Icon name="play" size={12} />
-                </button>
-              </div>
-            )}
-          </For>
-        </div>
+      <Show when={!props.loading} fallback={<LoadingState text="Searching..." />}>
+        <Show when={albums().length > 0} fallback={<div class="empty">No albums match this search.</div>}>
+          <div class="search-album-grid">
+            <For each={albums()}>
+              {(album) => (
+                <div class="search-album-item">
+                  <button class="search-album-main" onClick={() => props.onOpen?.(album.name)}>
+                    <span class="search-album-title">{album.name}</span>
+                    <span class="search-album-sub">
+                      <Show when={album.matchLabel && album.matchValue}>
+                        <span>{album.matchLabel}: {album.matchValue}</span>
+                      </Show>
+                      <span>{album.count} tracks{album.year ? ` · ${album.year}` : ""}</span>
+                    </span>
+                  </button>
+                  <button class="search-album-play" title={`Play ${album.name}`} onClick={() => props.onPlay?.(album.tracks)}>
+                    <Icon name="play" size={12} />
+                  </button>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
       </Show>
     </section>
   );
@@ -128,20 +130,22 @@ function SearchPeopleResults(props) {
   const items = () => props.items || [];
   return (
     <section class="search-people">
-      <Show when={items().length > 0} fallback={<div class="empty">No {props.emptyLabel || "matches"} found.</div>}>
-        <For each={items()}>
-          {(item) => (
-            <div class="search-person-item">
-              <button class="search-person-main" onClick={() => props.onOpenAlbums?.(item.name)}>
-                <span class="search-person-title">{item.name}</span>
-                <span class="search-person-sub">{item.albumCount} albums · {item.trackCount} songs</span>
-              </button>
-              <button class="search-person-action" onClick={() => props.onOpenAlbums?.(item.name)}>
-                Albums
-              </button>
-            </div>
-          )}
-        </For>
+      <Show when={!props.loading} fallback={<LoadingState text="Searching..." />}>
+        <Show when={items().length > 0} fallback={<div class="empty">No {props.emptyLabel || "matches"} found.</div>}>
+          <For each={items()}>
+            {(item) => (
+              <div class="search-person-item">
+                <button class="search-person-main" onClick={() => props.onOpenAlbums?.(item.name)}>
+                  <span class="search-person-title">{item.name}</span>
+                  <span class="search-person-sub">{item.albumCount} albums · {item.trackCount} songs</span>
+                </button>
+                <button class="search-person-action" onClick={() => props.onOpenAlbums?.(item.name)}>
+                  Albums
+                </button>
+              </div>
+            )}
+          </For>
+        </Show>
       </Show>
     </section>
   );
@@ -310,7 +314,10 @@ export function LibraryPage(props) {
               />
             )}
           </For>
-          <Show when={!ctx.loading() && !ctx.playlistLoading() && ctx.filteredTracks().length === 0}>
+          <Show when={isSearch() && ctx.searchPending() && ctx.filteredTracks().length === 0}>
+            <TrackTableSkeleton density={ctx.density()} />
+          </Show>
+          <Show when={!ctx.searchPending() && !ctx.loading() && !ctx.playlistLoading() && ctx.filteredTracks().length === 0}>
             <div class="empty">
               {ctx.songSearch()
                 ? `No songs match "${ctx.songSearch()}"`
@@ -328,6 +335,7 @@ export function LibraryPage(props) {
       <Show when={isSearch() && activeSearchTab() === "albums"}>
         <SearchAlbumResults
           albums={ctx.searchAlbumResults()}
+          loading={ctx.searchPending()}
           onOpen={ctx.openAlbum}
           onPlay={ctx.playPlaylist}
         />
@@ -335,6 +343,7 @@ export function LibraryPage(props) {
       <Show when={isSearch() && activeSearchTab() === "directors"}>
         <SearchPeopleResults
           items={ctx.searchDirectorResults()}
+          loading={ctx.searchPending()}
           emptyLabel="music directors"
           onOpenAlbums={ctx.openSearchPersonAlbums}
         />
@@ -342,6 +351,7 @@ export function LibraryPage(props) {
       <Show when={isSearch() && activeSearchTab() === "singers"}>
         <SearchPeopleResults
           items={ctx.searchSingerResults()}
+          loading={ctx.searchPending()}
           emptyLabel="singers"
           onOpenAlbums={ctx.openSearchPersonAlbums}
         />
