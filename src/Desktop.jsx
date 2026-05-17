@@ -20,15 +20,16 @@ const SHORTCUT_GROUPS = [
     items: [
       { keys: ["/"], label: "Focus search" },
       { keys: ["F"], label: "Favorite current track" },
-      { keys: ["+", "="], label: "Add current track to queue" },
-      { keys: ["Q"], label: "Collapse or open queue" },
+      { keys: ["+", "="], label: "Add current track to queue and open queue" },
+      { keys: ["Q"], label: "Collapse or expand queue" },
     ],
   },
   {
     title: "Panels",
     items: [
-      { keys: ["?"], label: "Show keyboard shortcuts" },
-      { keys: ["Esc"], label: "Close drawer, settings, or dialog" },
+      { keys: ["?"], label: "Open or close keyboard shortcuts" },
+      { keys: [","], label: "Open or close settings" },
+      { keys: ["Esc"], label: "Close settings, shortcuts, or dialog" },
     ],
   },
 ];

@@ -894,9 +894,21 @@ export function App() {
 
       if (event.key === "?") {
         event.preventDefault();
-        setShortcutsOpen(true);
+        setShortcutsOpen((open) => !open);
+        setSettingsOpen(false);
+        setCreatePlaylistOpen(false);
         return;
       }
+
+      if (event.key === ",") {
+        event.preventDefault();
+        setSettingsOpen((open) => !open);
+        setShortcutsOpen(false);
+        setCreatePlaylistOpen(false);
+        return;
+      }
+
+      if (settingsOpen() || shortcutsOpen() || createPlaylistOpen()) return;
 
       if (event.code === "Space" || key === "k") {
         event.preventDefault();
