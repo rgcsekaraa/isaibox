@@ -126,8 +126,10 @@ export function NowPlayingDock(props) {
       <div class="dock-grid">
         <div class="dock-left">
           <div class="dock-meta">
-            <div class="dock-song" title={props.track.title}>{props.track.title}</div>
-            <PlaybackSourcePill source={props.playbackSource} onOpen={props.onOpenPlaybackSource} compact />
+            <div class="dock-title-row">
+              <div class="dock-song" title={props.track.title}>{props.track.title}</div>
+              <PlaybackSourcePill source={props.playbackSource} onOpen={props.onOpenPlaybackSource} compact />
+            </div>
             <div class="dock-sub">
               <span>{props.track.singer}</span>
               <span class="dock-sep">from</span>
@@ -244,10 +246,12 @@ export function MiniPlayer(props) {
       <div class="mini-progress"><div class="mini-progress-fill" style={{ width: `${pct()}%` }} /></div>
       <div class="mini-content">
         <div class="mini-meta">
-          <div class="mini-title">{props.track.title}</div>
+          <div class="mini-title-row">
+            <div class="mini-title">{props.track.title}</div>
+            <PlaybackSourcePill source={props.playbackSource} onOpen={props.onOpenPlaybackSource} compact />
+          </div>
           <div class="mini-sub-row">
             <span class="mini-sub">{props.track.singer}</span>
-            <PlaybackSourcePill source={props.playbackSource} onOpen={props.onOpenPlaybackSource} compact />
           </div>
         </div>
         <div class="mini-actions" onClick={(e) => e.stopPropagation()}>

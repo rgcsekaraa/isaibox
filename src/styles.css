@@ -1220,7 +1220,13 @@ button:disabled,
 }
 .dock-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .dock-meta { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.dock-song { font-size: 13.5px; font-weight: 500; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dock-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.dock-song { min-width: 0; font-size: 13.5px; font-weight: 500; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .play-source-pill {
   display: inline-flex;
   align-items: center;
@@ -1255,7 +1261,7 @@ button:disabled,
 .play-source-pill:hover { color: var(--fg); border-color: var(--fg-faint); }
 .play-source-pill.compact {
   height: 18px;
-  max-width: min(240px, 100%);
+  max-width: min(220px, 42%);
   padding: 0 6px;
   font-size: 10px;
 }
@@ -1944,17 +1950,18 @@ button:disabled,
   padding: 0 14px 0 18px;
 }
 .mini-meta { min-width: 0; }
-.mini-title { font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini-title-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.mini-title { min-width: 0; font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mini-title-loading { display: flex; align-items: center; gap: 8px; }
 .mini-sub-row { display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 1px; }
 .mini-sub { min-width: 0; font-size: 11.5px; color: var(--fg-mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mini-sub-row .play-source-pill {
+.mini-title-row .play-source-pill {
   flex: 0 1 auto;
-  max-width: 48vw;
+  max-width: 38vw;
   height: 17px;
   padding: 0 6px;
 }
-.mini-sub-row .play-source-pill span { display: none; }
+.mini-title-row .play-source-pill span { display: none; }
 .mini-actions { display: flex; gap: 2px; }
 .mini-btn {
   width: 40px; height: 40px;
