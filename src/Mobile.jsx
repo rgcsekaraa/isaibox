@@ -254,26 +254,33 @@ export function MobilePlaylistDetail(props) {
           <span class="m-detail-spacer" aria-hidden="true" />
         </div>
         <Show when={isSearch()}>
-          <div class="m-search-tabs" role="tablist" aria-label="Search result type">
-            <For each={SEARCH_TABS}>
-              {(tab) => {
-                const count = () => searchCounts()[tab.id] || 0;
-                const disabled = () => count() === 0 && activeSearchTab() !== tab.id;
-                return (
-                  <button
-                    role="tab"
-                    class="m-search-tab"
-                    classList={{ active: activeSearchTab() === tab.id }}
-                    disabled={disabled()}
-                    aria-disabled={disabled()}
-                    onClick={() => !disabled() && ctx.setSearchResultTab(tab.id)}
-                  >
-                    <span>{tab.label}</span>
-                    <span>{count()}</span>
-                  </button>
-                );
-              }}
-            </For>
+          <div class="m-search-toolbar">
+            <div class="m-search-tabs" role="tablist" aria-label="Search result type">
+              <For each={SEARCH_TABS}>
+                {(tab) => {
+                  const count = () => searchCounts()[tab.id] || 0;
+                  const disabled = () => count() === 0 && activeSearchTab() !== tab.id;
+                  return (
+                    <button
+                      role="tab"
+                      class="m-search-tab"
+                      classList={{ active: activeSearchTab() === tab.id }}
+                      disabled={disabled()}
+                      aria-disabled={disabled()}
+                      onClick={() => !disabled() && ctx.setSearchResultTab(tab.id)}
+                    >
+                      <span>{tab.label}</span>
+                      <span>{count()}</span>
+                    </button>
+                  );
+                }}
+              </For>
+            </div>
+            <Show when={activeSearchTab() === "songs"}>
+              <div class="m-sort-control m-sort-inline m-search-sort">
+                <MenuSelect class="sort-menu" label="Sort" value={ctx.sort()} onChange={ctx.setSort} options={SORT_OPTIONS} />
+              </div>
+            </Show>
           </div>
         </Show>
         <Show when={isAlbum() && filteredTracks().length > 0}>
@@ -281,7 +288,7 @@ export function MobilePlaylistDetail(props) {
             <Icon name="play" size={13} /><span>Play</span>
           </button>
         </Show>
-        <Show when={!isSearch() || activeSearchTab() === "songs"}>
+        <Show when={!isSearch()}>
           <div class="m-detail-controlbar">
             <Show when={hasScopedTracks()}>
               <div class="m-track-search">

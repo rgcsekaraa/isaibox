@@ -244,29 +244,44 @@ export function LibraryPage(props) {
       <div class="pl-header">
         <div class="pl-header-top">
           <div class="pl-title-block">
-            <Show when={isAlbum()}>
-              <div class="pl-kicker">Album</div>
-            </Show>
-            <div class="pl-title-line">
-              <h1 class="pl-title" classList={{ search: isSearch() }}>{playlist().name}</h1>
-              <Show when={isSearch()}>
-                <button
-                  class="search-help"
-                  title={SEARCH_HELP_TEXT}
-                  aria-label={SEARCH_HELP_TEXT}
-                  data-tooltip={SEARCH_HELP_TEXT}
-                >
-                  <Icon name="help" size={13} />
-                </button>
-              </Show>
-              <Show when={isAlbum() && ctx.activeAlbumTracks().length > 0}>
-                <button class="btn-secondary album-play-btn" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks(), { type: "album", label: ctx.activeAlbum(), caption: "Album" })}>
-                  <Icon name="play" size={13} /><span>Play</span>
-                </button>
-              </Show>
-            </div>
-            <Show when={isSearch()}>
-              <SearchTabs active={activeSearchTab()} counts={searchCounts()} onChange={ctx.setSearchResultTab} />
+            <Show
+              when={isSearch()}
+              fallback={
+                <>
+                  <Show when={isAlbum()}>
+                    <div class="pl-kicker">Album</div>
+                  </Show>
+                  <div class="pl-title-line">
+                    <h1 class="pl-title">{playlist().name}</h1>
+                    <Show when={isAlbum() && ctx.activeAlbumTracks().length > 0}>
+                      <button class="btn-secondary album-play-btn" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks(), { type: "album", label: ctx.activeAlbum(), caption: "Album" })}>
+                        <Icon name="play" size={13} /><span>Play</span>
+                      </button>
+                    </Show>
+                  </div>
+                </>
+              }
+            >
+              <div class="pl-search-toolbar">
+                <div class="pl-title-line search-title-line">
+                  <h1 class="pl-title">{playlist().name}</h1>
+                  <button
+                    class="search-help"
+                    title={SEARCH_HELP_TEXT}
+                    aria-label={SEARCH_HELP_TEXT}
+                    data-tooltip={SEARCH_HELP_TEXT}
+                  >
+                    <Icon name="help" size={13} />
+                  </button>
+                </div>
+                <SearchTabs active={activeSearchTab()} counts={searchCounts()} onChange={ctx.setSearchResultTab} />
+                <Show when={activeSearchTab() === "songs"}>
+                  <div class="sort-control search-sort-control">
+                    <span class="sort-label">Sort</span>
+                    <MenuSelect class="sort-menu" label="Sort" value={ctx.sort()} onChange={ctx.setSort} options={SORT_OPTIONS} />
+                  </div>
+                </Show>
+              </div>
             </Show>
           </div>
           <div class="pl-tools">
@@ -285,7 +300,7 @@ export function LibraryPage(props) {
                 </Show>
               </div>
             </Show>
-            <Show when={!isSearch() || activeSearchTab() === "songs"}>
+            <Show when={!isSearch()}>
               <div class="sort-control">
                 <span class="sort-label">Sort</span>
                 <MenuSelect class="sort-menu" label="Sort" value={ctx.sort()} onChange={ctx.setSort} options={SORT_OPTIONS} />
