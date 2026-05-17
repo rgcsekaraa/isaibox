@@ -1763,7 +1763,9 @@ def sync_duckdb_from_remote(force: bool = False) -> dict:
             totalBytes=int(remote_manifest.get("size") or 0),
         )
 
-        if not force and remote_manifest.get("version") == local_manifest.get("version"):
+        db_path = Path(db.DUCKDB_PATH)
+        db_missing = not db_path.exists() or db_path.stat().st_size <= 0
+        if not force and not db_missing and remote_manifest.get("version") == local_manifest.get("version"):
             return set_db_sync_state(
                 status="idle",
                 message="Library is up to date",
