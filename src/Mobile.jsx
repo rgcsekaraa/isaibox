@@ -220,7 +220,7 @@ export function MobilePlaylistDetail(props) {
 
   return (
     <div class="m-page m-page-detail">
-      <div class="m-detail-panel">
+      <div class="m-detail-panel" classList={{ "search-mode": isSearch() }}>
         <Show when={isSearch()}>
           <div class="m-detail-top">
             <button

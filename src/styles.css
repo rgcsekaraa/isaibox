@@ -1985,6 +1985,13 @@ button:disabled {
   background: var(--bg);
   overflow-anchor: none;
 }
+.m-detail-panel.search-mode {
+  gap: 7px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  border-bottom-color: transparent;
+  background: transparent;
+}
 .m-detail-top {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
@@ -2029,6 +2036,18 @@ button:disabled {
   white-space: nowrap;
 }
 .m-detail-title.search { font-size: 18px; }
+.m-detail-panel.search-mode .m-detail-top {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.m-detail-panel.search-mode .m-detail-title-row,
+.m-detail-panel.search-mode .m-detail-title.search {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.m-detail-panel.search-mode .m-detail-spacer {
+  width: 26px;
+}
 .search-help.mobile {
   width: 22px;
   height: 22px;
