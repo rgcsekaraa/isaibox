@@ -7,16 +7,8 @@ function syncVisualViewport() {
   const viewport = window.visualViewport;
   const innerHeight = window.innerHeight || document.documentElement.clientHeight;
   const visualHeight = viewport?.height || 0;
-  const isMobileShell = window.matchMedia?.("(max-width: 1023px)")?.matches;
-  const isStandalone =
-    window.matchMedia?.("(display-mode: standalone)")?.matches ||
-    window.navigator.standalone === true;
-  const activeElement = document.activeElement;
-  const isTextEditing =
-    activeElement &&
-    (["INPUT", "TEXTAREA", "SELECT"].includes(activeElement.tagName) || activeElement.isContentEditable);
-  const screenHeight = isStandalone && isMobileShell && !isTextEditing ? (window.screen?.height || 0) : 0;
-  const height = Math.round(Math.max(innerHeight, visualHeight, screenHeight, document.documentElement.clientHeight || 0));
+  const visibleHeight = Math.max(innerHeight, visualHeight, document.documentElement.clientHeight || 0);
+  const height = Math.round(visibleHeight);
   const root = document.documentElement;
   root.style.setProperty("--app-viewport-height", `${height}px`);
   root.style.setProperty("--app-viewport-top", "0px");
