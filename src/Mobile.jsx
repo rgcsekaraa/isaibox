@@ -221,38 +221,29 @@ export function MobilePlaylistDetail(props) {
   return (
     <div class="m-page m-page-detail">
       <div class="m-detail-panel">
-        <div class="m-detail-top">
-          <button
-            class="m-detail-back"
-            onClick={() => {
-              if (isSearch()) {
+        <Show when={isSearch()}>
+          <div class="m-detail-top">
+            <button
+              class="m-detail-back"
+              onClick={() => {
                 ctx.setSongSearch("");
                 ctx.setMobileView("list");
-              } else if (isAlbum()) {
-                ctx.closeAlbum();
-              } else {
-                ctx.setMobileView("list");
-              }
-            }}
-          >
-            <Icon name="chevron-left" size={20} />
-            <span>Library</span>
-          </button>
-          <div class="m-detail-meta">
-            <Show when={isAlbum()}>
-              <div class="m-page-kicker">Album</div>
-            </Show>
-            <div class="m-detail-title-row">
-              <h2 class="m-detail-title" classList={{ search: isSearch() }}>{playlist().name}</h2>
-              <Show when={isSearch()}>
+              }}
+            >
+              <Icon name="chevron-left" size={20} />
+              <span>Library</span>
+            </button>
+            <div class="m-detail-meta">
+              <div class="m-detail-title-row">
+                <h2 class="m-detail-title search">{playlist().name}</h2>
                 <button class="search-help mobile" title={SEARCH_HELP_TEXT} aria-label={SEARCH_HELP_TEXT}>
                   <Icon name="help" size={12} />
                 </button>
-              </Show>
+              </div>
             </div>
+            <span class="m-detail-spacer" aria-hidden="true" />
           </div>
-          <span class="m-detail-spacer" aria-hidden="true" />
-        </div>
+        </Show>
         <Show when={isSearch()}>
           <div class="m-search-toolbar">
             <div class="m-search-tabs" role="tablist" aria-label="Search result type">
@@ -283,13 +274,41 @@ export function MobilePlaylistDetail(props) {
             </Show>
           </div>
         </Show>
-        <Show when={isAlbum() && filteredTracks().length > 0}>
-          <button class="btn-secondary m-play-album" onClick={() => ctx.playPlaylist(ctx.activeAlbumTracks(), { type: "album", label: ctx.activeAlbum(), caption: "Album" })}>
-            <Icon name="play" size={13} /><span>Play</span>
-          </button>
-        </Show>
         <Show when={!isSearch()}>
-          <div class="m-detail-controlbar">
+          <div class="m-detail-compactbar">
+            <button
+              class="m-detail-back compact"
+              onClick={() => {
+                if (isAlbum()) {
+                  ctx.closeAlbum();
+                } else {
+                  ctx.setMobileView("list");
+                }
+              }}
+              title="Back to library"
+              aria-label="Back to library"
+            >
+              <Icon name="chevron-left" size={19} />
+            </button>
+            <div class="m-detail-compact-title">
+              <span>{playlist().name}</span>
+            </div>
+            <Show when={filteredTracks().length > 0}>
+              <button
+                class="m-detail-play"
+                onClick={() => {
+                  if (isAlbum()) {
+                    ctx.playPlaylist(ctx.activeAlbumTracks(), { type: "album", label: ctx.activeAlbum(), caption: "Album" });
+                  } else {
+                    ctx.playPlaylist(filteredTracks());
+                  }
+                }}
+                title="Play"
+                aria-label="Play"
+              >
+                <Icon name="play" size={14} />
+              </button>
+            </Show>
             <Show when={hasScopedTracks()}>
               <div class="m-track-search">
                 <Icon name="search" size={14} />
