@@ -324,7 +324,7 @@ self.onmessage = (event) => {
   const query = String(payload || "").trim();
   const cacheKey = normalizeSearchText(query);
   if (queryCache.has(cacheKey)) {
-    self.postMessage({ type: "results", requestId, payload: queryCache.get(cacheKey) });
+    self.postMessage({ type: "results", requestId, payload: { ...queryCache.get(cacheKey), query } });
     return;
   }
 
