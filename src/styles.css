@@ -2324,12 +2324,12 @@ button:disabled {
 }
 .fp-wrap.open { transform: translateY(0); pointer-events: auto; }
 .fp-wrap.lyrics-mode {
-  top: 0;
-  bottom: auto;
-  height: 100dvh;
-  height: var(--app-viewport-height);
-  min-height: 100%;
-  border-top: 0;
+  top: var(--m-header-h);
+  bottom: var(--m-tabs-h);
+  height: auto;
+  min-height: 0;
+  border-top: 1px solid var(--line);
+  box-shadow: none;
 }
 .full-player { position: relative; height: 100%; overflow: hidden; }
 .fp-content {
@@ -2347,7 +2347,7 @@ button:disabled {
   justify-content: flex-start;
   overflow: hidden;
   height: 100%;
-  padding: 10px 18px calc(env(safe-area-inset-bottom) + 14px);
+  padding: 10px 18px 14px;
 }
 
 .fp-header {
