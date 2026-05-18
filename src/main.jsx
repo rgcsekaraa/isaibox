@@ -5,17 +5,13 @@ import "./styles.css";
 
 function syncVisualViewport() {
   const viewport = window.visualViewport;
-  const isStandalone =
-    window.matchMedia?.("(display-mode: standalone)")?.matches ||
-    window.navigator.standalone === true;
   const innerHeight = window.innerHeight || document.documentElement.clientHeight;
-  const height = Math.round(isStandalone ? innerHeight : (viewport?.height || innerHeight));
-  const offsetTop = isStandalone ? 0 : Math.round(viewport?.offsetTop || 0);
-  const bottom = isStandalone ? 0 : Math.max(0, Math.round((innerHeight || height) - height - offsetTop));
+  const visualHeight = viewport?.height || 0;
+  const height = Math.round(Math.max(innerHeight, visualHeight, document.documentElement.clientHeight || 0));
   const root = document.documentElement;
   root.style.setProperty("--app-viewport-height", `${height}px`);
-  root.style.setProperty("--app-viewport-top", `${offsetTop}px`);
-  root.style.setProperty("--app-viewport-bottom", `${bottom}px`);
+  root.style.setProperty("--app-viewport-top", "0px");
+  root.style.setProperty("--app-viewport-bottom", "0px");
 }
 
 syncVisualViewport();
