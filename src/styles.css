@@ -2316,7 +2316,8 @@ button:disabled {
   height: min(58dvh, 520px);
   min-height: min(350px, 58dvh);
   max-width: var(--m-shell-w);
-  transform: translateY(100%);
+  transform: translateY(calc(100% + var(--m-tabs-h)));
+  visibility: hidden;
   background: var(--bg);
   transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
   z-index: 50;
@@ -2325,7 +2326,7 @@ button:disabled {
   border-top: 1px solid var(--line-strong);
   box-shadow: 0 -24px 60px rgba(0,0,0,0.55);
 }
-.fp-wrap.open { transform: translateY(0); pointer-events: auto; }
+.fp-wrap.open { transform: translateY(0); visibility: visible; pointer-events: auto; }
 .fp-wrap.lyrics-mode {
   top: var(--m-header-h);
   bottom: var(--m-tabs-h);

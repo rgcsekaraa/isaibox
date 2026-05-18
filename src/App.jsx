@@ -1483,9 +1483,9 @@ export function App() {
           tab={tab()}
           setTab={(t) => { changeTab(t); setSearchOpen(false); }}
         />
-        <div class="fp-wrap" classList={{ open: playerExpanded(), "lyrics-mode": mobileLyricsMode() }}>
-          <Show when={currentTrack()}>
-            {(track) => (
+        <Show when={currentTrack()}>
+          {(track) => (
+            <div class="fp-wrap" classList={{ open: playerExpanded(), "lyrics-mode": mobileLyricsMode() }}>
               <FullPlayer
                 track={track()}
                 isPlaying={isPlaying()}
@@ -1514,9 +1514,9 @@ export function App() {
                 onOpenAlbum={() => openAlbum(track().movie)}
                 onCollapse={() => { setMobileLyricsMode(false); setPlayerExpanded(false); }}
               />
-            )}
-          </Show>
-        </div>
+            </div>
+          )}
+        </Show>
       </Show>
       <audio
         ref={audioEl}
