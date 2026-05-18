@@ -1716,7 +1716,7 @@ button:disabled {
 .m-main {
   position: absolute;
   top: var(--m-header-h);
-  bottom: calc(var(--m-mini-h) + var(--m-tabs-h));
+  bottom: var(--m-tabs-h);
   left: 0;
   right: 0;
   transform: none;
@@ -1731,6 +1731,9 @@ button:disabled {
   overflow-anchor: none;
   -webkit-overflow-scrolling: touch;
   z-index: 1;
+}
+.app.is-mobile.has-mobile-player .m-main {
+  bottom: calc(var(--m-mini-h) + var(--m-tabs-h));
 }
 .m-main::-webkit-scrollbar { display: none; }
 

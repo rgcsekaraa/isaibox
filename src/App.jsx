@@ -1318,6 +1318,7 @@ export function App() {
       classList={{
         "is-mobile": isMobile(),
         "is-desktop": !isMobile(),
+        "has-mobile-player": isMobile() && !!currentTrack(),
       }}
       attr:data-density={density()}
       attr:data-theme={theme()}
@@ -1462,24 +1463,7 @@ export function App() {
             <Match when={tab() === "Favorites"}><FavoritesPage ctx={ctx} /></Match>
           </Switch>
         </main>
-        <Show
-          when={currentTrack()}
-          fallback={
-            <div class="mini-player">
-              <div class="mini-content">
-                <div class="mini-meta">
-                  <div class="mini-title mini-title-loading">
-                    <Show when={loading()}>
-                      <Icon name="spinner" size={15} />
-                    </Show>
-                    <span>{loading() ? "Loading..." : (loadError() || "No tracks available")}</span>
-                  </div>
-                  <div class="mini-sub">isaibox</div>
-                </div>
-              </div>
-            </div>
-          }
-        >
+        <Show when={currentTrack()}>
           {(track) => (
             <MiniPlayer
               track={track()}
