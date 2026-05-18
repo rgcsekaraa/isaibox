@@ -1652,16 +1652,16 @@ button:disabled {
 
 /* ── Mobile header ── */
 .m-header {
-  position: fixed;
+  position: absolute;
   top: 0;
-  left: 50%;
-  right: auto;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  transform: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
   min-width: 0;
-  width: min(100vw, var(--m-shell-w));
+  width: 100%;
   max-width: none;
   overflow: hidden;
   height: var(--m-header-h);
@@ -1714,13 +1714,13 @@ button:disabled {
 
 /* ── Mobile main ── */
 .m-main {
-  position: fixed;
+  position: absolute;
   top: var(--m-header-h);
   bottom: calc(var(--m-mini-h) + var(--m-tabs-h));
-  left: 50%;
-  right: auto;
-  transform: translateX(-50%);
-  width: min(100vw, var(--m-shell-w));
+  left: 0;
+  right: 0;
+  transform: none;
+  width: 100%;
   max-width: none;
   overflow-y: auto;
   overflow-x: hidden;
@@ -2218,12 +2218,12 @@ button:disabled {
 
 /* ── Mobile mini player ── */
 .mini-player {
-  position: fixed;
-  left: 50%;
-  right: auto;
+  position: absolute;
+  left: 0;
+  right: 0;
   bottom: var(--m-tabs-h);
-  transform: translateX(-50%);
-  width: min(100vw, var(--m-shell-w));
+  transform: none;
+  width: 100%;
   max-width: none;
   height: var(--m-mini-h);
   min-height: var(--m-mini-h);
@@ -2269,14 +2269,14 @@ button:disabled {
 
 /* ── Mobile bottom tabs ── */
 .m-bottom-tabs {
-  position: fixed;
-  left: 50%;
-  right: auto;
+  position: absolute;
+  left: 0;
+  right: 0;
   bottom: 0;
-  transform: translateX(-50%);
+  transform: none;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  width: min(100vw, var(--m-shell-w));
+  width: 100%;
   max-width: none;
   min-width: 0;
   background: var(--bg);
@@ -2304,16 +2304,16 @@ button:disabled {
 
 /* ── Mobile player sheet ── */
 .fp-wrap {
-  position: fixed;
+  position: absolute;
   top: auto;
   bottom: 0;
-  left: 50%;
-  right: auto;
-  width: min(100vw, var(--m-shell-w));
+  left: 0;
+  right: 0;
+  width: 100%;
   height: min(58dvh, 520px);
   min-height: min(350px, 58dvh);
   max-width: var(--m-shell-w);
-  transform: translate(-50%, 100%);
+  transform: translateY(100%);
   background: var(--bg);
   transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
   z-index: 50;
@@ -2322,7 +2322,7 @@ button:disabled {
   border-top: 1px solid var(--line-strong);
   box-shadow: 0 -24px 60px rgba(0,0,0,0.55);
 }
-.fp-wrap.open { transform: translate(-50%, 0); pointer-events: auto; }
+.fp-wrap.open { transform: translateY(0); pointer-events: auto; }
 .fp-wrap.lyrics-mode {
   top: 0;
   bottom: auto;
