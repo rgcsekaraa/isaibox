@@ -22,6 +22,9 @@
   --m-tabs-base-h: 64px;
   --m-tabs-h: calc(var(--m-tabs-base-h) + env(safe-area-inset-bottom));
   --m-shell-w: 760px;
+  --app-viewport-height: 100dvh;
+  --app-viewport-top: 0px;
+  --app-viewport-bottom: 0px;
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
 }
@@ -52,6 +55,7 @@
 html, body, #root {
   margin: 0;
   height: 100%;
+  height: var(--app-viewport-height);
   overflow: hidden;
   background: var(--bg);
   color: var(--fg);
@@ -64,8 +68,12 @@ html, body, #root {
 
 body {
   position: fixed;
-  inset: 0;
+  top: var(--app-viewport-top);
+  left: 0;
+  right: 0;
+  bottom: auto;
   width: 100%;
+  height: var(--app-viewport-height);
 }
 
 button { background: none; border: none; color: inherit; font: inherit; cursor: pointer; padding: 0; }
@@ -119,7 +127,9 @@ button:disabled {
   height: 100vh;
   height: 100svh;
   height: 100dvh;
+  height: var(--app-viewport-height);
   max-height: 100dvh;
+  max-height: var(--app-viewport-height);
   overflow: hidden;
 }
 .app-loading-screen {
@@ -1606,12 +1616,17 @@ button:disabled {
 .app.is-mobile {
   display: block;
   position: fixed;
-  inset: 0;
+  top: var(--app-viewport-top);
+  left: 0;
+  right: 0;
+  bottom: auto;
   width: 100%;
   height: 100vh;
   height: 100svh;
   height: 100dvh;
+  height: var(--app-viewport-height);
   max-height: 100dvh;
+  max-height: var(--app-viewport-height);
   min-width: 0;
   max-width: var(--m-shell-w);
   overflow: hidden;
@@ -1636,7 +1651,7 @@ button:disabled {
 /* ── Mobile header ── */
 .m-header {
   position: fixed;
-  top: 0;
+  top: var(--app-viewport-top);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
@@ -1697,8 +1712,8 @@ button:disabled {
 /* ── Mobile main ── */
 .m-main {
   position: fixed;
-  top: var(--m-header-h);
-  bottom: calc(var(--m-mini-h) + var(--m-tabs-h));
+  top: calc(var(--app-viewport-top) + var(--m-header-h));
+  bottom: calc(var(--app-viewport-bottom) + var(--m-mini-h) + var(--m-tabs-h));
   left: 50%;
   transform: translateX(-50%);
   width: min(100%, var(--m-shell-w));
@@ -2192,7 +2207,7 @@ button:disabled {
 .mini-player {
   position: fixed;
   left: 50%;
-  bottom: var(--m-tabs-h);
+  bottom: calc(var(--app-viewport-bottom) + var(--m-tabs-h));
   transform: translateX(-50%);
   width: min(100%, var(--m-shell-w));
   max-width: none;
@@ -2242,7 +2257,7 @@ button:disabled {
 .m-bottom-tabs {
   position: fixed;
   left: 50%;
-  bottom: 0;
+  bottom: var(--app-viewport-bottom);
   transform: translateX(-50%);
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -2276,7 +2291,7 @@ button:disabled {
 .fp-wrap {
   position: fixed;
   top: auto;
-  bottom: 0;
+  bottom: var(--app-viewport-bottom);
   left: 50%;
   width: 100%;
   height: min(58dvh, 520px);
@@ -2293,8 +2308,9 @@ button:disabled {
 }
 .fp-wrap.open { transform: translate(-50%, 0); pointer-events: auto; }
 .fp-wrap.lyrics-mode {
-  height: 100dvh;
-  min-height: 100dvh;
+  top: var(--app-viewport-top);
+  height: var(--app-viewport-height);
+  min-height: var(--app-viewport-height);
   border-top: 0;
 }
 .full-player { position: relative; height: 100%; overflow: hidden; }

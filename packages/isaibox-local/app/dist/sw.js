@@ -1,4 +1,4 @@
-const CACHE_NAME = "isaibox-shell-v1";
+const CACHE_NAME = "isaibox-shell-v2";
 const SHELL_URLS = ["/", "/site.webmanifest", "/favicon.svg"];
 
 self.addEventListener("install", (event) => {
