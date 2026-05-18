@@ -293,6 +293,7 @@ export function App() {
     const value = songSearch().trim();
     searchRequestId += 1;
     const requestId = searchRequestId;
+    const controller = new AbortController();
     if (!value) {
       setCommittedSongSearch("");
       setSearchPending(false);
@@ -303,8 +304,29 @@ export function App() {
     const timer = window.setTimeout(() => {
       setCommittedSongSearch(value);
       searchWorker?.postMessage({ type: "search", requestId, payload: value });
+      fetch(`/api/search?q=${encodeURIComponent(value)}&limit=500`, { cache: "no-store", signal: controller.signal })
+        .then((response) => response.ok ? response.json() : null)
+        .then((payload) => {
+          if (!payload || requestId !== searchRequestId || committedSongSearch().trim() !== value) return;
+          const mergedTracks = mergeSearchSongs(payload.songs || []);
+          if (mergedTracks.length) {
+            queueMicrotask(() => {
+              if (requestId === searchRequestId) {
+                searchWorker?.postMessage({ type: "search", requestId, payload: value });
+              }
+            });
+          }
+        })
+        .catch((error) => {
+          if (error?.name !== "AbortError") {
+            setSearchPending(false);
+          }
+        });
     }, SEARCH_DEBOUNCE_MS);
-    onCleanup(() => window.clearTimeout(timer));
+    onCleanup(() => {
+      window.clearTimeout(timer);
+      controller.abort();
+    });
   });
 
   onMount(() => {
@@ -356,6 +378,30 @@ export function App() {
       fav: favs().has(index + 1),
     };
   };
+
+  function mergeSearchSongs(songs) {
+    const mergedTracks = [];
+    setTracks((current) => {
+      const byId = new Map(current.map((track) => [track.id, track]));
+      const additions = [];
+      for (const song of songs || []) {
+        const id = String(song?.id || "").trim();
+        if (!id) continue;
+        const existing = byId.get(id);
+        if (existing) {
+          mergedTracks.push(existing);
+          continue;
+        }
+        const converted = toTrack(song, current.length + additions.length);
+        if (!converted) continue;
+        byId.set(id, converted);
+        additions.push(converted);
+        mergedTracks.push(converted);
+      }
+      return additions.length ? [...current, ...additions] : current;
+    });
+    return mergedTracks;
+  }
 
   const trackMap = createMemo(() => Object.fromEntries(tracks().map((t) => [t.n, { ...t, fav: favs().has(t.n) }])));
   const trackById = createMemo(() => Object.fromEntries(tracks().map((t) => [t.id, { ...t, fav: favs().has(t.n) }])));
