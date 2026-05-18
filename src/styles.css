@@ -1833,6 +1833,27 @@ button:disabled {
 .m-pl-meta { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .m-pl-name { font-size: 14.5px; font-weight: 500; letter-spacing: -0.005em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .m-pl-sub { font-family: var(--font-mono); font-size: 11px; color: var(--fg-faint); }
+.m-playlist-skeleton {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0 18px;
+}
+.m-pl-item.skeleton {
+  pointer-events: none;
+}
+.m-sk-block,
+.m-track-skeleton .sk {
+  display: block;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--bg-elev) 0%, var(--bg-elev-2) 48%, var(--bg-elev) 100%);
+  background-size: 220% 100%;
+  opacity: 0.72;
+  animation: mobile-skeleton-pulse 1.15s ease-in-out infinite;
+  will-change: background-position, opacity;
+}
+.m-sk-pl-title { width: min(68%, 230px); height: 15px; }
+.m-sk-pl-sub { width: min(38%, 120px); height: 11px; margin-top: 5px; }
+.m-sk-chevron { width: 18px; height: 18px; border-radius: 50%; }
 
 /* ── Mobile track row ── */
 .m-track-row {
@@ -2317,6 +2338,11 @@ button:disabled {
 .m-sk-title { width: 76%; height: 16px; }
 .m-sk-sub { width: 54%; height: 12px; }
 .m-sk-icon { width: 32px; height: 32px; border-radius: 50%; }
+@keyframes mobile-skeleton-pulse {
+  0% { background-position: 120% 0; opacity: 0.38; }
+  50% { opacity: 0.82; }
+  100% { background-position: -120% 0; opacity: 0.38; }
+}
 
 /* ── Mobile mini player ── */
 .mini-player {

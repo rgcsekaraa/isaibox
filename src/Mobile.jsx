@@ -16,6 +16,7 @@ const SEARCH_TABS = [
 ];
 const SEARCH_HELP_TEXT = "Choose whether this search should show albums, songs, music directors, or singers.";
 const MOBILE_SKELETON_ROWS = Array.from({ length: 8 });
+const MOBILE_PLAYLIST_SKELETON_ROWS = Array.from({ length: 7 });
 
 function MobileLoadingState(props) {
   return (
@@ -37,6 +38,24 @@ function MobileTrackSkeleton() {
               <span class="sk m-sk-sub" />
             </div>
             <span class="sk m-sk-icon" />
+          </div>
+        )}
+      </For>
+    </div>
+  );
+}
+
+function MobilePlaylistSkeleton() {
+  return (
+    <div class="m-playlist-skeleton" aria-label="Loading playlists">
+      <For each={MOBILE_PLAYLIST_SKELETON_ROWS}>
+        {() => (
+          <div class="m-pl-item skeleton">
+            <div class="m-pl-meta">
+              <span class="m-sk-block m-sk-pl-title" />
+              <span class="m-sk-block m-sk-pl-sub" />
+            </div>
+            <span class="m-sk-block m-sk-chevron" />
           </div>
         )}
       </For>
@@ -185,6 +204,9 @@ export function MobileLibraryPage(props) {
           );
         }}
       </For>
+      <Show when={ctx.loading() && sections().every((section) => filter(section.items).length === 0)}>
+        <MobilePlaylistSkeleton />
+      </Show>
       <Show when={!ctx.loading() && ctx.playlistSearch() && sections().every((section) => filter(section.items).length === 0)}>
         <div class="empty">No playlists match "{ctx.playlistSearch()}"</div>
       </Show>
@@ -331,7 +353,7 @@ export function MobilePlaylistDetail(props) {
       </div>
       <Show when={isSearch() && activeSearchTab() === "albums"}>
         <section class="m-search-albums">
-          <Show when={!ctx.searchPending()} fallback={<MobileLoadingState text="Searching..." />}>
+          <Show when={!ctx.searchPending()} fallback={<MobileTrackSkeleton />}>
             <Show when={ctx.searchAlbumResults().length > 0} fallback={<div class="empty">No albums match this search.</div>}>
               <For each={ctx.searchAlbumResults()}>
                 {(album) => (
@@ -357,7 +379,7 @@ export function MobilePlaylistDetail(props) {
       </Show>
       <Show when={isSearch() && (activeSearchTab() === "directors" || activeSearchTab() === "singers")}>
         <section class="m-search-people">
-          <Show when={!ctx.searchPending()} fallback={<MobileLoadingState text="Searching..." />}>
+          <Show when={!ctx.searchPending()} fallback={<MobileTrackSkeleton />}>
             <For each={activeSearchTab() === "directors" ? ctx.searchDirectorResults() : ctx.searchSingerResults()}>
               {(item) => (
                 <div class="m-search-person-row">
@@ -438,7 +460,7 @@ export function MobilePlaylistDetail(props) {
               </Show>
             }
           >
-            <MobileLoadingState text="Searching..." />
+            <MobileTrackSkeleton />
           </Show>
         </Show>
       </div>
