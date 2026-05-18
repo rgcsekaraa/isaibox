@@ -327,7 +327,7 @@ function MobileInlineLyrics(props) {
     if (index < 0 || !bodyEl || index === lastScrolledLine) return;
     lastScrolledLine = index;
     requestAnimationFrame(() => {
-      bodyEl?.querySelector(`[data-mobile-lyrics-line="${index}"]`)?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+      bodyEl?.querySelector(`[data-mobile-lyrics-line="${index}"]`)?.scrollIntoView?.({ block: "center", behavior: "auto" });
     });
   });
 

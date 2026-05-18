@@ -1728,6 +1728,7 @@ button:disabled {
   min-height: 0;
   background: var(--bg);
   overscroll-behavior: contain;
+  overflow-anchor: none;
   -webkit-overflow-scrolling: touch;
   z-index: 1;
 }
@@ -1979,6 +1980,7 @@ button:disabled {
   padding: 12px 14px;
   border-bottom: 1px solid var(--line);
   background: var(--bg);
+  overflow-anchor: none;
 }
 .m-detail-top {
   display: grid;
@@ -2188,7 +2190,10 @@ button:disabled {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.m-track-body { padding-bottom: 24px; }
+.m-track-body {
+  padding-bottom: 24px;
+  overflow-anchor: none;
+}
 .m-track-skeleton {
   display: flex;
   flex-direction: column;
@@ -2320,8 +2325,9 @@ button:disabled {
 .fp-wrap.open { transform: translate(-50%, 0); pointer-events: auto; }
 .fp-wrap.lyrics-mode {
   top: 0;
-  height: var(--app-viewport-height);
+  bottom: auto;
   height: 100dvh;
+  height: var(--app-viewport-height);
   min-height: 100%;
   border-top: 0;
 }
@@ -2340,6 +2346,7 @@ button:disabled {
 .fp-content.lyrics {
   justify-content: flex-start;
   overflow: hidden;
+  height: 100%;
   padding: 10px 18px calc(env(safe-area-inset-bottom) + 14px);
 }
 
