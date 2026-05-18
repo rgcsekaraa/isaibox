@@ -139,8 +139,7 @@ export function MobileLibraryPage(props) {
 
   return (
     <div class="m-page">
-      <div class="m-page-header">
-        <div class="m-page-kicker">Your library</div>
+      <div class="m-page-header m-library-header">
         <h1 class="m-page-title">Library</h1>
         <div class="m-playlist-search">
           <Icon name="search" size={14} />

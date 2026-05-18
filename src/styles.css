@@ -1740,6 +1740,14 @@ button:disabled {
 .m-page { width: 100%; max-width: 100%; min-width: 0; padding-bottom: 24px; }
 .m-page-detail { min-height: 100%; }
 .m-page-header { width: 100%; max-width: 100%; padding: 18px 18px 14px; }
+.m-library-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding-top: 16px;
+  padding-bottom: 12px;
+}
 .m-page-kicker {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -1757,6 +1765,11 @@ button:disabled {
   margin: 0;
   line-height: 1.05;
 }
+.m-library-header .m-page-title {
+  flex: 0 0 auto;
+  font-size: 24px;
+  white-space: nowrap;
+}
 .m-playlist-search {
   display: flex;
   align-items: center;
@@ -1771,6 +1784,9 @@ button:disabled {
   border-radius: 3px;
   background: var(--bg-elev);
   color: var(--fg-faint);
+}
+.m-library-header .m-playlist-search {
+  margin-top: 0;
 }
 .m-playlist-search input {
   min-width: 0;
@@ -2640,6 +2656,9 @@ button:disabled {
   .m-header { padding-left: 10px; padding-right: 10px; }
   .m-page-header { padding-left: 14px; padding-right: 14px; }
   .m-playlist-search { margin-top: 12px; }
+  .m-library-header { gap: 10px; }
+  .m-library-header .m-page-title { font-size: 22px; }
+  .m-library-header .m-playlist-search { margin-top: 0; }
   .m-track-row,
   .m-pl-item {
     padding-left: 14px;
