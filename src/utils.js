@@ -40,10 +40,12 @@ export const normalizeSearchText = (value) => {
       .replace(/oo+/g, "u")
       .replace(/ii+/g, "i")
       .replace(/uu+/g, "u")
-      .replace(/([bcdfghjklmnpqrstvwxyz])\1+/g, "$1")
+      .replace(/([bcdfghjklmnpqstvwxyz])\1+/g, "$1")
     )
     .join(" ");
 };
+
+const compactSearchText = (value) => String(value || "").replace(/\s+/g, "").replace(/r{3,}/g, "rr");
 
 const levenshteinDistance = (a, b) => {
   if (a === b) return 0;
@@ -98,22 +100,22 @@ export const prepareTrackSearch = (track) => {
   const combined = [title, album, singer, director, year].filter(Boolean).join(" ");
   return {
     title,
-    titleCompact: title.replace(/\s+/g, ""),
+    titleCompact: compactSearchText(title),
     album,
-    albumCompact: album.replace(/\s+/g, ""),
+    albumCompact: compactSearchText(album),
     singer,
-    singerCompact: singer.replace(/\s+/g, ""),
+    singerCompact: compactSearchText(singer),
     director,
-    directorCompact: director.replace(/\s+/g, ""),
+    directorCompact: compactSearchText(director),
     year,
     combined,
-    combinedCompact: combined.replace(/\s+/g, ""),
+    combinedCompact: compactSearchText(combined),
   };
 };
 
 export const prepareSearchQuery = (query) => {
   const normalizedQuery = normalizeSearchText(query);
-  const queryCompact = normalizedQuery.replace(/\s+/g, "");
+  const queryCompact = compactSearchText(normalizedQuery);
   return {
     normalizedQuery,
     queryCompact,
@@ -127,7 +129,7 @@ export const splitCreditNames = (value) =>
     .map((name) => name.trim())
     .filter(Boolean);
 
-export const personSearchKey = (value) => normalizeSearchText(value).replace(/\s+/g, "");
+export const personSearchKey = (value) => compactSearchText(normalizeSearchText(value));
 
 export const formatPersonName = (value) => {
   const cleaned = String(value || "").trim().replace(/\s+/g, " ");

@@ -137,12 +137,35 @@ def build_library_groups(songs):
     }
 
 
+def normalize_search_text(value: str) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
+    tokens = []
+    for token in normalized.split():
+        token = (
+            token
+            .replace("dh", "th")
+            .replace("sh", "s")
+            .replace("zh", "l")
+            .replace("ph", "f")
+            .replace("ck", "k")
+        )
+        token = re.sub(r"aa+", "a", token)
+        token = re.sub(r"ee+", "i", token)
+        token = re.sub(r"oo+", "u", token)
+        token = re.sub(r"ii+", "i", token)
+        token = re.sub(r"uu+", "u", token)
+        token = re.sub(r"([bcdfghjklmnpqstvwxyz])\1+", r"\1", token)
+        if token:
+            tokens.append(token)
+    return " ".join(tokens)
+
+
+def compact_search_text(value: str) -> str:
+    return re.sub(r"r{3,}", "rr", re.sub(r"\s+", "", normalize_search_text(value)))
+
+
 def search_tokens(value: str) -> list[str]:
-    return [
-        token
-        for token in re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).split()
-        if token
-    ]
+    return [token for token in normalize_search_text(value).split() if token]
 
 
 def score_search_song(song: dict, tokens: list[str], phrase: str) -> int:
@@ -156,6 +179,11 @@ def score_search_song(song: dict, tokens: list[str], phrase: str) -> int:
     joined = {
         key: " ".join(value)
         for key, value in fields.items()
+    }
+    compact_phrase = compact_search_text(phrase)
+    compact_joined = {
+        key: compact_search_text(song.get(key, ""))
+        for key in fields.keys()
     }
     score = 0
     matched = 0
@@ -172,9 +200,13 @@ def score_search_song(song: dict, tokens: list[str], phrase: str) -> int:
             exact, prefix, contains = weights[key]
             if text == token:
                 token_score = max(token_score, exact)
+            elif compact_joined[key] == compact_search_text(token):
+                token_score = max(token_score, exact)
             elif text.startswith(token):
                 token_score = max(token_score, prefix)
             elif token in text:
+                token_score = max(token_score, contains)
+            elif compact_search_text(token) in compact_joined[key]:
                 token_score = max(token_score, contains)
             else:
                 for field_token in fields[key]:
@@ -192,6 +224,15 @@ def score_search_song(song: dict, tokens: list[str], phrase: str) -> int:
         score += 70
     if phrase and phrase in joined["movie"]:
         score += 35
+    if compact_phrase:
+        if compact_phrase == compact_joined["musicDirector"]:
+            score += 90
+        elif compact_phrase in compact_joined["musicDirector"]:
+            score += 55
+        if compact_phrase == compact_joined["movie"]:
+            score += 70
+        elif compact_phrase in compact_joined["movie"]:
+            score += 35
     return score
 
 
@@ -211,6 +252,7 @@ def search_library():
         token_clauses = []
         for token in tokens[:5]:
             needle = f"%{token}%"
+            compact_needle = f"%{compact_search_text(token)}%"
             token_clauses.append(
                 """
                 (
@@ -219,10 +261,14 @@ def search_library():
                   OR lower(coalesce(singers, '')) LIKE ?
                   OR lower(coalesce(music_director, '')) LIKE ?
                   OR lower(coalesce(year, '')) LIKE ?
+                  OR regexp_replace(lower(coalesce(track_name, '')), '[^a-z0-9]+', '', 'g') LIKE ?
+                  OR regexp_replace(lower(coalesce(movie_name, '')), '[^a-z0-9]+', '', 'g') LIKE ?
+                  OR regexp_replace(lower(coalesce(singers, '')), '[^a-z0-9]+', '', 'g') LIKE ?
+                  OR regexp_replace(lower(coalesce(music_director, '')), '[^a-z0-9]+', '', 'g') LIKE ?
                 )
                 """
             )
-            params.extend([needle, needle, needle, needle, needle])
+            params.extend([needle, needle, needle, needle, needle, compact_needle, compact_needle, compact_needle, compact_needle])
         where_query = f"AND ({' OR '.join(token_clauses)})"
     candidate_limit = max(800, min(2500, limit * 8))
     params.append(candidate_limit)

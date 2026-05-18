@@ -30,15 +30,17 @@ const normalizeSearchText = (value) => {
       .replace(/oo+/g, "u")
       .replace(/ii+/g, "i")
       .replace(/uu+/g, "u")
-      .replace(/([bcdfghjklmnpqrstvwxyz])\1+/g, "$1"))
+      .replace(/([bcdfghjklmnpqstvwxyz])\1+/g, "$1"))
     .join(" ");
 };
+
+const compactSearchText = (value) => String(value || "").replace(/\s+/g, "").replace(/r{3,}/g, "rr");
 
 const prepareSearchQuery = (query) => {
   const normalizedQuery = normalizeSearchText(query);
   return {
     normalizedQuery,
-    queryCompact: normalizedQuery.replace(/\s+/g, ""),
+    queryCompact: compactSearchText(normalizedQuery),
     queryTokens: normalizedQuery.split(/\s+/).filter(Boolean),
   };
 };
@@ -89,7 +91,7 @@ const splitCreditNames = (value) =>
     .map((name) => name.trim())
     .filter(Boolean);
 
-const personSearchKey = (value) => normalizeSearchText(value).replace(/\s+/g, "");
+const personSearchKey = (value) => compactSearchText(normalizeSearchText(value));
 
 const formatPersonName = (value) => {
   const cleaned = String(value || "").trim().replace(/\s+/g, " ");
@@ -111,16 +113,16 @@ const prepareTrackSearch = (track) => {
   const combined = [title, album, singer, director, year].filter(Boolean).join(" ");
   return {
     title,
-    titleCompact: title.replace(/\s+/g, ""),
+    titleCompact: compactSearchText(title),
     album,
-    albumCompact: album.replace(/\s+/g, ""),
+    albumCompact: compactSearchText(album),
     singer,
-    singerCompact: singer.replace(/\s+/g, ""),
+    singerCompact: compactSearchText(singer),
     director,
-    directorCompact: director.replace(/\s+/g, ""),
+    directorCompact: compactSearchText(director),
     year,
     combined,
-    combinedCompact: combined.replace(/\s+/g, ""),
+    combinedCompact: compactSearchText(combined),
   };
 };
 
@@ -174,7 +176,7 @@ const matchCreditName = (entry, label, query) => {
   const base = label === "Music director" ? 26 : 32;
   for (const name of names) {
     const normalizedName = normalizeSearchText(name);
-    const nameCompact = normalizedName.replace(/\s+/g, "");
+    const nameCompact = compactSearchText(normalizedName);
     const nameTokens = normalizedName.split(/\s+/).filter(Boolean);
     const { queryCompact, queryTokens } = query;
     let score = null;
