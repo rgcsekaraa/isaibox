@@ -574,12 +574,17 @@ export function App() {
   const searchDirectorResults = createMemo(() => searchPeopleResultsFor("Music director"));
   const searchSingerResults = createMemo(() => searchPeopleResultsFor("Singer"));
 
-  const searchResultCounts = createMemo(() => ({
-    albums: committedSongSearch().trim() && !searchPending() ? searchResults().counts.albums : searchAlbumResults().length,
-    songs: committedSongSearch().trim() && !searchPending() ? searchResults().counts.songs : filteredTracks().length,
-    directors: committedSongSearch().trim() && !searchPending() ? searchResults().counts.directors : searchDirectorResults().length,
-    singers: committedSongSearch().trim() && !searchPending() ? searchResults().counts.singers : searchSingerResults().length,
-  }));
+  const searchResultCounts = createMemo(() => {
+    const rawQuery = committedSongSearch().trim();
+    const results = searchResults();
+    const hasFreshResults = rawQuery && !searchPending() && results.query === rawQuery;
+    return {
+      albums: hasFreshResults ? results.counts.albums : searchAlbumResults().length,
+      songs: hasFreshResults ? results.counts.songs : filteredTracks().length,
+      directors: hasFreshResults ? results.counts.directors : searchDirectorResults().length,
+      singers: hasFreshResults ? results.counts.singers : searchSingerResults().length,
+    };
+  });
 
   const addToRecents = (n) => {
     setRecents((r) => [{ n, when: "just now" }, ...r.filter((x) => x.n !== n)].slice(0, 30));

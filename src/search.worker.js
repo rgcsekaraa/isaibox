@@ -2,6 +2,7 @@ let tracks = [];
 let indexedTracks = [];
 let tracksByAlbum = new Map();
 let lastRequestId = 0;
+let lastSearch = null;
 let queryCache = new Map();
 
 const QUERY_CACHE_LIMIT = 80;
@@ -316,12 +317,19 @@ self.onmessage = (event) => {
   if (type === "index") {
     buildIndex(payload || []);
     self.postMessage({ type: "indexed", payload: { count: tracks.length } });
+    if (lastSearch?.query) {
+      const cacheKey = normalizeSearchText(lastSearch.query);
+      const result = buildSearchPayload(lastSearch.query);
+      pushCache(cacheKey, result);
+      self.postMessage({ type: "results", requestId: lastSearch.requestId, payload: result });
+    }
     return;
   }
 
   if (type !== "search") return;
   lastRequestId = requestId;
   const query = String(payload || "").trim();
+  lastSearch = query ? { requestId, query } : null;
   const cacheKey = normalizeSearchText(query);
   if (queryCache.has(cacheKey)) {
     self.postMessage({ type: "results", requestId, payload: { ...queryCache.get(cacheKey), query } });
