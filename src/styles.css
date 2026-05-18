@@ -2306,7 +2306,7 @@ button:disabled {
 .fp-wrap {
   position: absolute;
   top: auto;
-  bottom: 0;
+  bottom: var(--m-tabs-h);
   left: 0;
   right: 0;
   width: 100%;
