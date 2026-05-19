@@ -64,51 +64,68 @@ function MobilePlaylistSkeleton() {
 }
 
 export function MobileHeader(props) {
+  let inputRef;
+  const openSearch = () => {
+    inputRef?.focus();
+    props.setSearchOpen(true);
+  };
+  const closeSearch = () => {
+    inputRef?.blur();
+    props.setSearch("");
+    props.setSearchOpen(false);
+  };
+  const clearSearch = () => {
+    props.setSearch("");
+    inputRef?.focus();
+  };
   return (
-    <header class="m-header">
-      <Show
-        when={props.searchOpen}
-        fallback={
-          <>
-            <div class="m-header-brand">
-              <span class="m-brand-mark"><Icon name="logo" size={16} /></span>
-              <span class="m-brand-name">isaibox</span>
-            </div>
-            <div class="m-header-actions">
-              <button class="m-icon-btn" onClick={() => props.setSearchOpen(true)}>
-                <Icon name="search" size={20} />
-              </button>
-              <button
-                class="m-icon-btn"
-                classList={{ active: props.settingsOpen }}
-                onClick={() => props.setSettingsOpen?.((open) => !open)}
-              >
-                <Icon name="settings" size={18} />
-              </button>
-            </div>
-          </>
-        }
-      >
-        <div class="m-search-row">
-          <button class="m-icon-btn" onClick={() => { props.setSearch(""); props.setSearchOpen(false); }}>
-            <Icon name="chevron-left" size={20} />
-          </button>
-          <div class="m-search-input">
-            <Icon name="search" size={15} />
-            <input
-              autofocus
-              placeholder={props.searchPlaceholder || "Search songs, albums, directors..."}
-              value={props.search}
-              onInput={(e) => props.setSearch(e.currentTarget.value)}
-            />
-            <Show when={props.search}>
-              <button class="m-icon-btn small" onClick={() => props.setSearch("")}>
-                <Icon name="x" size={14} />
-              </button>
-            </Show>
-          </div>
+    <header class="m-header" classList={{ "is-search": props.searchOpen }}>
+      <div class="m-header-default">
+        <div class="m-header-brand">
+          <span class="m-brand-mark"><Icon name="logo" size={16} /></span>
+          <span class="m-brand-name">isaibox</span>
         </div>
-      </Show>
+        <div class="m-header-actions">
+          <button class="m-icon-btn" onClick={openSearch} aria-label="Search">
+            <Icon name="search" size={20} />
+          </button>
+          <button
+            class="m-icon-btn"
+            classList={{ active: props.settingsOpen }}
+            onClick={() => props.setSettingsOpen?.((open) => !open)}
+            aria-label="Settings"
+          >
+            <Icon name="settings" size={18} />
+          </button>
+        </div>
+      </div>
+      <div class="m-search-row" aria-hidden={!props.searchOpen}>
+        <button class="m-icon-btn" onClick={closeSearch} aria-label="Close search">
+          <Icon name="chevron-left" size={20} />
+        </button>
+        <div class="m-search-input">
+          <Icon name="search" size={15} />
+          <input
+            ref={(el) => (inputRef = el)}
+            type="search"
+            inputmode="search"
+            enterkeyhint="search"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck={false}
+            tabIndex={props.searchOpen ? 0 : -1}
+            placeholder={props.searchPlaceholder || "Search songs, albums, directors..."}
+            value={props.search}
+            onInput={(e) => props.setSearch(e.currentTarget.value)}
+          />
+          <Show when={props.search}>
+            <button class="m-icon-btn small" onClick={clearSearch} aria-label="Clear search">
+              <Icon name="x" size={14} />
+            </button>
+          </Show>
+        </div>
+      </div>
     </header>
   );
 }
@@ -163,6 +180,13 @@ export function MobileLibraryPage(props) {
         <div class="m-playlist-search">
           <Icon name="search" size={14} />
           <input
+            type="search"
+            inputmode="search"
+            enterkeyhint="search"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            spellcheck={false}
             placeholder="Search playlists..."
             value={ctx.playlistSearch()}
             onInput={(event) => ctx.setPlaylistSearch(event.currentTarget.value)}
@@ -334,6 +358,13 @@ export function MobilePlaylistDetail(props) {
               <div class="m-track-search">
                 <Icon name="search" size={14} />
                 <input
+                  type="search"
+                  inputmode="search"
+                  enterkeyhint="search"
+                  autocomplete="off"
+                  autocorrect="off"
+                  autocapitalize="off"
+                  spellcheck={false}
                   placeholder={scopedPlaceholder()}
                   value={ctx.trackSearch()}
                   onInput={(event) => ctx.setTrackSearch(event.currentTarget.value)}
