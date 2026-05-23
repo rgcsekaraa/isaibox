@@ -250,8 +250,6 @@ export function MobilePlaylistDetail(props) {
     if (counts[current] > 0) return current;
     return SEARCH_TABS.find((tab) => counts[tab.id] > 0)?.id || current;
   };
-  const hasScopedTracks = () => !isSearch() && (isAlbum() || !!ctx.activePlaylistMeta());
-  const scopedPlaceholder = () => isAlbum() ? "Filter this album..." : "Filter this playlist...";
   const playlist = () =>
     isSearch()
       ? { name: "Search Results", count: ctx.filteredTracks().length, type: "Songs" }
@@ -338,44 +336,6 @@ export function MobilePlaylistDetail(props) {
             <div class="m-detail-compact-title">
               <span>{playlist().name}</span>
             </div>
-            <Show when={filteredTracks().length > 0}>
-              <button
-                class="m-detail-play"
-                onClick={() => {
-                  if (isAlbum()) {
-                    ctx.playPlaylist(ctx.activeAlbumTracks(), { type: "album", label: ctx.activeAlbum(), caption: "Album" });
-                  } else {
-                    ctx.playPlaylist(filteredTracks());
-                  }
-                }}
-                title="Play"
-                aria-label="Play"
-              >
-                <Icon name="play" size={14} />
-              </button>
-            </Show>
-            <Show when={hasScopedTracks()}>
-              <div class="m-track-search">
-                <Icon name="search" size={14} />
-                <input
-                  type="search"
-                  inputmode="search"
-                  enterkeyhint="search"
-                  autocomplete="off"
-                  autocorrect="off"
-                  autocapitalize="off"
-                  spellcheck={false}
-                  placeholder={scopedPlaceholder()}
-                  value={ctx.trackSearch()}
-                  onInput={(event) => ctx.setTrackSearch(event.currentTarget.value)}
-                />
-                <Show when={ctx.trackSearch()}>
-                  <button class="m-icon-btn small" onClick={() => ctx.setTrackSearch("")}>
-                    <Icon name="x" size={13} />
-                  </button>
-                </Show>
-              </div>
-            </Show>
             <div class="m-sort-control m-sort-inline">
               <MenuSelect class="sort-menu" label="Sort" value={ctx.sort()} onChange={ctx.setSort} options={SORT_OPTIONS} />
             </div>

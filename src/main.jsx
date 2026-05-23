@@ -9,50 +9,33 @@ const isStandalonePWA = () =>
     window.matchMedia?.("(display-mode: fullscreen)").matches ||
     window.navigator.standalone === true);
 
-let lockedHeight = 0;
+const THEME_COLORS = { light: "#f7f7f4", dark: "#0a0a0b" };
 
 function applyStandaloneAttr() {
   document.documentElement.dataset.pwa = isStandalonePWA() ? "standalone" : "browser";
 }
 
-// Capture the largest innerHeight we observe and never shrink below it.
-// On iOS PWA standalone the web view shrinks when the keyboard opens;
-// freezing the CSS frame at this max lets the keyboard overlay UI (the
-// app keeps its shape, tabs get clipped behind the keyboard) instead
-// of pushing the bottom bar up.
-function captureMaxHeight() {
-  const h = window.innerHeight || document.documentElement.clientHeight || 0;
-  if (h > 0 && h > lockedHeight) {
-    lockedHeight = h;
-    document.documentElement.style.setProperty(
-      "--app-locked-height",
-      `${lockedHeight}px`
-    );
-  }
-}
-
-function resetMaxHeight() {
-  lockedHeight = 0;
-  document.documentElement.style.removeProperty("--app-locked-height");
-  // Wait for the new orientation to settle before recapturing.
-  setTimeout(captureMaxHeight, 250);
-  setTimeout(captureMaxHeight, 600);
+// Keep the iOS safe-area colour in sync with the active theme. Without this
+// the home-indicator strip stays painted with the meta theme-color (dark)
+// even when the app is in light mode, which looks like a black band.
+function syncThemeColor() {
+  const theme = document.documentElement.dataset.theme || "dark";
+  const colour = THEME_COLORS[theme] || THEME_COLORS.dark;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", colour);
 }
 
 applyStandaloneAttr();
-captureMaxHeight();
-// Recapture once the DOM is fully ready in case innerHeight grows.
-window.addEventListener("load", captureMaxHeight, { once: true });
+syncThemeColor();
+
+new MutationObserver(syncThemeColor).observe(document.documentElement, {
+  attributes: true,
+  attributeFilter: ["data-theme"],
+});
 
 window
   .matchMedia?.("(display-mode: standalone)")
-  .addEventListener?.("change", () => {
-    applyStandaloneAttr();
-    resetMaxHeight();
-  });
-
-window.addEventListener("orientationchange", resetMaxHeight);
-window.addEventListener("resize", captureMaxHeight, { passive: true });
+  .addEventListener?.("change", applyStandaloneAttr);
 
 render(() => <App />, document.getElementById("root"));
 

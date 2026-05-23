@@ -22,7 +22,6 @@
   --m-tabs-base-h: 64px;
   --m-tabs-h: calc(var(--m-tabs-base-h) + env(safe-area-inset-bottom));
   --m-shell-w: 760px;
-  --app-locked-height: 100lvh;
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
 }
@@ -74,11 +73,12 @@ body {
 }
 
 /* In PWA standalone iOS shrinks the web view when the keyboard opens.
-   Pin the body to the largest observed viewport so the keyboard
-   overlays the tabs instead of pushing them up. */
+   100lvh is the "large viewport" — it represents the full screen with all
+   retractable UI (keyboard, URL bar) hidden, so it doesn't shrink mid-session
+   and keeps the bottom tabs glued to the screen edge. */
 html[data-pwa="standalone"] body {
   bottom: auto;
-  height: var(--app-locked-height);
+  height: 100lvh;
 }
 
 button { background: none; border: none; color: inherit; font: inherit; cursor: pointer; padding: 0; }
@@ -135,7 +135,7 @@ button:disabled {
   overflow: hidden;
 }
 html[data-pwa="standalone"] .app {
-  height: var(--app-locked-height);
+  height: 100lvh;
 }
 .app-loading-screen {
   position: fixed;
@@ -1636,11 +1636,11 @@ html[data-pwa="standalone"] .app {
   background: var(--bg);
   isolation: isolate;
 }
-/* PWA standalone: lock to max innerHeight so the keyboard overlays
-   instead of resizing the frame (which used to push the tabs up). */
+/* PWA standalone: lock to 100lvh so the keyboard overlays instead of
+   shrinking the frame (which used to push the tabs up). */
 html[data-pwa="standalone"] .app.is-mobile {
   bottom: auto;
-  height: var(--app-locked-height);
+  height: 100lvh;
 }
 @media (max-width: 760px) {
   .app.is-mobile { border: none; max-width: none; }
@@ -2114,9 +2114,9 @@ html[data-pwa="standalone"] .app.is-mobile {
 .m-play-album { width: min(100%, 220px); justify-content: center; }
 .m-detail-compactbar {
   display: grid;
-  grid-template-columns: 40px minmax(54px, 0.72fr) 40px minmax(96px, 1fr) auto;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
   min-width: 0;
   height: 40px;
@@ -2139,26 +2139,6 @@ html[data-pwa="standalone"] .app.is-mobile {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.m-detail-play {
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  color: var(--fg);
-}
-.m-detail-play:active { background: var(--bg-elev); }
-.m-detail-compactbar .m-track-search {
-  height: 40px;
-  padding: 0 9px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: var(--bg-elev);
-}
-.m-detail-compactbar .m-track-search input {
-  font-size: 12.5px;
 }
 .m-detail-compactbar .m-sort-inline {
   height: 40px;
@@ -2208,24 +2188,6 @@ html[data-pwa="standalone"] .app.is-mobile {
   gap: 7px;
   padding-left: 11px;
   padding-right: 10px;
-}
-.m-track-search {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-width: 0;
-  height: 100%;
-  padding: 0 11px;
-  color: var(--fg-faint);
-}
-.m-track-search input {
-  min-width: 0;
-  flex: 1;
-  font-size: 14px;
-}
-.m-track-search input::placeholder {
-  color: var(--fg-faint);
 }
 .m-search-toolbar {
   display: flex;
