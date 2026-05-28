@@ -1660,55 +1660,50 @@ html[data-pwa="standalone"] .app.is-mobile {
   left: 0;
   right: 0;
   transform: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
   width: 100%;
   max-width: none;
   overflow: hidden;
   height: var(--m-header-h);
-  padding: 0;
+  padding: env(safe-area-inset-top) max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
   border-bottom: 1px solid var(--line);
   background: var(--bg);
   z-index: 40;
 }
-.m-header-default,
-.m-header > .m-search-row {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  padding: env(safe-area-inset-top) max(14px, env(safe-area-inset-right)) 0 max(14px, env(safe-area-inset-left));
-  background: var(--bg);
-}
-.m-header-default {
-  justify-content: space-between;
-  gap: 10px;
-}
-.m-header.is-search .m-header-default {
-  opacity: 0;
-  pointer-events: none;
-}
-.m-header:not(.is-search) > .m-search-row {
-  opacity: 0;
-  pointer-events: none;
-}
-.m-header-brand { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; }
 .m-brand-mark {
-  width: 26px; height: 26px;
+  flex: 0 0 auto;
+  width: 30px; height: 30px;
   display: grid; place-items: center;
   background: var(--fg); color: var(--bg);
-  border-radius: 2px;
+  border-radius: 4px;
 }
-.m-brand-name {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.m-header-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-elev);
+}
+.m-header-search svg { color: var(--fg-mute); flex-shrink: 0; }
+.m-header-search input {
+  min-width: 0;
+  flex: 1;
+  font-size: 14px;
   font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  color: var(--fg);
 }
-.m-header-actions { display: flex; flex: 0 0 auto; gap: 4px; margin-left: auto; }
+.m-header-search input::placeholder {
+  color: var(--fg-mute);
+  font-weight: 400;
+}
 .m-icon-btn {
   flex: 0 0 auto;
   width: 40px; height: 40px;
@@ -1717,21 +1712,7 @@ html[data-pwa="standalone"] .app.is-mobile {
   color: var(--fg);
 }
 .m-icon-btn:active { background: var(--bg-elev); }
-.m-icon-btn.small { width: 28px; height: 28px; }
-
-.m-search-row { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 100%; min-width: 0; }
-.m-search-input {
-  min-width: 0;
-  flex: 1;
-  display: flex; align-items: center; gap: 10px;
-  height: 40px;
-  padding: 0 12px;
-  border-radius: 3px;
-  background: var(--bg-elev);
-}
-.m-search-input svg { color: var(--fg-mute); flex-shrink: 0; }
-.m-search-input input { min-width: 0; flex: 1; font-size: 14px; }
-.m-search-input input::placeholder { color: var(--fg-faint); }
+.m-icon-btn.small { width: 26px; height: 26px; }
 
 /* ── Mobile main ── */
 .m-main {
@@ -1791,30 +1772,30 @@ html[data-pwa="standalone"] .app.is-mobile {
   font-size: clamp(21px, 6vw, 24px);
   white-space: nowrap;
 }
-.m-playlist-search {
+.m-playlist-filter {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  height: 40px;
-  margin-top: 14px;
-  padding: 0 11px;
+  height: 30px;
+  padding: 0 9px;
   border: 1px solid var(--line);
-  border-radius: 3px;
-  background: var(--bg-elev);
+  border-radius: 999px;
+  background: transparent;
   color: var(--fg-faint);
 }
-.m-library-header .m-playlist-search {
-  margin-top: 0;
-}
-.m-playlist-search input {
+.m-playlist-filter svg { color: var(--fg-faint); flex-shrink: 0; }
+.m-playlist-filter input {
   min-width: 0;
   flex: 1;
-  font-size: 14px;
+  font-size: 12px;
+  color: var(--fg-mute);
 }
-.m-playlist-search input::placeholder { color: var(--fg-faint); }
+.m-playlist-filter input::placeholder {
+  color: var(--fg-faint);
+}
 
 .m-section { padding: 4px 0 18px; }
 .m-section-head {
@@ -2657,20 +2638,18 @@ html[data-pwa="standalone"] .app.is-mobile {
 }
 
 @media (max-width: 360px) {
-  .m-header-default,
-  .m-header > .m-search-row {
+  .m-header {
     padding-left: 10px;
     padding-right: 10px;
+    gap: 8px;
   }
   .m-page-header { padding-left: 14px; padding-right: 14px; }
-  .m-playlist-search { margin-top: 12px; }
   .m-library-header {
     grid-template-columns: 1fr;
-    gap: 10px;
+    gap: 8px;
     padding-top: 12px;
   }
   .m-library-header .m-page-title { font-size: 23px; }
-  .m-library-header .m-playlist-search { margin-top: 0; }
   .m-track-row,
   .m-pl-item {
     padding-left: 14px;
