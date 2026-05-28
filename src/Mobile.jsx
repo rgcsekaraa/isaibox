@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { Icon } from "./Icon.jsx";
 import { MenuSelect } from "./MenuSelect.jsx";
 
@@ -71,9 +71,12 @@ export function MobileHeader(props) {
   };
   return (
     <header class="m-header">
-      <span class="m-brand-mark" aria-label="isaibox">
-        <Icon name="logo" size={16} />
-      </span>
+      <div class="m-header-brand">
+        <span class="m-brand-mark" aria-hidden="true">
+          <Icon name="logo" size={14} />
+        </span>
+        <span class="m-brand-name">isaibox</span>
+      </div>
       <div class="search m-search" classList={{ "has-value": !!props.search }}>
         <Icon name="search" size={14} />
         <input
@@ -85,7 +88,7 @@ export function MobileHeader(props) {
           autocorrect="off"
           autocapitalize="off"
           spellcheck={false}
-          placeholder={props.searchPlaceholder || "Search songs, albums, directors..."}
+          placeholder={props.searchPlaceholder || "Search songs, albums..."}
           value={props.search}
           onInput={(e) => props.setSearch(e.currentTarget.value)}
         />
@@ -137,6 +140,22 @@ export function MobileBottomTabs(props) {
 
 export function MobileLibraryPage(props) {
   const { ctx } = props;
+  let filterInputRef;
+  const [filterOpen, setFilterOpen] = createSignal(false);
+  const isFilterExpanded = () => filterOpen() || !!ctx.playlistSearch();
+  const openFilter = () => {
+    filterInputRef?.focus();
+    setFilterOpen(true);
+  };
+  const closeFilter = () => {
+    filterInputRef?.blur();
+    ctx.setPlaylistSearch("");
+    setFilterOpen(false);
+  };
+  const onFilterBlur = () => {
+    if (!ctx.playlistSearch()) setFilterOpen(false);
+  };
+
   const sections = () => [
     { label: "Global", items: ctx.playlistSections().global },
     { label: "Personal", items: ctx.playlistSections().personal },
@@ -154,25 +173,36 @@ export function MobileLibraryPage(props) {
     <div class="m-page">
       <div class="m-page-header m-library-header">
         <h1 class="m-page-title">Library</h1>
-        <div class="search m-search compact" classList={{ "has-value": !!ctx.playlistSearch() }}>
-          <Icon name="search" size={12} />
-          <input
-            type="search"
-            inputmode="search"
-            enterkeyhint="search"
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            spellcheck={false}
-            placeholder="Filter playlists"
-            value={ctx.playlistSearch()}
-            onInput={(event) => ctx.setPlaylistSearch(event.currentTarget.value)}
-          />
-          <Show when={ctx.playlistSearch()}>
-            <button class="search-clear" onClick={() => ctx.setPlaylistSearch("")} aria-label="Clear filter">
-              <Icon name="x" size={11} />
-            </button>
-          </Show>
+        <div class="m-library-filter" classList={{ open: isFilterExpanded() }}>
+          <button class="m-library-filter-btn" onClick={openFilter} aria-label="Filter playlists">
+            <Icon name="search" size={14} />
+          </button>
+          <div
+            class="search m-search compact m-library-filter-field"
+            classList={{ "has-value": !!ctx.playlistSearch() }}
+          >
+            <Icon name="search" size={12} />
+            <input
+              ref={(el) => (filterInputRef = el)}
+              type="search"
+              inputmode="search"
+              enterkeyhint="search"
+              autocomplete="off"
+              autocorrect="off"
+              autocapitalize="off"
+              spellcheck={false}
+              tabIndex={isFilterExpanded() ? 0 : -1}
+              placeholder="Filter playlists"
+              value={ctx.playlistSearch()}
+              onInput={(event) => ctx.setPlaylistSearch(event.currentTarget.value)}
+              onBlur={onFilterBlur}
+            />
+            <Show when={isFilterExpanded()}>
+              <button class="search-clear" onClick={closeFilter} aria-label="Close filter">
+                <Icon name="x" size={11} />
+              </button>
+            </Show>
+          </div>
         </div>
       </div>
       <For each={sections()}>

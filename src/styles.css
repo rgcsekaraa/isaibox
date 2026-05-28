@@ -1673,23 +1673,41 @@ html[data-pwa="standalone"] .app.is-mobile {
   background: var(--bg);
   z-index: 40;
 }
+.m-header-brand {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 .m-brand-mark {
   flex: 0 0 auto;
-  width: 28px; height: 28px;
+  width: 26px; height: 26px;
   display: grid; place-items: center;
   background: var(--fg); color: var(--bg);
   border-radius: 3px;
 }
+.m-brand-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--fg);
+  white-space: nowrap;
+}
 .m-search {
-  flex: 1 1 auto;
+  flex: 0 1 200px;
   width: auto;
+  margin-left: auto;
   min-width: 0;
-  height: 36px;
+  height: 34px;
 }
 .m-search.compact {
   height: 30px;
   gap: 8px;
   padding: 0 9px;
+  width: auto;
 }
 .m-search.compact input { font-size: 12px; }
 .app.is-mobile .search input,
@@ -1744,12 +1762,56 @@ html[data-pwa="standalone"] .app.is-mobile {
 .m-page-detail { min-height: 100%; }
 .m-page-header { width: 100%; max-width: 100%; padding: 18px 18px 14px; }
 .m-library-header {
-  display: grid;
-  grid-template-columns: minmax(min-content, auto) minmax(0, 1fr);
+  display: flex;
   align-items: center;
   gap: clamp(8px, 3vw, 12px);
   padding-top: 14px;
   padding-bottom: 10px;
+}
+.m-library-header .m-page-title {
+  flex: 1 1 auto;
+}
+.m-library-filter {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 30px;
+  height: 30px;
+}
+.m-library-filter.open {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 220px;
+}
+.m-library-filter-btn {
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg-elev);
+  color: var(--fg-mute);
+}
+.m-library-filter-btn:active { background: var(--bg-elev-2); }
+.m-library-filter.open .m-library-filter-btn {
+  display: none;
+}
+/* Keep the input in the DOM at all times so iOS can focus it
+   synchronously inside the user gesture (required for the keyboard
+   to appear). Hide via opacity + pointer-events when collapsed. */
+.m-library-filter-field {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+.m-library-filter.open .m-library-filter-field {
+  position: relative;
+  opacity: 1;
+  pointer-events: auto;
 }
 .m-page-kicker {
   font-family: var(--font-mono);
@@ -1769,7 +1831,6 @@ html[data-pwa="standalone"] .app.is-mobile {
   line-height: 1.05;
 }
 .m-library-header .m-page-title {
-  flex: 0 0 auto;
   font-size: clamp(21px, 6vw, 24px);
   white-space: nowrap;
 }
