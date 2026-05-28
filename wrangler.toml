@@ -1,0 +1,51 @@
+# Cloudflare Pages project config for isaibox.
+#
+# This declares the runtime bindings (D1, KV) and the env vars that
+# functions/ will use. The Pages project itself is created in the CF
+# dashboard and connected to this GitHub repo so every push to main
+# triggers a build (`npm run build`) and deploy of the `dist/` folder
+# plus everything under `functions/`.
+#
+# Secrets (GOOGLE_CLIENT_ID, SESSION_SECRET) are NOT stored here — set
+# them in the dashboard under Pages → Settings → Environment variables
+# or with `wrangler pages secret put NAME --project-name isaibox`.
+
+name = "isaibox"
+pages_build_output_dir = "./dist"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ── Local dev (`wrangler pages dev`) ───────────────────────────────────────
+# Public env vars (visible in code via env). Override per-environment in the
+# dashboard for staging/production.
+[vars]
+HF_BASE_URL = "https://chanrg-isaibox.hf.space"
+COOKIE_DOMAIN = ""   # leave empty to default to the request host
+SESSION_TTL_DAYS = "30"
+
+# ── D1 (SQLite at the edge) ────────────────────────────────────────────────
+# Create the database first:
+#   wrangler d1 create isaibox
+# Then copy the database_id printed by that command into this file.
+[[d1_databases]]
+binding = "DB"
+database_name = "isaibox"
+database_id = "<PASTE_DATABASE_ID_AFTER_CREATE>"
+
+# ── KV (hot session cache) ─────────────────────────────────────────────────
+# Optional but speeds up session lookups (~5 ms vs ~15 ms for D1).
+# Create the namespace first:
+#   wrangler kv namespace create SESSIONS
+# Then copy the id printed.
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "<PASTE_KV_NAMESPACE_ID_AFTER_CREATE>"
+
+# ── Preview environment (the CF preview deployments) ───────────────────────
+# Override bindings for preview deployments if you set up a staging D1/KV.
+# By default, previews reuse the bindings above.
+
+[env.preview.vars]
+HF_BASE_URL = "https://chanrg-isaibox.hf.space"
+COOKIE_DOMAIN = ""
+SESSION_TTL_DAYS = "30"
