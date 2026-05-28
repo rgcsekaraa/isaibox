@@ -1675,34 +1675,35 @@ html[data-pwa="standalone"] .app.is-mobile {
 }
 .m-brand-mark {
   flex: 0 0 auto;
-  width: 30px; height: 30px;
+  width: 28px; height: 28px;
   display: grid; place-items: center;
   background: var(--fg); color: var(--bg);
-  border-radius: 4px;
+  border-radius: 3px;
 }
-.m-header-search {
+.m-search {
   flex: 1 1 auto;
+  width: auto;
   min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 40px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--bg-elev);
+  height: 36px;
 }
-.m-header-search svg { color: var(--fg-mute); flex-shrink: 0; }
-.m-header-search input {
-  min-width: 0;
-  flex: 1;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--fg);
+.m-search.compact {
+  height: 30px;
+  gap: 8px;
+  padding: 0 9px;
 }
-.m-header-search input::placeholder {
-  color: var(--fg-mute);
-  font-weight: 400;
+.m-search.compact input { font-size: 12px; }
+.app.is-mobile .search input,
+.app.is-mobile .sidebar-search input {
+  font-size: 14px; /* keeps iOS from zooming on focus */
+}
+.app.is-mobile .m-search.compact input { font-size: 12.5px; }
+/* iOS / WebKit shows a native clear (X) for type=search; hide it so only
+   our custom .search-clear button is visible. */
+.search input[type="search"]::-webkit-search-cancel-button,
+.search input[type="search"]::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
 }
 .m-icon-btn {
   flex: 0 0 auto;
@@ -1771,30 +1772,6 @@ html[data-pwa="standalone"] .app.is-mobile {
   flex: 0 0 auto;
   font-size: clamp(21px, 6vw, 24px);
   white-space: nowrap;
-}
-.m-playlist-filter {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  height: 30px;
-  padding: 0 9px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--fg-faint);
-}
-.m-playlist-filter svg { color: var(--fg-faint); flex-shrink: 0; }
-.m-playlist-filter input {
-  min-width: 0;
-  flex: 1;
-  font-size: 12px;
-  color: var(--fg-mute);
-}
-.m-playlist-filter input::placeholder {
-  color: var(--fg-faint);
 }
 
 .m-section { padding: 4px 0 18px; }

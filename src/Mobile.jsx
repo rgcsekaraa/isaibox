@@ -74,8 +74,8 @@ export function MobileHeader(props) {
       <span class="m-brand-mark" aria-label="isaibox">
         <Icon name="logo" size={16} />
       </span>
-      <div class="m-header-search">
-        <Icon name="search" size={16} />
+      <div class="search m-search" classList={{ "has-value": !!props.search }}>
+        <Icon name="search" size={14} />
         <input
           ref={(el) => (inputRef = el)}
           type="search"
@@ -90,8 +90,8 @@ export function MobileHeader(props) {
           onInput={(e) => props.setSearch(e.currentTarget.value)}
         />
         <Show when={props.search}>
-          <button class="m-icon-btn small" onClick={clearSearch} aria-label="Clear search">
-            <Icon name="x" size={14} />
+          <button class="search-clear" onClick={clearSearch} aria-label="Clear search">
+            <Icon name="x" size={12} />
           </button>
         </Show>
       </div>
@@ -154,7 +154,7 @@ export function MobileLibraryPage(props) {
     <div class="m-page">
       <div class="m-page-header m-library-header">
         <h1 class="m-page-title">Library</h1>
-        <div class="m-playlist-filter">
+        <div class="search m-search compact" classList={{ "has-value": !!ctx.playlistSearch() }}>
           <Icon name="search" size={12} />
           <input
             type="search"
@@ -169,8 +169,8 @@ export function MobileLibraryPage(props) {
             onInput={(event) => ctx.setPlaylistSearch(event.currentTarget.value)}
           />
           <Show when={ctx.playlistSearch()}>
-            <button class="m-icon-btn small" onClick={() => ctx.setPlaylistSearch("")}>
-              <Icon name="x" size={12} />
+            <button class="search-clear" onClick={() => ctx.setPlaylistSearch("")} aria-label="Clear filter">
+              <Icon name="x" size={11} />
             </button>
           </Show>
         </div>
