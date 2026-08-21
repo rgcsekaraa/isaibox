@@ -1,10 +1,10 @@
 {
   "albums": 4934,
   "download_url": "https://github.com/rgcsekaraa/isaibox/releases/download/local-library/masstamilan.duckdb",
-  "latest_song_updated_at": "2026-08-20 05:14:42.022029+00",
-  "sha256": "8f38d3da602082b5fba67773526feb3b9d073c5d9644a1529d18e1fc0492d0dd",
-  "size": 780414976,
+  "latest_song_updated_at": "2026-08-21 05:13:34.709156+00",
+  "sha256": "d61de5e3da45588c999e3dbd93997ae317f5f387c65cff608d48bb926165b1db",
+  "size": 786444288,
   "songs": 28769,
-  "updated_at": "2026-08-20T05:14:42Z",
-  "version": "2026-08-20T05:14:42Z"
+  "updated_at": "2026-08-21T05:13:35Z",
+  "version": "2026-08-21T05:13:35Z"
 }
