@@ -293,14 +293,15 @@ def stream_song(song_id: str):
                 output = None
         finally:
             upstream.close()
+            is_owner = output is not None
             if output:
                 output.close()
-            if temp_path.exists() and not is_cached(song_id):
-                try:
-                    temp_path.unlink()
-                except OSError:
-                    pass
-            if should_cache:
+            if is_owner:
+                if temp_path.exists() and not is_cached(song_id):
+                    try:
+                        temp_path.unlink()
+                    except OSError:
+                        pass
                 with download_lock:
                     active_downloads.discard(song_id)
 
